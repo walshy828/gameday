@@ -1,0 +1,823 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <base target="_top">        
+   
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>Dodgeball Tournament Tracker</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script>
+        tailwind.config = {
+            theme: {
+                extend: {
+                    colors: {
+                          'primary': '#572932',  // Remove 'color: var(--color-primary)'
+                          'secondary': '#3C1A22', // Remove 'var(--color-maroon-dark)'
+                          'accent': '#FDE047',
+                          'admin-bg': '#3F3F46',
+                      },
+                    fontFamily: {
+                        sans: ['Inter', 'sans-serif'],
+                    },
+                }
+            }
+        }
+    </script>
+    <script type="module" src="./js/api.js"></script>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@100..900&display=swap" rel="stylesheet">
+    <style>
+  /* --- COLOR VARIABLES (NEW) --- */
+  :root {
+      /* School Colors */
+      --color-maroon-light: #75424D;
+      --color-maroon-primary: #572932; /* Primary Accent */
+      --color-maroon-dark: #3C1A22;
+      --color-gold-light: #F0D695;
+      --color-gold-primary: #C8B273; /* Secondary Accent */
+      --color-gold-dark: #9F8C58;
+
+      /* Grays (Tailwind-inspired scale) */
+      --color-gray-900: #0F172A; /* Body Background */
+      --color-gray-800: #1F2937; /* Card Background */
+      --color-gray-700: #374151; /* Border Default */
+      --color-gray-600: #4B5563; /* Scrollbar Hover */
+      --color-gray-500: #6B7280;
+      --color-gray-400: #9CA3AF; /* Muted Text/Tab Default */
+      --color-gray-100: #E5E7EB; /* Default Text */
+
+      /* Semantic UI Colors */
+      --color-text-default: var(--color-gray-100); 
+      --color-text-muted: var(--color-gray-400); 
+      --color-background-primary: var(--color-gray-900);
+      --color-card-background: var(--color-gray-800);
+      --color-border-default: var(--color-gray-700);
+      --color-accent-primary: var(--color-maroon-primary); 
+      --color-accent-secondary: var(--color-gold-primary); 
+
+    /* Tailwind Utility Mappings: Connects classes like 'text-primary' to your colors */
+      --color-primary: var(--color-maroon-primary);     /* #572932 (Maroon) */
+      --color-secondary: var(--color-gold-primary);    /* #C8B273 (Gold) */
+      --color-accent: var(--color-gold-light);         /* #F0D695 (Light Gold for contrast) */
+      --color-danger: #DC2626;                        /* Red for Admin/Danger buttons */
+  }
+
+  /* ****************************************************** */
+  /* ********** MANUAL TAILWIND UTILITY CLASSES *********** */
+  /* ****************************************************** */
+  /* Fixes the colors you see as blue in the standings table */
+
+  /* Text Colors */
+  .text-primary { color: var(--color-primary); }
+  .text-secondary { color: var(--color-secondary); }
+  .text-accent { color: var(--color-accent); } 
+  
+  /* Background Colors */
+  .bg-primary { background-color: var(--color-primary); }
+  .bg-secondary { background-color: var(--color-secondary); }
+  
+  /* Border Colors */
+  .border-primary { border-color: var(--color-primary); }
+  .border-secondary { border-color: var(--color-secondary); }
+  
+  /* Special Utility for Table Header (bg-secondary/70) */
+  /* This requires a slightly different approach for opacity */
+  .bg-secondary\/70 { 
+      /* Uses your gold color with 70% opacity */
+      background-color: color-mix(in srgb, var(--color-secondary) 70%, transparent);
+      /* Fallback for older browsers (can be set to a solid shade) */
+      background-color: var(--color-gold-dark); /* Using Gold Dark (#9F8C58) as an alternative solid shade */
+  }
+
+  /* ****************************************************** */
+  /* ******************* EXISTING STYLES ****************** */
+  /* ****************************************************** */
+  /* ------------------------------ */
+
+  body {
+      font-family: 'Inter', sans-serif;
+      background-color: var(--color-background-primary); /* Color Variable: #0F172A (Gray 900) */
+      color: var(--color-text-default); /* Color Variable: #E5E7EB (Gray 100) */
+      -webkit-tap-highlight-color: transparent; /* Prevent blue flash on tap */
+      padding: 0;
+      margin: 0;
+  }
+
+  .data-card {
+      background-color: var(--color-card-background); /* Color Variable: #1F2937 (Gray 800) */
+      border: 1px solid var(--color-border-default); /* Color Variable: #374151 (Gray 700) */
+  }
+  ::-webkit-scrollbar {
+      width: 6px;
+      height: 6px;
+  }
+  ::-webkit-scrollbar-thumb {
+      background: var(--color-border-default); /* Color Variable: #374151 (Gray 700) */
+      border-radius: 3px;
+  }
+  ::-webkit-scrollbar-thumb:hover {
+      background: var(--color-gray-600); /* Color Variable: #4B5563 (Gray 600) */
+  }
+
+  /* Tabs */
+  .tab-button {
+      border-bottom: 3px solid transparent;
+      color: var(--color-text-muted); /* Color Variable: #9CA3AF (Gray 400) */
+      transition: all 0.2s;
+      flex: 1;
+      padding: 0.75rem 0.25rem;
+      font-size: 0.85rem;
+  }
+  .tab-button:hover {
+      color: var(--color-text-default); /* Color Variable: #E5E7EB (Gray 100) */
+  }
+  .tab-active {
+      border-bottom-color: var(--color-accent-primary); /* Color Variable: #DC2626 -> #572932 (Maroon Primary) */
+      color: var(--color-text-default);
+      font-weight: 600;
+  }
+  .tab-admin-active {
+      border-bottom-color: var(--color-accent-secondary); /* Color Variable: #A3E635 -> #C8B273 (Gold Primary) */
+      color: var(--color-text-default);
+      font-weight: 600;
+  }
+
+
+  /* Fixed Top Navigation */
+  .fixed-top-nav {
+      position: fixed;
+      top: 0;
+      left: 0;
+      right: 0;
+      z-index: 50; /* Above main content */
+      background-color: var(--color-background-primary); /* Color Variable: #0F172A (Gray 900) */
+      border-bottom: 2px solid var(--color-accent-primary); /* Color Variable: #DC2626 -> #572932 (Maroon Primary) */
+  }
+
+  /* Adjust main content padding to account for fixed nav height (No color changes here) */
+  .main-content-wrapper {
+      padding-top: 6rem; /* Sufficient padding for fixed nav */
+      padding-left: 0.75rem; 
+      padding-right: 0.75rem; 
+      padding-bottom: 0.75rem;
+      max-width: 7xl;
+      margin-left: auto;
+      margin-right: auto;
+  }
+
+  /* The surrounding label acts as the container for the switch */
+    .switch {
+      position: relative;
+      display: inline-block;
+      width: 40px; /* Width of the track */
+      height: 20px; /* Height of the track */
+    }
+
+    /* Hide the default HTML checkbox */
+    .switch input { 
+      opacity: 0;
+      width: 0;
+      height: 0;
+    }
+
+    /* The slider (the track) */
+    .slider {
+      position: absolute;
+      cursor: pointer;
+      top: 0;
+      left: 0;
+      right: 0;
+      bottom: 0;
+      background-color: #4B5563; /* Tailwind gray-600 for OFF state */
+      -webkit-transition: .4s;
+      transition: .4s;
+    }
+
+    /* The slider's thumb (the circle) */
+    .slider:before {
+      position: absolute;
+      content: "";
+      height: 16px;
+      width: 16px;
+      left: 2px;
+      bottom: 2px;
+      background-color: white;
+      transition: .4s;
+    }
+
+    /* When the checkbox is checked (ON) */
+    input:checked + .slider {
+      background-color: #A3E635; /* Tailwind lime-400 for ON state */
+    }
+
+    /* Move the thumb to the right when ON */
+    input:checked + .slider:before {
+      transform: translateX(20px); /* 40px track width - 16px thumb width = 24px space. Moving it 20px aligns it well. */
+    }
+
+    /* Rounded corners for the track and thumb */
+    .slider.round {
+      border-radius: 20px;
+    }
+
+    .slider.round:before {
+      border-radius: 50%;
+    }
+
+    /* CSS for Standings Ticker */
+    .standings-ticker-item {
+        padding: 0 1.5rem; /* Spacing between each team's standing */
+        display: inline-flex;
+        align-items: center;
+        gap: 0.5rem;
+        font-size: 0.875rem; /* text-sm */
+    }
+     /* Confetti Container - Crucial for placing confetti absolutely relative to the viewport */
+    #confetti-container {
+        position: fixed;
+        top: 0;
+        left: 0;
+        width: 100vw;
+        height: 100vh;
+        pointer-events: none; /* Allows user interaction with elements beneath the confetti */
+        z-index: 9999;
+    }
+
+    /* Confetti Particle Styling */
+    .confetti {
+      width: 8px;
+      height: 12px;
+      background-color: #f0f;
+      position: absolute;
+      opacity: 0;
+      /* --- ADJUSTED: Set animation to a faster 4s fall time --- */
+      animation: fall 15s cubic-bezier(0.1, 1.0, 0.4, 1.0) forwards;
+    }
+
+    /* Keyframe Animation for Confetti */
+    @keyframes fall {
+      0% {
+        opacity: 1;
+        transform: translate(0, 0) rotateZ(0deg);
+      }
+      100% {
+        opacity: 0;
+        transform: translate(var(--x), var(--y)) rotateZ(var(--r));
+      }
+    }
+
+    #tournament-champion-message.hidden {
+    display: none !important;
+}
+
+    /* Hide scrollbar but keep scrolling */
+    .no-scrollbar::-webkit-scrollbar {
+      display: none;
+    }
+    .no-scrollbar {
+      -ms-overflow-style: none;
+      scrollbar-width: none;
+    }
+
+    /* Prevent full-page horizontal scroll */
+    #division-selector-wrapper-mobile {
+      overflow-x: hidden;
+      max-width: 100vw;
+    }
+    #division-selector-wrapper-mobile > div {
+      scroll-behavior: smooth;
+      overscroll-behavior-x: contain;
+      -webkit-overflow-scrolling: touch;
+    }
+
+    /* Pulse animation for active button */
+    @keyframes pulseOnce {
+      0% { transform: scale(1); box-shadow: 0 0 0 0 rgba(200,178,115,0.4); }
+      50% { transform: scale(1.08); box-shadow: 0 0 0 6px rgba(200,178,115,0.2); }
+      100% { transform: scale(1); box-shadow: 0 0 0 0 rgba(200,178,115,0); }
+    }
+
+    @keyframes fadeIn {
+      from { opacity: 0; transform: translateY(-6px); }
+      to   { opacity: 1; transform: translateY(0); }
+    }
+    .animate-fade-in {
+      animation: fadeIn 0.25s ease-out;
+    }   
+    #status-toast.show {
+      opacity: 1;
+      transform: translateY(0);
+    }
+
+    #status-toast.hide {
+      opacity: 0;
+      transform: translateY(12px);
+    }
+    .animate-pulse-once {
+      animation: pulseOnce 0.6s ease-out;
+    }
+/* * The inner box must be position: relative so that the button can be positioned 
+ * absolutely relative to it (top right corner).
+ */
+#champion-inner-box {
+    text-align: center;
+    padding: 20px;
+    background-color: var(--color-primary);
+    border: 1px solid #FFD700;
+    border-radius: 8px;
+    margin-bottom: 15px;
+    /* KEY LINE: Establishes the coordinate system for the absolute button */
+    position: relative; 
+}
+
+/* * Styles for the Dismiss Button
+ */
+#champion-dismiss-btn {
+    /* KEY LINES: Positions the button in the top right corner */
+    position: absolute; 
+    top: 5px; /* Adjust as needed */
+    right: 5px; /* Adjust as needed */
+
+    /* Styling to make it look like a small 'x' icon */
+    background: none;
+    border: none;
+    font-size: 20px; /* Makes the 'x' character larger */
+    color: #888; /* Gray text color */
+    cursor: pointer;
+    line-height: 1; /* Ensures 'x' is vertically centered */
+    padding: 5px 8px; /* Small padding */
+    border-radius: 5px;
+    transition: color 0.2s; /* Hover effect */
+}
+
+#champion-dismiss-btn:hover {
+    color: #333; /* Darker gray on hover */
+}
+
+/* Add a transition for the color change */
+        #timerDisplay {
+            transition: color 0.3s ease;
+        }
+        /* Custom class for the "finished" state */
+        .timer-finished {
+            color: #ef4444; /* red-500 */
+        }
+
+ 
+
+  @media (min-width: 768px) {
+      .main-content-wrapper {
+          padding-top: 7rem; 
+          padding-left: 2rem;
+          padding-right: 2rem;
+      }
+  }
+
+  /* Mobile Schedule View (Card Style) */
+  @media (max-width: 480px) {
+    #schedule-view table thead { display: none; }
+    #schedule-view table, #schedule-view table tbody, #schedule-view table tr, #schedule-view table td {
+        display: block; width: 100%;
+    }
+    #schedule-view table td.team-matchup-column {
+      text-align: left;
+    }
+    #schedule-view table tr {
+        margin-bottom: 0.75rem; 
+        border: 1px solid var(--color-border-default); /* Color Variable: #374151 (Gray 700) */
+        border-radius: 0.5rem; 
+        background-color: var(--color-card-background); /* Color Variable: #1E293B (Using Gray 800) */
+        padding: 0.5rem;
+        border-left: 4px solid var(--color-border-default); /* Used Gray 700 as a fallback, but often this is set dynamically */
+    }
+    #schedule-view table td {
+        padding: 0.3rem 0.5rem; text-align: right; position: relative;
+    }
+    #schedule-view table td::before {
+        content: attr(data-label); 
+        position: absolute; left: 0.5rem; text-align: left; font-weight: 600; 
+        color: #94A3B8; /* Keeping this specific shade as it's not in the main palette yet, but it's close to Gray 400 */
+    }
+    #schedule-view table td.round-column {
+      text-align: left;
+  }
+    .border-l-4 { border-left-width: 0 !important; }
+    
+    /* Admin View Mobile Adjustments (No color changes here) */
+    #admin-match-entry-view .round-header {
+        text-align: left;
+        padding: 0.75rem 0.5rem;
+        font-size: 1.125rem;
+        margin-top: 1rem;
+    }
+    #admin-match-entry-view .match-entry-card {
+        flex-direction: column;
+        padding: 0.75rem;
+    }
+    #admin-match-entry-view .match-details {
+        flex-direction: column;
+        align-items: flex-start;
+        width: 100%;
+        margin-bottom: 0.5rem;
+    }
+    #admin-match-entry-view .match-controls {
+        flex-direction: column;
+        width: 100%;
+    }
+    #admin-match-entry-view .match-controls > * {
+        margin-top: 0.5rem;
+        width: 100%;
+    }
+    
+  }
+  /* Buttons and filters */
+  select, button { touch-action: manipulation; }
+</style>
+
+</head>
+<body class="min-h-screen">
+
+    <!-- Fixed Top Navigation Bar -->
+    <nav class="fixed-top-nav shadow-xl bg-gray-950 border-b border-gray-800 z-50">
+      <div class="max-w-6xl mx-auto flex justify-between items-center px-4 py-3 md:py-4">
+
+          
+          <!-- Title (Left) LOGO-->
+          <div class="h-10 md:h-12"> <img src="https://i.imgur.com/08qoFXK.png" 
+              alt="Dodgeball Tournament Logo" 
+              class="h-full w-auto object-contain">
+          </div>
+
+          <div class="flex items-center space-x-2">
+            <!-- DEV MODE INDICATOR -->
+            <div class="text-red-400 hidden" id="devMode">DEV</div>
+
+            <!-- TIMER WRAPPER -->
+            <div id="timer-wrapper" class="relative">
+              <!-- MATCH TIMER -->
+              <div
+                id="scoreboard"
+                class="relative mx-auto flex flex-col items-center justify-center h-16 w-28 sm:h-20 sm:w-32 rounded-lg border border-gray-700 bg-black cursor-pointer"
+              >
+                <!-- Sync indicator -->
+                <div
+                  id="sync-indicator"
+                  class="absolute right-1 top-1 h-1 w-1 rounded-full bg-yellow-500"
+                ></div>
+
+                <!-- Timer -->
+                <div
+                  id="timer-display"
+                  class="font-mono text-2xl sm:text-3xl text-green-400 tracking-tight leading-none"
+                >
+                  04:00
+                </div>
+
+                <!-- Current round display -->
+                <div
+                  id="current-round-display"
+                  class="text-yellow-400 text-xs mt-1 text-center"
+                >
+                  Round 1
+                </div>
+              </div>
+
+              <!-- TIMER CONTROLS OVERLAY -->
+              <div id="timer-controls-overlay" class="absolute top-full left-1/2 -translate-x-1/2 mt-2 hidden w-64 rounded-lg border border-gray-700 bg-gray-900 p-4 shadow-lg opacity-0 scale-95 transform transition-all duration-150 ease-out">
+                <div class="text-base text-lime-400 font-bold mb-3 text-center">
+                  Timer Controls
+                </div>
+
+                <div class="mb-3 flex justify-center gap-2">
+                  <button id="minus-btn" class="rounded-lg bg-gray-700 px-3 py-2 text-lg font-semibold hover:bg-gray-600">-30s</button>
+                  <button id="start-btn" class="rounded-lg bg-green-700 px-4 py-2 text-lg font-semibold hover:bg-green-600">Start</button>
+                  <button id="plus-btn" class="rounded-lg bg-gray-700 px-3 py-2 text-lg font-semibold hover:bg-gray-600">+30s</button>
+                  <button id="stop-btn" class="hidden rounded-lg bg-red-700 px-4 py-2 text-lg font-semibold hover:bg-red-600">Stop</button>
+                  <button id="reset-btn" class="hidden rounded-lg bg-blue-700 px-4 py-2 text-lg font-semibold hover:bg-blue-600">Reset</button>
+                </div>
+
+                <div class="mb-3 flex items-center justify-center gap-2 text-sm">
+                  <input id="after-round-toggle" type="checkbox" class="h-4 w-4 accent-yellow-400" />
+                  <label for="after-round-toggle">After-Round Timer</label>
+                  <button id="after-round-settings-btn" class="text-yellow-400 hover:text-yellow-300">⚙️</button>
+                </div>
+
+                <div id="after-round-settings" class="hidden mt-2 text-center text-sm space-x-2">
+                  <button id="minus-after-btn" class="rounded bg-gray-700 px-2 py-1 hover:bg-gray-600">-15s</button>
+                  <span id="after-round-duration" class="inline-block w-12">60s</span>
+                  <button id="plus-after-btn" class="rounded bg-gray-700 px-2 py-1 hover:bg-gray-600">+15s</button>
+                </div>
+
+                <div class="mt-3 flex justify-center gap-2">
+                  <button id="prev-round-btn" class="rounded-md bg-gray-700 px-3 py-1 text-sm font-semibold hover:bg-gray-600">Prev Round</button>
+                  <button id="next-round-btn" class="rounded-md bg-gray-700 px-3 py-1 text-sm font-semibold hover:bg-gray-600">Next Round</button>
+                </div>
+
+                <div class="flex justify-center mt-3">
+                  <label for="toggle-display-switch" class="flex items-center cursor-pointer" title="Toggle clock visibility for non-admins">
+                    <span class="mr-3 text-sm font-semibold text-gray-300">Show Clock</span>
+                    <div class="relative">
+                      <input id="toggle-display-switch" type="checkbox" class="sr-only peer" />
+                      <div class="w-11 h-6 bg-gray-700 rounded-full peer-checked:bg-green-600 transition-colors"></div>
+                      <div class="absolute left-1 top-1 w-4 h-4 bg-white rounded-full transition-transform peer-checked:translate-x-5"></div>
+                    </div>
+                  </label>
+                </div>
+              </div>
+            </div>
+          </div>
+
+        </div>
+    </nav>
+
+
+    
+    <!-- Main Content Wrapper -->
+  <div id="main-wrapper" class="bg-gray-950 min-h-screen  pt-32">
+    <div class="container mx-auto max-w-6xl px-4 md:px-6 lg:px-8">
+      <div id="confetti-container"></div>
+        <div class="max-w-7xl mx-auto flex justify-between items-center space-y-4 md:space-y-8">
+        
+            <!-- Division Selector Wrapper (Left Justified) -->
+            <!-- Since your JS renders both desktop and mobile selects, we'll keep both IDs here -->
+            <div class="flex items-center space-x-3">
+              <span class="font-bold font-ascent text-base"></span>
+                <div id="division-selector-wrapper" class="hidden md:block">
+                    <!-- Desktop Selector rendered here by JS -->
+                </div>
+                <div id="division-selector-wrapper-mobile" class="md:hidden">
+                    <!-- Mobile Selector rendered here by JS -->
+                </div>
+            </div>
+        </div>
+        <!-- Sheet Info Display (moved from old header) -->
+        <p class="text-xs md:text-sm text-gray-400 flex items-center justify-center pt-2">
+            <span id="sheet-info">Last updated: <span id="last-updated">...</span></span>
+        </p>
+
+        <div id="tournament-champion-message" class="hidden"></div>
+
+        <!-- STATUS AND ERROR MESSAGES -->
+
+        <!-- Floating Status Toast (bottom-right) -->
+        <div id="status-toast"
+            class="fixed bottom-6 right-6 z-50 hidden px-4 py-3 rounded-lg bg-blue-900/90 text-blue-100 text-sm font-medium shadow-xl backdrop-blur-md flex items-center gap-2 border border-blue-700 transition-all duration-300 ease-out translate-y-4 opacity-0">
+          <div class="w-4 h-4 border-2 border-r-transparent border-blue-200 rounded-full animate-spin"></div>
+          <span id="status-toast-text">Loading...</span>
+        </div>
+
+        <div id="error-message" 
+            class="bg-red-900/80 p-3 rounded-lg text-center font-medium text-red-200 border border-red-700 mt-4 hidden">
+          <div class="flex justify-center items-center gap-2">
+            <span>❌</span>
+            <p class="font-bold">Error loading data</p>
+          </div>
+          <p id="error-details" class="text-sm mt-1"></p>
+        </div>
+        
+        <main class="space-y-4 md:space-y-8">
+            
+            <!-- TABS -->
+            <div class="flex border-b border-gray-700 data-card rounded-xl overflow-hidden shadow-xl">
+                <button id="standings-tab" onclick="switchView('standings')" class="tab-button flex-1 py-3 text-base md:text-sm text-center">
+                    🏆 Standings
+                </button>
+                <button id="schedule-tab" onclick="switchView('schedule')" class="tab-button flex-1 py-3 text-base md:text-sm text-center">
+                    🗓️ Schedule
+                </button>
+                <!-- NEW: Admin Tab (Conditional) -->
+                <button id="admin-entry-tab" onclick="switchView('admin-entry')" class="tab-button flex-1 py-3 text-base md:text-sm text-center hidden">
+                    🛠️ Admin
+                </button>
+            </div>
+
+            <!-- STANDINGS VIEW -->
+            <div id="standings-view" class="data-card rounded-xl shadow-2xl p-3 md:p-6 space-y-3 md:space-y-4">
+                <h2 class="text-xl md:text-2xl font-bold border-b-2 border-primary pb-2 text-accent">🏆 Current Standings</h2>
+                
+                <!-- Admin Controls will be dynamically inserted here -->
+
+                <div class="overflow-x-auto rounded-lg"> 
+                    <table class="min-w-full divide-y divide-gray-700 text-xs md:text-sm table-fixed">
+                        <thead class="bg-secondar/70">
+                            <tr>
+                                <th scope="col" class="px-1 md:px-2 py-3 text-left text-sm font-semibold uppercase tracking-wider text-gray-400 rounded-tl-lg w-10">#</th>
+                                <th scope="col" class="px-4 md:px-6 py-3 text-left text-sm font-semibold uppercase tracking-wider text-gray-400 w-full">Team Name</th>
+                                <th scope="col" class="px-1 md:px-5 py-3 text-right text-sm font-semibold uppercase tracking-wider text-gray-400 rounded-tr-lg w-40 whitespace-nowrap min-w-[4.5rem]">W-L-T<div class="text-xs">(pts)</div></th>
+                            </tr>
+                        </thead>
+                        <tbody id="standings-table-body" class="divide-y divide-gray-800 text-xs md:text-sm">
+                            <tr><td colspan="3" class="text-center py-4 text-gray-500">Loading standings...</td></tr>
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+
+            <!-- SCHEDULE VIEW -->
+            <div id="schedule-view" class="data-card rounded-xl shadow-2xl p-3 md:p-6 space-y-3 md:space-y-4 hidden">
+                <h2 class="text-xl md:text-2xl font-bold border-b-2 border-primary pb-2 text-accent">🗓️ Game Schedule & Results</h2>
+                
+                <div class="space-y-3 md:space-y-4">
+                    <div class="flex flex-col md:grid md:grid-cols-2 gap-3 md:gap-4">
+                        <div class="flex flex-col sm:flex-row items-start sm:items-center space-y-1 sm:space-y-0 sm:space-x-4">
+                            <label for="team-select" class="text-xs md:text-sm font-medium text-gray-300 whitespace-nowrap">Filter by Team:</label>
+                            <select id="team-select" onchange="updateScheduleView()" class="w-full p-2 bg-gray-700 border border-gray-600 rounded-lg text-white shadow-sm focus:border-accent focus:ring focus:ring-accent/50 transition duration-150 ease-in-out text-sm">
+                                </select>
+                        </div>
+
+                        <div class="flex flex-col sm:flex-row items-start sm:items-center space-y-1 sm:space-y-0 sm:space-x-4">
+                            <label for="court-select" class="text-xs md:text-sm font-medium text-gray-300 whitespace-nowrap">Filter by Court:</label>
+                            <select id="court-select" onchange="updateScheduleView()" class="w-full p-2 bg-gray-700 border border-gray-600 rounded-lg text-white shadow-sm focus:border-accent focus:ring focus:ring-accent/50 transition duration-150 ease-in-out text-sm">
+                                </select>
+                        </div>
+                    </div>
+                    <div id="bye-rounds-info" class="p-3 bg-gray-800 border border-gray-700 rounded-lg text-sm text-gray-300 hidden">
+
+                        </div>
+
+                </div>
+                <!-- Schedule Entry List -->
+                <div id="schedule-view-container" class="space-y-4">
+                    <p class="text-center py-4 text-gray-500">Select filters to view matches, or load data.</p>
+                </div>
+                    
+            </div>
+            
+            <!-- ADMIN MATCH ENTRY VIEW -->
+            <div id="admin-match-entry-view" class="data-card rounded-xl shadow-2xl p-3 md:p-6 space-y-3 md:space-y-4 hidden">
+                <h2 class="text-xl md:text-2xl font-bold border-b-2 border-lime-500 pb-2 text-lime-400">🛠️ Match Admin</h2>
+                
+                <!-- Filters (Reused from Schedule View) -->
+                <div class="space-y-3 md:space-y-4">
+                    <div class="flex flex-col gap-3 md:gap-4 lg:grid lg:grid-cols-3">
+                        
+                        <div class="flex flex-col sm:flex-row items-start sm:items-center space-y-1 sm:space-y-0 sm:space-x-4">
+                            <label for="admin-team-select" class="text-xs md:text-sm font-medium text-gray-300 whitespace-nowrap">Filter by Team:</label>
+                            <select id="admin-team-select" onchange="updateAdminMatchEntryView()" class="w-full p-2 bg-gray-700 border border-gray-600 rounded-lg text-white shadow-sm focus:border-accent focus:ring focus:ring-accent/50 transition duration-150 ease-in-out text-sm">
+                            </select>
+                        </div>
+
+                        <div class="flex flex-col sm:flex-row items-start sm:items-center space-y-1 sm:space-y-0 sm:space-x-4">
+                            <label for="admin-court-select" class="text-xs md:text-sm font-medium text-gray-300 whitespace-nowrap">Filter by Court:</label>
+                            <select id="admin-court-select" onchange="updateAdminMatchEntryView()" class="w-full p-2 bg-gray-700 border border-gray-600 rounded-lg text-white shadow-sm focus:border-accent focus:ring focus:ring-accent/50 transition duration-150 ease-in-out text-sm">
+                            </select>
+                        </div>
+                        
+                    <div class="flex items-center space-x-4 p-2 bg-gray-700 border border-gray-600 rounded-lg text-white shadow-sm self-center">
+                      <label for="hide-played-toggle" class="text-sm font-medium text-gray-300 cursor-pointer whitespace-nowrap">Hide Played Games</label>
+                      
+                      <label class="switch">
+                        <input type="checkbox" id="hide-played-toggle" onchange="updateAdminMatchEntryView()">
+                        <span class="slider round"></span>
+                      </label>
+                    </div>
+
+                  </div>
+                 
+                    <div id="admin-filter-info" class="p-3 bg-gray-800 border border-gray-700 rounded-lg text-sm text-gray-300 hidden"></div>   
+
+                    
+                    
+
+      <!-- Admin Timer Control Panel -->
+      <div id="admin-panel" class="mx-auto mt-6 rounded-xl bg-gray-900 p-4 text-white shadow-md hidden">
+        <div class="standings-pager bg-gray-900 border border-gray-700 rounded-lg overflow-hidden relative shadow-inner h-10 flex items-center px-2">
+          <div id="standings-pager-content" class="w-full h-full flex items-center opacity-0 transition-opacity duration-500 ease-in-out">
+            <p class="text-sm text-gray-500 px-2">Loading Standings...</p>
+          </div>
+        </div>
+      </div>
+
+      <!-- Match Entry List (moved out of admin-panel so regular Admins can view matches) -->
+      <div id="admin-match-list" class="space-y-4">
+        <p class="text-center py-4 text-gray-500">Select filters to view matches, or load data.</p>
+      </div>
+
+        </main>
+    </div>
+    </div>
+
+    <!-- Admin Login Modal -->
+    <div id="admin-login-modal" class="fixed inset-0 bg-black bg-opacity-80 z-[100] hidden flex items-center justify-center p-4 backdrop-blur-sm">
+        <div class="bg-gray-800 rounded-xl shadow-2xl p-6 w-full max-w-md space-y-5 border border-primary animate-in zoom-in-50 duration-300">
+            <h3 class="text-2xl font-bold text-accent border-b border-gray-700 pb-2">🔐 Admin Login</h3>
+            <p class="text-gray-300 text-sm">Enter the secret admin password for administrative access.</p>
+            
+            <input type="password" id="admin-password-input" placeholder="Enter Password"
+                   class="w-full p-3 bg-gray-700 border border-gray-600 rounded-lg text-white shadow-sm focus:border-accent focus:ring focus:ring-accent/50 transition duration-150">
+            
+            <p id="admin-login-message" class="text-sm font-medium text-red-400 hidden"></p>
+
+            <div class="flex justify-end space-x-3 pt-2">
+                <button onclick="hideAdminLoginModal()" class="px-4 py-2 bg-gray-600 rounded-lg text-white hover:bg-gray-500 transition-colors">Cancel</button>
+                <button onclick="loginAdmin()" id="login-button" class="px-4 py-2 bg-primary rounded-lg text-white font-semibold hover:bg-red-700 transition-colors">Login</button>
+            </div>
+        </div>
+    </div>
+    
+    <!-- ADMIN MATCH ENTRY VIEW -->
+    <div id="match-entry-modal" class="fixed inset-0 bg-black bg-opacity-80 z-[100] hidden flex items-center justify-center p-4 backdrop-blur-sm">
+        <div class="bg-gray-800 rounded-xl shadow-2xl p-6 w-full max-w-lg space-y-4 border border-lime-500 animate-in zoom-in-50 duration-300">
+            <h3 class="text-2xl font-bold text-lime-400 border-b border-gray-700 pb-2 flex items-center">
+                ✏️ Record Match Result
+            </h3>
+            <p id="match-info-display" class="text-lg font-medium text-gray-300"></p>
+            
+            <input type="hidden" id="modal-game-index">
+
+            <!-- Admin Name Field -->
+            <div>
+                <label for="admin-name-input" class="text-sm font-medium text-gray-400 block mb-1">Admin Name (Required)</label>
+                <input type="text" id="admin-name-input" placeholder="Your Name"
+                       class="w-full p-3 bg-gray-700 border border-gray-600 rounded-lg text-white shadow-sm focus:border-lime-400 focus:ring focus:ring-lime-400/50 transition duration-150">
+            </div>
+
+            <!-- Winner Dropdown -->
+            <div>
+                <label for="modal-winner-select" class="text-sm font-medium text-gray-400 block mb-1">Winner</label>
+                <select id="modal-winner-select" class="w-full p-3 bg-gray-700 border border-gray-600 rounded-lg text-white shadow-sm focus:border-lime-400 focus:ring focus:ring-lime-400/50 transition duration-150">
+                    <option value="—">— Select Winner —</option>
+                </select>
+            </div>
+
+            <!-- Players Remaining -->
+            <div>
+                <label for="modal-players-input" class="text-sm font-medium text-gray-400 block mb-1">
+                    Players Remaining
+                </label>
+                
+                <div class="flex items-center justify-center space-x-3">
+                    
+                    <button type="button" onclick="changePlayers(-1)" 
+                            class="p-3 bg-gray-600 rounded-xl text-white text-2xl font-bold active:scale-95 transition-transform hover:bg-gray-500 w-12 h-12 flex items-center justify-center">
+                        −
+                    </button>
+                    
+                    <input type="number" min="0" max="8" id="modal-players-input" value="0" readonly
+                          class="w-20 p-3 bg-gray-700 border border-gray-600 rounded-lg text-white shadow-sm focus:border-lime-400 focus:ring focus:ring-lime-400/50 transition duration-150 text-center text-xl font-bold">
+
+                    <button type="button" onclick="changePlayers(1)" 
+                            class="p-3 bg-gray-600 rounded-xl text-white text-2xl font-bold active:scale-95 transition-transform hover:bg-gray-500 w-12 h-12 flex items-center justify-center">
+                        +
+                    </button>
+                </div>
+            </div>
+            
+            <!-- Notes Field -->
+            <div>
+                <label for="modal-notes-textarea" class="text-sm font-medium text-gray-400 block mb-1">Match Notes </label>
+                <textarea id="modal-notes-textarea" rows="3" placeholder="🛡️ Parental Mayhem & Penalty Box Notes: Did a parent require a timeout? Did little Timmy try to smuggle an extra ball? Log any violations here, from mild meltdown to full-blown 'My child is an elite athlete and the referee is blind' protests."
+                          class="w-full p-3 bg-gray-700 border border-gray-600 rounded-lg text-white shadow-sm focus:border-lime-400 focus:ring focus:ring-lime-400/50 transition duration-150"></textarea>
+            </div>
+            
+            <p id="modal-save-message" class="text-sm font-medium text-red-400 hidden"></p>
+
+            <div class="flex justify-end space-x-3 pt-2">
+                <button onclick="hideMatchEntryModal()" class="px-4 py-2 bg-gray-600 rounded-lg text-white hover:bg-gray-500 transition-colors">Cancel</button>
+                <button onclick="saveMatchResultFromModal()" id="modal-save-button" class="px-4 py-2 bg-lime-500 rounded-lg text-gray-900 font-semibold hover:bg-lime-400 transition-colors">Save Result</button>
+            </div>
+        </div>
+    </div>
+    <footer id="footer" class=" right-4">
+      <button id="admin-button" onclick="showAdminLoginModal()" class="p-2 md:p-3 rounded-lg bg-gray-700 hover:bg-gray-600 transition-colors text-xs md:text-sm font-semibold text-accent">
+        <span id="admin-status-text">Admin</span>
+      </button>
+    </footer>
+
+      
+<script src="https://www.gstatic.com/firebasejs/10.13.1/firebase-app-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.13.1/firebase-database-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.13.1/firebase-auth-compat.js"></script>
+
+    <script>
+        //main app namespace for configurations and data
+        const App = {
+          state: {
+            isAdmin: false,
+            currentView: 'standings'
+          },
+
+          config: {
+            currentSheetName: ''
+          },
+          settings: {},
+          data: {
+            allDivisionNames: [],
+            allStandingsData: [],
+            allScheduleData: [],
+            teamNames: [],
+            courtNames: []
+          },
+
+          admin: {
+            currentGameIndex: null
+          },
+          refresh: {
+            isLoadingData: false,
+          }
+           
+        }
+
+        </script>
+      <script type="module" src="./js/main.js"></script>
+</body>
+</html>

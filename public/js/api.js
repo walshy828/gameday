@@ -1,0 +1,43 @@
+// public/js/api.js
+const API_BASE = "http://localhost:8888/api"; // change port if needed
+
+async function apiGet(endpoint) {
+  const res = await fetch(`${API_BASE}${endpoint}`);
+  if (!res.ok) throw new Error(`GET ${endpoint} failed: ${res.status}`);
+  return await res.json();
+}
+
+async function apiPost(endpoint, body) {
+  const res = await fetch(`${API_BASE}${endpoint}`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(body),
+  });
+  if (!res.ok) {
+    const text = await res.text();
+    let parsed;
+    try { parsed = JSON.parse(text); } catch (e) { parsed = text; }
+    const err = new Error(`POST ${endpoint} failed: ${res.status} ${parsed && parsed.error ? parsed.error : text}`);
+    err.status = res.status;
+    err.body = parsed;
+    throw err;
+  }
+  return await res.json();
+}
+
+// Expose functions your app can use
+export async function getAllData(sheetName) {
+  return await apiGet(`/allData?sheetName=${encodeURIComponent(sheetName)}`);
+}
+
+export async function getDivisions() {
+  return await apiGet(`/divisions`);
+}
+
+export async function validateAdmin(password) {
+  return await apiPost(`/validateAdmin`, { password });
+}
+
+export async function saveMatchResult(authToken, matchData) {
+  return await apiPost(`/saveMatchResult`, { authToken, matchData });
+}
