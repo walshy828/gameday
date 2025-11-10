@@ -4,15 +4,22 @@
 //const API_BASE = (window.__API_BASE__ && window.__API_BASE__.length > 0) ? window.__API_BASE__ : '/api';
 
 async function apiGet(endpoint) {
-  const baseURL = window.location.origin;
-  const res = await fetch(`${baseURL}${endpoint}`);
-  
-  if (!res.ok) throw new Error(`GET ${endpoint} failed: ${res.status}`);
-  return await res.json();
+  try {
+    const baseURL = window.location.origin;  // Dynamic host:port
+    const response = await fetch(`${baseURL}/api${endpoint}`);  // Add /api prefix
+    if (!response.ok) {
+      throw new Error(`GET /api${endpoint} failed: ${response.status}`);
+    }
+    return await response.json();
+  } catch (error) {
+    console.error(error);
+    throw error;
+  }
 }
 
 async function apiPost(endpoint, body) {
-  const res = await fetch(`${API_BASE}${endpoint}`, {
+  const baseURL = window.location.origin;
+  const res = await fetch(`${baseURL}/api${endpoint}`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(body),
