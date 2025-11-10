@@ -1,10 +1,12 @@
 // public/js/api.js
 // API base can be injected at runtime via `window.__API_BASE__` (set by server/config)
 // Fallback to a relative path so same-origin deployments work without configuration.
-const API_BASE = (window.__API_BASE__ && window.__API_BASE__.length > 0) ? window.__API_BASE__ : '/api';
+//const API_BASE = (window.__API_BASE__ && window.__API_BASE__.length > 0) ? window.__API_BASE__ : '/api';
 
 async function apiGet(endpoint) {
-  const res = await fetch(`${API_BASE}${endpoint}`);
+  const baseURL = window.location.origin;
+  const res = await fetch(`${baseURL}${endpoint}`);
+  
   if (!res.ok) throw new Error(`GET ${endpoint} failed: ${res.status}`);
   return await res.json();
 }

@@ -86,9 +86,9 @@ function hideStatus() {
 async function serverCall(funcName, arg1) {
   const controller = new AbortController();
   const timeout = setTimeout(() => controller.abort(), 30000); // 30s timeout
-
+  const baseURL = window.location.origin;  // Dynamically pulls the current host:port
   try {
-    const response = await fetch(`http://localhost:8888/api/${funcName}`, {
+    const response = await fetch(`${baseURL}/api/${funcName}`, {
       method: arg1 ? 'POST' : 'GET',
       headers: { 'Content-Type': 'application/json' },
       body: arg1 ? JSON.stringify(arg1) : undefined,
