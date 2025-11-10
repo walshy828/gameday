@@ -329,9 +329,8 @@ async function loginAdmin() {
                 App.state.isSuperAdmin = true;
                 sessionStorage.setItem('isSuperAdmin', 'true');
                 sessionStorage.setItem('firebaseToken', result.firebaseToken);
-                //unhide timer controls for admin (if present)
-                const timerControlsEl = document.getElementById('timer-controls');
-                if (timerControlsEl) timerControlsEl.classList.remove('hidden');
+                // initialize/move timer overlay for superadmin (if present)
+                if (typeof window.initTimerOverlay === 'function') window.initTimerOverlay();
 
             }
 
@@ -367,8 +366,8 @@ function logoutAdmin() {
     firebase.auth().signOut();
     updateAdminUI();
     //hide timer controls if present.
-    const _timerControlsEl = document.getElementById('timer-controls');
-    if (_timerControlsEl) _timerControlsEl.classList.add('hidden');
+    const _timerOverlay = document.getElementById('timer-controls-overlay');
+    if (_timerOverlay) _timerOverlay.classList.add('hidden');
     // If the user was in the admin tab, switch them out
     if (App.state.currentView === 'admin-entry') {
         switchView('standings');

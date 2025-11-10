@@ -336,18 +336,20 @@ function getCurrentFilteredTeam() {
 }
 
 document.addEventListener('DOMContentLoaded', () => {
-    checkLoginStatus();
+  checkLoginStatus();
 
-    if (App.state.isAdmin) {
-        switchView('admin-entry');
-        
-    } else {
-        switchView('standings');
-    }
-    
-    // --- INITIAL KICKOFF ACTIONS ---
-    fetchDivisionNames(); 
-    updateAdminUI();
+  if (App.state.isAdmin) {
+    switchView('admin-entry');
+  } else {
+    switchView('standings');
+  }
+
+  // --- INITIAL KICKOFF ACTIONS ---
+  fetchDivisionNames();
+  updateAdminUI();
+
+  // Initialize timer overlay for superadmin if applicable
+  if (typeof window.initTimerOverlay === 'function') window.initTimerOverlay();
     
 
     // --- ADMIN LOGIN ENTER KEY BINDING ---
@@ -790,8 +792,9 @@ document.getElementById('after-round-toggle').onchange = e => {
   afterRoundEnabled = e.target.checked;
 };
 
-//Dynamic Super Admin timer controls
-document.addEventListener('DOMContentLoaded', () => {
+// Dynamic Super Admin timer controls: expose initTimerOverlay so it can be called
+// at load time or after a superadmin logs in.
+function initTimerOverlay() {
   const isSuperAdmin = App?.state?.isSuperAdmin === true;
   const timer = document.getElementById('scoreboard');
   const overlay = document.getElementById('timer-controls-overlay');
@@ -799,7 +802,7 @@ document.addEventListener('DOMContentLoaded', () => {
   if (!isSuperAdmin || !timer || !overlay) return;
 
   // Move overlay to <body> so it’s not clipped by fixed nav
-  document.body.appendChild(overlay);
+  if (overlay.parentElement !== document.body) document.body.appendChild(overlay);
   overlay.style.position = 'fixed'; // <-- key change: fixed instead of absolute
   overlay.style.zIndex = 9999;
 
@@ -827,20 +830,30 @@ document.addEventListener('DOMContentLoaded', () => {
     }, 150);
   };
 
-  timer.addEventListener('click', (e) => {
-    e.stopPropagation();
-    const isVisible = !overlay.classList.contains('hidden');
-    isVisible ? hideOverlay() : showOverlay();
-  });
+  // ensure we don't add duplicate listeners
+  if (!timer.dataset.overlayInit) {
+    timer.addEventListener('click', (e) => {
+      e.stopPropagation();
+      const isVisible = !overlay.classList.contains('hidden');
+      isVisible ? hideOverlay() : showOverlay();
+    });
+    timer.dataset.overlayInit = 'true';
+  }
 
-  document.addEventListener('click', (e) => {
-    if (!overlay.classList.contains('hidden')) {
-      if (!overlay.contains(e.target) && !timer.contains(e.target)) {
-        hideOverlay();
+  if (!document.body.dataset.overlayClickInit) {
+    document.addEventListener('click', (e) => {
+      if (!overlay.classList.contains('hidden')) {
+        if (!overlay.contains(e.target) && !timer.contains(e.target)) {
+          hideOverlay();
+        }
       }
-    }
-  });
-});
+    });
+    document.body.dataset.overlayClickInit = 'true';
+  }
+}
+
+// expose for admin code to call after login
+window.initTimerOverlay = initTimerOverlay;
 
 
 
