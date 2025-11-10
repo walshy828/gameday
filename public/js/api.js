@@ -1,5 +1,7 @@
 // public/js/api.js
-const API_BASE = "http://localhost:8888/api"; // change port if needed
+// API base can be injected at runtime via `window.__API_BASE__` (set by server/config)
+// Fallback to a relative path so same-origin deployments work without configuration.
+const API_BASE = (window.__API_BASE__ && window.__API_BASE__.length > 0) ? window.__API_BASE__ : '/api';
 
 async function apiGet(endpoint) {
   const res = await fetch(`${API_BASE}${endpoint}`);

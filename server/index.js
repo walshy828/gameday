@@ -14,6 +14,15 @@ const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 app.use(express.static(path.join(__dirname, '../public')));
 
+// Serve a tiny runtime config JS that the frontend can read to know API_BASE.
+// Set API_BASE in your Docker/hosting environment as the full API base (e.g. https://api.example.com/api)
+app.get('/config.js', (req, res) => {
+  const apiBase = process.env.API_BASE || '';
+  res.type('application/javascript');
+  // Safely serialize the string
+  res.send(`window.__API_BASE__ = ${JSON.stringify(apiBase)};`);
+});
+
 // Utilities from env
 const ADMIN_PASSWORD = process.env.ADMIN_PASSWORD;
 const SUPERADMIN_PASSWORD = process.env.SUPERADMIN_PASSWORD;
