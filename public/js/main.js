@@ -75,13 +75,39 @@ function showStatus(message, isError = false) {
   }, 1000);
 }
 
+// Initialize Google Analytics (called after /api/allData populates App.settings)
+function initGoogleAnalytics(gaId) {
+  if (!gaId) return;
+  try {
+    // If gtag already present, re-configure
+    if (window.gtag) {
+      window.gtag('config', gaId);
+      return;
+    }
+
+    const script = document.createElement('script');
+    script.async = true;
+    script.src = `https://www.googletagmanager.com/gtag/js?id=${gaId}`;
+    document.head.appendChild(script);
+
+    window.dataLayer = window.dataLayer || [];
+    function gtag(){ window.dataLayer.push(arguments); }
+    window.gtag = gtag;
+    window.gtag('js', new Date());
+    window.gtag('config', gaId);
+    console.log('Google Analytics initialized for:', gaId);
+  } catch (err) {
+    console.error('Failed to initialize Google Analytics', err);
+  }
+}
+
+
+
 function hideStatus() {
   clearTimeout(statusTimer);
   const toast = document.getElementById('status-toast');
   toast.classList.add('hidden');
 }
-
-
 
 async function serverCall(funcName, arg1) {
   const controller = new AbortController();
@@ -147,6 +173,15 @@ async function loadData(divisionName) {
     // Update app settings (coming from backend now)
     App.settings = settings || {};
     App.settings.is_tie_allowed = settings?.is_tie_allowed ?? true;
+    // Initialize Google Analytics if configured from server-side settings
+    // (we initialize here after /api/allData ensures App.settings is populated)
+    try {
+      const gaId = App.settings.ga_measurement_id || window.__GA_MEASUREMENT_ID__;
+      if (gaId && typeof initGoogleAnalytics === 'function') initGoogleAnalytics(gaId);
+    } catch (e) {
+      console.warn('GA init failed:', e);
+    }
+    console.log(`load data - GA ID: ${App.settings.google_analytics_id}`);
 
     // Update standings and schedule data
     App.data.allStandingsData = standings || [];
@@ -170,7 +205,13 @@ async function loadData(divisionName) {
     // Render everything
     renderStandings(App.data.allStandingsData);
     updateScheduleView();
-    updateAdminMatchEntryView();
+    // Use immediate render after initial load to avoid duplicate renders from
+    // concurrent sources (API + Firebase listener + switchView).
+    if (typeof window.renderAdminMatchEntryNow === 'function') {
+      window.renderAdminMatchEntryNow();
+    } else {
+      updateAdminMatchEntryView();
+    }
 
     // Update admin standings ticker
     loadAndStartStandingsPager(App.data.allStandingsData);
@@ -298,22 +339,35 @@ function watchDivision(divisionName) {
     }
 
     currentDivisionListener = divisionRef;
-    divisionRef.on('value', (snapshot) => {
-        const data = snapshot.val();
-        if (!data) return;
+  // Skip the first firebase 'value' callback because `loadData()` will have
+  // already performed the initial render. Subsequent 'value' events are
+  // real-time updates that should trigger renders.
+  let firstSnapshot = true;
+  divisionRef.on('value', (snapshot) => {
+    if (firstSnapshot) {
+      firstSnapshot = false;
+      return; // Ignore the initial callback to avoid duplicate renders
+    }
 
-        App.data.standings = data.standings || [];
-        const scheduleData = data.schedule || [];
-        App.data.allScheduleData = Array.isArray(scheduleData)
-        ? scheduleData.map((match, index) => ({ ...match, firebaseIndex: index }))
-        : Object.entries(scheduleData).map(([key, match]) => ({
-            ...match,
-            firebaseIndex: key
-            }));
-        renderStandings(App.data.standings);
-        updateScheduleView();
-        updateAdminMatchEntryView();
-    });
+    const data = snapshot.val();
+    if (!data) return;
+
+    App.data.standings = data.standings || [];
+    const scheduleData = data.schedule || [];
+    App.data.allScheduleData = Array.isArray(scheduleData)
+    ? scheduleData.map((match, index) => ({ ...match, firebaseIndex: index }))
+    : Object.entries(scheduleData).map(([key, match]) => ({
+      ...match,
+      firebaseIndex: key
+      }));
+    renderStandings(App.data.standings);
+    updateScheduleView();
+    updateAdminMatchEntryView();
+    gtag('event','filter_change', {
+      filter_name: 'division',
+      filter_value: divisionName
+  });
+  });
 }
 
 
@@ -512,7 +566,6 @@ function initRounds() {
   if (!App?.data?.allScheduleData) return;
 
   allRounds = loadRounds();
-  console.log('Rounds initialized:', allRounds);
 
   // Ensure currentRound is valid
   roundsRef.once('value').then(snap => {
@@ -562,8 +615,6 @@ roundsRef.on('value', snap => {
 
 /**************************************************/
 
-
-console.log(`SuperAdmin: ${App.state.isSuperAdmin}`);
 
 // --- After-Round Duration Controls ---
 const afterRoundSettingsBtn = document.getElementById('after-round-settings-btn');

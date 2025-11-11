@@ -23,6 +23,37 @@
             }
         }
     </script>
+    <script>
+        //main app namespace for configurations and data
+        const App = {
+          state: {
+            isAdmin: false,
+            currentView: 'standings'
+          },
+
+          config: {
+            currentSheetName: ''
+          },
+          settings: {},
+          data: {
+            allDivisionNames: [],
+            allStandingsData: [],
+            allScheduleData: [],
+            teamNames: [],
+            courtNames: []
+          },
+
+          admin: {
+            currentGameIndex: null
+          },
+          refresh: {
+            isLoadingData: false,
+          }
+           
+        }
+    </script>
+   
+
     <script type="module" src="./js/api.js"></script>
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@100..900&display=swap" rel="stylesheet">
     <style>
@@ -788,37 +819,15 @@
 <script src="https://www.gstatic.com/firebasejs/10.13.1/firebase-database-compat.js"></script>
 <script src="https://www.gstatic.com/firebasejs/10.13.1/firebase-auth-compat.js"></script>
 
-    <script>
-        //main app namespace for configurations and data
-        const App = {
-          state: {
-            isAdmin: false,
-            currentView: 'standings'
-          },
+    <script src="/config.js"></script>
+<script type="module" src="./js/main.js"></script>
 
-          config: {
-            currentSheetName: ''
-          },
-          settings: {},
-          data: {
-            allDivisionNames: [],
-            allStandingsData: [],
-            allScheduleData: [],
-            teamNames: [],
-            courtNames: []
-          },
-
-          admin: {
-            currentGameIndex: null
-          },
-          refresh: {
-            isLoadingData: false,
-          }
-           
-        }
-
-        </script>
-  <script src="/config.js"></script>
-  <script type="module" src="./js/main.js"></script>
+<!-- Google tag (gtag.js) -->
+    <!--
+      Google Analytics will be initialized from `main.js` after `/api/allData`
+      populates `App.settings.ga_measurement_id`. This avoids race conditions
+      where the GA snippet runs before the server-provided settings arrive.
+    -->
+  
 </body>
 </html>

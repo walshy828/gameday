@@ -192,6 +192,7 @@ function handleDivisionChange(event) {
         const otherSelect = document.getElementById(otherSelectId);
         if (otherSelect) otherSelect.value = newSheetName;
         
+        
         updateSheetInfoDisplay();
         loadData(App.config.currentSheetName);
     }

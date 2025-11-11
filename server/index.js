@@ -5,6 +5,7 @@ import { fileURLToPath } from 'url';
 import * as Sheets from './sheets.js';
 import * as Fb from './firebase.js';
 import crypto from 'crypto';
+import axios from 'axios';
 
 dotenv.config();
 const app = express();
@@ -20,7 +21,8 @@ app.get('/config.js', (req, res) => {
   const apiBase = process.env.API_BASE || '';
   res.type('application/javascript');
   // Safely serialize the string
-  res.send(`window.__API_BASE__ = ${JSON.stringify(apiBase)};`);
+  const gaMeasurementId = process.env.GA_MEASUREMENT_ID || null;
+  res.send(`window.__API_BASE__ = ${JSON.stringify(apiBase)};\nwindow.__GA_MEASUREMENT_ID__ = ${JSON.stringify(gaMeasurementId)};`);
 });
 
 // Utilities from env
@@ -32,7 +34,10 @@ const SECRET_SALT = process.env.SECRET_SALT || 'secret-salt';
 app.get('/api/allData', async (req, res) => {
   try {
     const sheetName = req.query.sheetName || 'Sheet1';
-    const settings = { is_tie_allowed: (process.env.ALLOW_MATCH_TIE === 'true') || false };
+    const settings = { 
+      is_tie_allowed: (process.env.ALLOW_MATCH_TIE === 'true') || false,
+      ga_measurement_id: process.env.GA_MEASUREMENT_ID || null
+    };
     const standings = await Sheets.getStandings(sheetName);
     const schedule = await Sheets.getSchedule(sheetName);
     res.json({ settings, standings, schedule });
@@ -135,6 +140,35 @@ function isValidToken(tokenFromClient) {
   const expectedSuper = computeToken(process.env.SUPERADMIN_PASSWORD || '');
   // Accept either admin or superadmin token
   return tokenFromClient === expectedAdmin || tokenFromClient === expectedSuper;
+}
+
+
+const GA_MEASUREMENT_ID = process.env.GA_MEASUREMENT_ID;
+const GA_API_SECRET = process.env.GA_API_SECRET;
+
+export async function trackServerEvent(eventName, params = {}, clientId = 'system') {
+  if (!GA_MEASUREMENT_ID || !GA_API_SECRET) {
+    console.log('Google Analytics not configured — skipping event');
+    return;
+  }
+
+  try {
+    await axios.post(
+      `https://www.google-analytics.com/mp/collect?measurement_id=${GA_MEASUREMENT_ID}&api_secret=${GA_API_SECRET}`,
+      {
+        client_id: clientId,
+        events: [
+          {
+            name: eventName,
+            params
+          }
+        ]
+      }
+    );
+    console.log(`✅ Sent GA event: ${eventName}`);
+  } catch (err) {
+    console.error('❌ Failed to send GA event:', err.response?.data || err.message);
+  }
 }
 
 const PORT = process.env.PORT || 8888;

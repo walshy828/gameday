@@ -2,7 +2,8 @@
 import { validateAdmin, saveMatchResult as apiSaveMatchResult } from './api.js';
 import { getFilterableTeamName, parseRoundTime } from './schedule.js';
 
-function updateAdminMatchEntryView() {
+// Core renderer (kept private) — we'll expose a debounced public wrapper below
+function renderAdminMatchEntryViewImpl() {
     if (!App.state.isAdmin) {
         document.getElementById('admin-match-list').innerHTML = '<p class="text-center py-4 text-gray-500">Please log in as an Admin to access match entry.</p>';
         return;
@@ -24,10 +25,11 @@ function updateAdminMatchEntryView() {
     try {
         console.log('updateAdminMatchEntryView called', {
             isAdmin: App.state.isAdmin,
+            isSuperAdmin: App.state.isSuperAdmin,
             totalMatches: Array.isArray(App.data.allScheduleData) ? App.data.allScheduleData.length : 0,
             selectedTeam,
             selectedCourt,
-            isHidingPlayed
+            isHidingPlayed,
         });
     } catch (e) {
         console.log('Diagnostic log failed:', e);
@@ -238,6 +240,40 @@ function updateAdminMatchEntryView() {
     matchListDiv.appendChild(fragment);
 }
 
+// Simple debounce utility to coalesce rapid calls into a single render
+function debounce(fn, wait = 50) {
+    let timer = null;
+    return function(...args) {
+        // If a full data load is in progress, skip scheduling renders; the loader
+        // will call `renderAdminMatchEntryNow()` once it's finished.
+        if (App && App.refresh && App.refresh.isLoadingData) return;
+
+        if (timer) clearTimeout(timer);
+        timer = setTimeout(() => {
+            timer = null;
+            try { fn.apply(this, args); } catch (e) { console.error('Debounced render error', e); }
+        }, wait);
+    };
+}
+
+// Public debounced function exported/used throughout the app and referenced by inline handlers.
+const updateAdminMatchEntryView = debounce(renderAdminMatchEntryViewImpl, 40);
+
+// Immediate render helper to be called when we want to force a single render
+// (for example after the initial load completes). This bypasses the debounce
+// and is safe to call repeatedly.
+function renderAdminMatchEntryNow() {
+    try {
+        renderAdminMatchEntryViewImpl();
+    } catch (e) {
+        console.error('Immediate render error', e);
+    }
+}
+
+// Expose immediate renderer to global so other modules (main.js) can call it
+if (typeof window !== 'undefined') window.renderAdminMatchEntryNow = renderAdminMatchEntryNow;
+
+
 /**
  * Updates the visual state of the Admin button and conditional UI elements.
  */
@@ -257,7 +293,6 @@ function updateAdminUI() {
         adminButton.onclick = logoutAdmin;
         adminEntryTab.classList.remove('hidden'); // Show Admin Tab
         if(App.state.isSuperAdmin) adminTimerControls.classList.remove('hidden');
-        console.log(`App.state.isSuperAdmin: ${App.state.isSuperAdmin}`)
     } else {
         adminStatusText.textContent = 'Admin';
         adminButton.classList.remove('bg-lime-600', 'hover:bg-lime-500', 'text-white');
@@ -320,7 +355,6 @@ async function loginAdmin() {
             sessionStorage.setItem('adminAuthToken', result.token);
             if (result.isSuperAdmin && result.firebaseToken) {
                 try {
-                console.log(`I am a super admin: ${App.state.isSuperAdmin}`)
                 await firebase.auth().signInWithCustomToken(result.firebaseToken);
                 console.log('Super admin signed in to Firebase successfully');
                 } catch (err) {
@@ -512,8 +546,6 @@ async function saveMatchResultFromModal() {
         authToken: authToken,
         matchData: matchData
     };
-
-    console.log(`payload: ${payload}`)
 
     try {
     // Use the API helper to save match result
