@@ -463,7 +463,7 @@ async function loadAndStartStandingsPager(standingsData) {
         console.log("Pager: Mobile config (1 item / 2s cycle)");
     } else {
         // 💻 Desktop/Large Screen Configuration
-        itemsPerPage = 5;
+        itemsPerPage = 4;
         cycleDelayMs = 6000; // 6 seconds
         console.log("Pager: Desktop config (5 items / 6s cycle)");
     }
