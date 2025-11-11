@@ -6,6 +6,9 @@ import * as Sheets from './sheets.js';
 import * as Fb from './firebase.js';
 import crypto from 'crypto';
 import axios from 'axios';
+import { initRealtimeListeners } from './firebase-listener.js';
+
+
 
 dotenv.config();
 const app = express();
@@ -173,3 +176,6 @@ export async function trackServerEvent(eventName, params = {}, clientId = 'syste
 
 const PORT = process.env.PORT || 8888;
 app.listen(PORT, () => console.log(`Server started at http://localhost:${PORT}`));
+
+// Then start Firebase listeners
+initRealtimeListeners();

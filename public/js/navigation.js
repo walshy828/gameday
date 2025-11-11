@@ -247,6 +247,9 @@ function initializeFilter(retainedTeam = 'all', retainedCourt = 'all', retainedA
  */
 function switchView(view) {
     App.state.currentView = view;
+    //gtag('event', 'switch_view', {
+    //                view: view
+    //                });
     const views = {
         'standings': document.getElementById('standings-view'),
         'schedule': document.getElementById('schedule-view'),

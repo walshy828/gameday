@@ -29,3 +29,6 @@ export async function pushMatchUpdate(sheetName, firebaseIndex, payload) {
 export async function createCustomToken(uid, claims = {}) {
   return admin.auth().createCustomToken(uid, claims);
 }
+
+// Also export the initialized admin SDK as the default export for callers
+export default admin;

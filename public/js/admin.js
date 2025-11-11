@@ -349,6 +349,7 @@ async function loginAdmin() {
         
         if (result && result.isAdmin) {
             App.state.isAdmin = true;
+            
             //store this for persitstance
             sessionStorage.setItem('isAdmin', 'true');
             sessionStorage.setItem('isSuperAdmin', 'false');
@@ -365,7 +366,17 @@ async function loginAdmin() {
                 sessionStorage.setItem('firebaseToken', result.firebaseToken);
                 // initialize/move timer overlay for superadmin (if present)
                 if (typeof window.initTimerOverlay === 'function') window.initTimerOverlay();
-
+                gtag('event', 'login', {
+                    method: 'web', // or 'google', 'facebook', etc.
+                    success: true,
+                    user_id: 'superadmin' // optional, only if you have one
+                });
+            } else {
+                gtag('event', 'login', {
+                    method: 'web', // or 'google', 'facebook', etc.
+                    success: true,
+                    user_id: 'admin' // optional, only if you have one
+                    });
             }
 
             hideAdminLoginModal();
@@ -379,6 +390,10 @@ async function loginAdmin() {
             loginMessage.textContent = 'Invalid password.';
             sessionStorage.removeItem('adminAuthToken'); // Clear any old token
             loginMessage.classList.remove('hidden');
+            gtag('event', 'login_failed', {
+                    method: 'web',
+                    success: false
+                    });
         }
 
     } catch (error) {
@@ -546,6 +561,7 @@ async function saveMatchResultFromModal() {
         authToken: authToken,
         matchData: matchData
     };
+
 
     try {
     // Use the API helper to save match result

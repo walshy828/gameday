@@ -363,6 +363,15 @@ function watchDivision(divisionName) {
     renderStandings(App.data.standings);
     updateScheduleView();
     updateAdminMatchEntryView();
+    // If a playoff final has been completed, show the championship banner locally
+    try {
+      const finalsGame = App.data.allScheduleData && App.data.allScheduleData.find(game => game.roundTime === "P5.Finals" && game.winner);
+      if (finalsGame && typeof championshipBanner === 'function') {
+        championshipBanner();
+      }
+    } catch (e) {
+      console.error('Error running championshipBanner on division update:', e);
+    }
     gtag('event','filter_change', {
       filter_name: 'division',
       filter_value: divisionName
