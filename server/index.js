@@ -18,6 +18,20 @@ const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 app.use(express.static(path.join(__dirname, '../public')));
 
+// Fallback route to serve the generated Tailwind CSS with correct MIME type.
+// Some hosting setups may rewrite unknown paths to index.html which results in
+// the CSS being served with text/html. This explicit route ensures the CSS is
+// delivered as text/css when present.
+app.get('/dist/output.css', (req, res, next) => {
+  const cssPath = path.join(__dirname, '../public/dist/output.css');
+  res.sendFile(cssPath, (err) => {
+    if (err) {
+      // Let the static middleware or other handlers deal with the error
+      next(err);
+    }
+  });
+});
+
 // Serve a tiny runtime config JS that the frontend can read to know API_BASE.
 // Set API_BASE in your Docker/hosting environment as the full API base (e.g. https://api.example.com/api)
 app.get('/config.js', (req, res) => {
