@@ -112,6 +112,7 @@ app.post('/api/saveMatchResult', async (req, res) => {
     if (!isValidToken(authToken)) return res.status(401).json({ success: false, error: 'Authentication failed.' });
 
     const result = await Sheets.saveMatchResult(matchData);
+    const dbResult = await import('./mariadb.js').then(mod => mod.submitGameDB(matchData));
     // push update to firebase realtime (optional)
     try {
       await Fb.pushMatchUpdate(matchData.sheetName, matchData.firebaseIndex, {
