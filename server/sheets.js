@@ -108,8 +108,8 @@ export async function saveMatchResult(matchData) {
 
   const updatePayload = {
     adminName: adminName || '',
-    winner: winner || '',
-    playersRemaining: playersRemaining || '',
+    adminWinner: winner || '',
+    adminPlayersRemaining: playersRemaining || '',
     notes: notes || '',
     lastUpdated: new Date().toISOString()
   };
