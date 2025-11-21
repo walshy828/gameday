@@ -125,10 +125,41 @@ app.post('/api/saveMatchResult', async (req, res) => {
 
     if (!isValidToken(authToken)) return res.status(401).json({ success: false, error: 'Authentication failed.' });
 
-    const result = await Sheets.saveMatchResult(matchData);
-    const dbResult = await import('./mariadb.js').then(mod => mod.submitGameDB(matchData));
-    // push update to firebase realtime (optional)
+    // Detailed logging for save flow
+    const requestId = crypto.randomBytes(4).toString('hex');
+    const startTs = Date.now();
+    console.log(`[${requestId}] /api/saveMatchResult START`, { sheetName: matchData?.sheetName, firebaseIndex: matchData?.firebaseIndex, rowIndex: matchData?.rowIndex, adminName: matchData?.adminName });
+
+    let sheetsResult = null;
     try {
+      const t0 = Date.now();
+      sheetsResult = await Sheets.saveMatchResult(matchData);
+      console.log(`[${requestId}] Sheets.saveMatchResult OK`, { durationMs: Date.now() - t0, sheetsResult });
+    } catch (err) {
+      console.error(`[${requestId}] Sheets.saveMatchResult FAILED`, err);
+      // continue to attempt other writes, but surface error
+      sheetsResult = { success: false, error: err.toString() };
+    }
+
+    let dbResult = null;
+    try {
+      const t0 = Date.now();
+      const mariadb = await import('./mariadb.js');
+      if (mariadb && typeof mariadb.submitGameDB === 'function') {
+        dbResult = await mariadb.submitGameDB(matchData);
+        console.log(`[${requestId}] mariadb.submitGameDB OK`, { durationMs: Date.now() - t0, dbResult });
+      } else {
+        console.log(`[${requestId}] mariadb.submitGameDB skipped (no export)`);
+      }
+    } catch (err) {
+      console.error(`[${requestId}] mariadb.submitGameDB FAILED`, err);
+      dbResult = { success: false, error: err.toString() };
+    }
+
+    // push update to firebase realtime (also log result)
+    let fbPushResult = null;
+    try {
+      const t0 = Date.now();
       await Fb.pushMatchUpdate(matchData.sheetName, matchData.firebaseIndex, {
         adminName: matchData.adminName,
         adminWinner: matchData.winner,
@@ -136,11 +167,18 @@ app.post('/api/saveMatchResult', async (req, res) => {
         notes: matchData.notes,
         lastUpdated: new Date().toISOString()
       });
+      fbPushResult = { success: true, durationMs: Date.now() - t0 };
+      console.log(`[${requestId}] Fb.pushMatchUpdate OK`, fbPushResult);
     } catch (e) {
-      console.error('Firebase push failed', e);
+      console.error(`[${requestId}] Fb.pushMatchUpdate FAILED`, e);
+      fbPushResult = { success: false, error: e.toString() };
     }
 
-    res.json(result);
+    const totalMs = Date.now() - startTs;
+    console.log(`[${requestId}] /api/saveMatchResult COMPLETE`, { totalMs, sheetsResult, dbResult, fbPushResult });
+
+    // Return the sheetsResult to the client for compatibility
+    res.json(sheetsResult);
   } catch (e) {
     console.error('saveMatchResult error', e);
     res.status(500).json({ success: false, error: e.toString() });
