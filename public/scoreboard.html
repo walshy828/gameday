@@ -258,7 +258,7 @@
       #module-standings {
         grid-column: 3;
         grid-row: 1 / span 2;
-        align-self: stretch;
+        align-self: start;
       }
       #module-bracket {
         grid-column: 4;
@@ -535,9 +535,108 @@
       text-transform: uppercase;
     }
 
+    /* game-card core styles */
+    .game-card {
+      border-radius: 14px;
+      padding: 12px 14px;
+      border: 1px solid rgba(255, 255, 255, 0.1);
+      background: rgba(255, 255, 255, 0.05);
+      transition: all 0.2s;
+    }
+
     .game-card.on-court {
-      background: rgba(255,255,255,.93);
-      border-color: rgba(224,184,99,.55);
+      background: rgba(224, 184, 99, 0.08);
+      border-color: rgba(224, 184, 99, 0.4);
+    }
+
+    .games-list-stack {
+      display: flex;
+      flex-direction: column;
+      gap: 12px;
+    }
+
+    .gc-court-badge {
+      font-size: 9px; font-weight: 700;
+      letter-spacing: .08em; text-transform: uppercase;
+      padding: 3px 10px; border-radius: 999px;
+      background: rgba(224, 184, 99, 0.12);
+      border: 1px solid rgba(224, 184, 99, 0.35);
+      color: var(--gold-l);
+    }
+
+    /* Next Up group and items styling */
+    .next-round-group {
+      margin-bottom: 18px;
+    }
+
+    .next-round-header {
+      font-size: 10px;
+      font-weight: 800;
+      letter-spacing: .08em;
+      color: var(--gold);
+      text-transform: uppercase;
+      margin-bottom: 8px;
+      border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+      padding-bottom: 4px;
+    }
+
+    .next-round-games {
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+    }
+
+    .next-game-row-new {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 10px 14px;
+      border-radius: 12px;
+      background: rgba(255, 255, 255, 0.04);
+      border: 1px solid rgba(255, 255, 255, 0.06);
+      font-size: 13px;
+    }
+
+    .ngr-court-badge {
+      font-size: 9px;
+      font-weight: 700;
+      text-transform: uppercase;
+      color: var(--gold-l);
+      background: rgba(255, 255, 255, 0.05);
+      border: 1px solid rgba(255, 255, 255, 0.1);
+      padding: 4px 8px;
+      border-radius: 8px;
+    }
+
+    .ngr-teams-two-lines {
+      text-align: right;
+      line-height: 1.35;
+      flex: 1;
+      margin-left: 12px;
+    }
+
+    .ngr-line1 {
+      font-weight: 600;
+      color: rgba(255, 255, 255, 0.9);
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+
+    .ngr-vs-inline {
+      font-size: 9px;
+      color: rgba(255, 255, 255, 0.35);
+      font-weight: 500;
+      margin-left: 4px;
+      text-transform: uppercase;
+    }
+
+    .ngr-line2 {
+      font-weight: 600;
+      color: rgba(255, 255, 255, 0.9);
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
     }
 
     .gc-header {
@@ -1604,7 +1703,7 @@ function renderCurrentGames(schedule, liveRound) {
     <div style="margin-bottom:10px">
       <span class="round-chip live">Round ${esc(liveRound)}</span>
     </div>
-    <div class="games-grid">${games.map(g => gameCardHTML(g, 'live')).join('')}</div>
+    <div class="games-list-stack">${games.map(g => gameCardHTML(g, 'live')).join('')}</div>
   `;
 }
 
@@ -1617,14 +1716,6 @@ function renderNextUp(schedule) {
   if (!body) return;
 
   const remaining = schedule.filter(g => !isReported(g) && !isPlayoff(g));
-  remaining.sort((a, b) => {
-    const na = parseInt((a.roundTime || '').replace(/\D/g, '')) || 999;
-    const nb = parseInt((b.roundTime || '').replace(/\D/g, '')) || 999;
-    if (na !== nb) return na - nb;
-    const ca = parseInt(a.court) || 0;
-    const cb = parseInt(b.court) || 0;
-    return ca - cb;
-  });
 
   if (remaining.length === 0) {
     badge.textContent = '';
@@ -1634,23 +1725,40 @@ function renderNextUp(schedule) {
 
   badge.textContent = `${remaining.length} REMAINING`;
 
-  body.innerHTML = `
-    <div class="next-games-list">
-      ${remaining.map(g => `
-        <div class="next-game-row">
-          <div class="ngr-left">
-            <span class="ngr-round">Rnd ${esc(g.roundTime)}</span>
-            <span class="ngr-court">Court ${esc(g.court || '?')}</span>
-          </div>
-          <div class="ngr-teams">
-            <span class="ngr-team">${esc(g.team1 || 'TBD')}</span>
-            <span class="ngr-vs">vs</span>
-            <span class="ngr-team">${esc(g.team2 || 'TBD')}</span>
-          </div>
+  // Group by roundTime (the "Match")
+  const groups = {};
+  remaining.forEach(g => {
+    const rt = g.roundTime || 'TBD';
+    if (!groups[rt]) groups[rt] = [];
+    groups[rt].push(g);
+  });
+
+  // Sort rounds descending by time
+  const sortedRounds = Object.keys(groups).sort((a, b) => {
+    const na = parseInt(a.replace(/\D/g, '')) || 0;
+    const nb = parseInt(b.replace(/\D/g, '')) || 0;
+    return nb - na;
+  });
+
+  body.innerHTML = sortedRounds.map(rt => {
+    const games = groups[rt].sort((a, b) => (parseInt(a.court) || 0) - (parseInt(b.court) || 0));
+    return `
+      <div class="next-round-group">
+        <div class="next-round-header">ROUND ${esc(rt)}</div>
+        <div class="next-round-games">
+          ${games.map(g => `
+            <div class="next-game-row-new">
+              <div class="ngr-court-badge">Court ${esc(g.court || '?')}</div>
+              <div class="ngr-teams-two-lines">
+                <div class="ngr-line1">${esc(g.team1 || 'TBD')} <span class="ngr-vs-inline">vs.</span></div>
+                <div class="ngr-line2">${esc(g.team2 || 'TBD')}</div>
+              </div>
+            </div>
+          `).join('')}
         </div>
-      `).join('')}
-    </div>
-  `;
+      </div>
+    `;
+  }).join('');
 }
 
 // ================================================================
@@ -1665,41 +1773,35 @@ function gameCardHTML(game, ctx) {
 
   const onCourt  = ctx === 'live' && !reported;
   const cardCls  = `game-card${onCourt ? ' on-court' : ''}`;
-  const dark     = !onCourt;
+  const dark     = true; // Always dark theme on scoreboard dashboard
 
-  const t1Base = dark ? 't-slot dark' : 't-slot light';
-  const t2Base = dark ? 't-slot dark' : 't-slot light';
+  const t1Base = 't-slot dark';
+  const t2Base = 't-slot dark';
 
   let t1Cls = t1Base;
   let t2Cls = t2Base;
   if (reported && !tie) {
-    if (aWon) t1Cls += dark ? ' winner-dark' : ' winner-light';
-    else      t1Cls += dark ? ' loser-dark'  : ' loser-light';
-    if (bWon) t2Cls += dark ? ' winner-dark' : ' winner-light';
-    else      t2Cls += dark ? ' loser-dark'  : ' loser-light';
+    if (aWon) t1Cls += ' winner-dark';
+    else      t1Cls += ' loser-dark';
+    if (bWon) t2Cls += ' winner-dark';
+    else      t2Cls += ' loser-dark';
   }
-
-  let statusLabel = 'UPCOMING';
-  let statusCls   = 'st-upcoming';
-  if (onCourt)        { statusLabel = 'ON COURT'; statusCls = 'st-on-court'; }
-  else if (reported)  { statusLabel = tie ? 'TIE' : 'FINAL'; statusCls = 'st-final'; }
 
   let resultHTML = '';
   if (reported) {
-    const resCls = `game-result ${dark ? 'dark' : 'light'}`;
+    const resCls = 'game-result dark';
     if (tie)   resultHTML = `<div class="${resCls}">TIE</div>`;
     else if (winner) resultHTML = `<div class="${resCls}">WIN · ${esc(winner)} · ${esc(game.playersRemaining ?? 0)} left</div>`;
   }
 
   return `
     <div class="${cardCls}">
-      <div class="gc-header">
-        <span class="court-label ${dark ? 'dark' : 'light'}">COURT ${esc(game.court || '?')}</span>
-        <span class="gc-status ${statusCls}">${statusLabel}</span>
+      <div class="gc-header" style="justify-content: flex-end; margin-bottom: 6px;">
+        <span class="gc-court-badge">COURT ${esc(game.court || '?')}</span>
       </div>
       <div class="team-vs">
         <div class="${t1Cls}">${esc(game.team1 || 'TBD')}</div>
-        <div class="vs-divider ${dark ? 'dark' : 'light'}"></div>
+        <div class="vs-divider dark"></div>
         <div class="${t2Cls}">${esc(game.team2 || 'TBD')}</div>
       </div>
       ${resultHTML}
