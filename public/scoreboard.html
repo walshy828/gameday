@@ -454,37 +454,84 @@
     .bracket-outer::-webkit-scrollbar { height: 4px; }
     .bracket-outer::-webkit-scrollbar-thumb { background: rgba(255,255,255,.14); border-radius: 2px; }
 
+    /* Row stretches all columns to the same height */
     .bracket-row {
       display: flex;
-      gap: 0;
       min-width: max-content;
       align-items: stretch;
     }
 
-    .bracket-round-col { display: flex; flex-direction: column; min-width: 230px; }
+    /* Each round column is a flex column */
+    .bracket-round-col {
+      display: flex;
+      flex-direction: column;
+      min-width: 220px;
+      flex-shrink: 0;
+    }
 
     .bracket-round-hdr {
+      height: 34px;
+      min-height: 34px;
+      flex-shrink: 0;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 4px;
       font-size: 9px; font-weight: 700;
       letter-spacing: .14em; text-transform: uppercase;
       color: rgba(255,255,255,.38);
       text-align: center;
-      padding-bottom: 12px;
     }
 
     .bracket-round-hdr .round-key {
-      color: rgba(255,255,255,.2);
-      margin-left: 4px;
+      color: rgba(255,255,255,.18);
     }
 
-    .bracket-games-col {
+    /* Slots column fills remaining height after header */
+    .bracket-slots-col {
       display: flex;
       flex-direction: column;
-      gap: 12px;
       flex: 1;
-      padding: 0 10px;
-      justify-content: space-around;
+      min-height: 0;
     }
 
+    /* Each slot has dynamic flex — later rounds get higher flex values
+       so their single game is vertically centred across N feeder slots */
+    .bracket-slot {
+      display: flex;
+      flex-direction: column;
+      justify-content: center;
+      padding: 5px 10px;
+      min-height: 0;
+    }
+
+    /* SVG connector column between rounds */
+    .bracket-conn-col {
+      width: 30px;
+      flex-shrink: 0;
+      display: flex;
+      flex-direction: column;
+    }
+
+    .bracket-conn-hdr-spacer {
+      height: 34px;
+      min-height: 34px;
+      flex-shrink: 0;
+    }
+
+    .bracket-conn-svg-wrap {
+      flex: 1;
+      min-height: 0;
+      position: relative;
+    }
+
+    .bracket-conn-svg-wrap svg {
+      position: absolute;
+      top: 0; left: 0;
+      width: 100%; height: 100%;
+    }
+
+    /* Match card */
     .bracket-match {
       border-radius: 12px;
       border: 1px solid rgba(255,255,255,.12);
@@ -504,7 +551,6 @@
       border-bottom: 1px solid rgba(255,255,255,.07);
       font-size: 12px; font-weight: 600;
       color: rgba(255,255,255,.65);
-      transition: background .15s;
     }
 
     .bracket-team-row:last-child { border-bottom: none; }
@@ -528,6 +574,11 @@
       color: rgba(255,255,255,.35);
     }
 
+    .bracket-team-row.placeholder .bt-seed {
+      background: rgba(255,255,255,.04);
+      color: rgba(255,255,255,.2);
+    }
+
     .bracket-team-row.winner .bt-seed {
       background: linear-gradient(140deg, var(--mar-l), var(--mar));
       color: var(--gold-l);
@@ -540,21 +591,6 @@
       color: var(--gold-d);
       letter-spacing: .06em;
       flex-shrink: 0;
-    }
-
-    /* Connector between rounds */
-    .bracket-connector {
-      width: 20px; flex-shrink: 0;
-      display: flex; flex-direction: column;
-      justify-content: center; align-items: center;
-      padding-top: 29px; /* align with header */
-    }
-
-    .bracket-connector-line {
-      width: 2px;
-      background: rgba(255,255,255,.1);
-      flex: 1;
-      border-radius: 1px;
     }
 
     /* ==========================================================
@@ -1546,78 +1582,145 @@ function renderBracket(schedule) {
     return;
   }
 
-  // Group by roundTime, sort P1 < P2 < P3...
+  // ── Group by roundTime key (preserve original case/suffix for display) ──
   const roundMap = new Map();
   pGames.forEach(g => {
-    const key = (g.roundTime || '').trim().toUpperCase();
+    const key = (g.roundTime || '').trim();
     if (!roundMap.has(key)) roundMap.set(key, []);
     roundMap.get(key).push(g);
   });
 
-  const rounds = [...roundMap.keys()].sort((a, b) => {
-    const na = parseInt(a.replace(/\D/g,'')) || 0;
-    const nb = parseInt(b.replace(/\D/g,'')) || 0;
-    return na - nb;
-  });
+  // Sort rounds by numeric P value only — handles "P1", "P2.QuarterFinals", "P3.Semis", etc.
+  // e.g. "P2.Round of 16" → extracts 2, never concatenates with other digits
+  const extractPNum = k => { const m = /^P(\d+)/i.exec((k || '').trim()); return m ? +m[1] : 999; };
+  const rounds = [...roundMap.keys()].sort((a, b) => extractPNum(a) - extractPNum(b));
 
   badge.textContent = `${rounds.length} ROUND${rounds.length !== 1 ? 'S' : ''}`;
 
-  function roundLabel(key, all) {
-    const fromEnd = all.length - 1 - all.indexOf(key);
-    if (fromEnd === 0) return 'Championship';
-    if (fromEnd === 1) return 'Semifinals';
-    if (fromEnd === 2) return 'Quarterfinals';
-    return `Round ${all.indexOf(key) + 1}`;
+  const gameCounts = rounds.map(r => roundMap.get(r).length);
+
+  // ── Human-readable label driven by game count (not fragile position math) ──
+  function roundLabel(ri) {
+    const n       = gameCounts[ri];
+    const fromEnd = rounds.length - 1 - ri;
+    if (fromEnd === 0)                       return 'Championship';
+    if (n <= 2  || fromEnd === 1)            return 'Semifinals';
+    if (n <= 4  || fromEnd === 2)            return 'Quarterfinals';
+    if (n <= 8)                              return 'Round of 16';
+    if (n <= 16)                             return 'Round of 32';
+    return `Round of ${n * 2}`;
   }
 
-  const cols = rounds.map((rnd, ri) => {
-    const games = roundMap.get(rnd);
-    const isLast = ri === rounds.length - 1;
-    const gamesHTML = games.map(g => bracketMatchHTML(g, isLast)).join('');
+  // ── SVG connector: draws bracket lines between two adjacent rounds ──
+  // leftCount = games in the earlier round, rightCount = games in the later round.
+  // Each right-round game feeds from exactly 2 left-round games.
+  // Y positions are expressed in the 0-100 viewBox so they scale to any height.
+  function connectorSVG(leftCount, rightCount) {
+    const clr = 'rgba(255,255,255,.18)';
+    const lines = [];
+    for (let rj = 0; rj < rightCount; rj++) {
+      const ri1 = 2 * rj;       // index of first feeder game in left round
+      const ri2 = 2 * rj + 1;  // index of second feeder game
+      if (ri2 >= leftCount) continue; // safety for odd counts / byes
 
-    return `
+      // Center Y of each feeder slot (as % of total slots height)
+      const y1   = ((2 * ri1 + 1) / (2 * leftCount)) * 100;
+      const y2   = ((2 * ri2 + 1) / (2 * leftCount)) * 100;
+      const yMid = (y1 + y2) / 2;
+
+      lines.push(
+        // horizontal arm from feeder 1 to mid-column
+        `<line x1="0" y1="${y1.toFixed(3)}" x2="50" y2="${y1.toFixed(3)}" stroke="${clr}" stroke-width="1"/>`,
+        // horizontal arm from feeder 2 to mid-column
+        `<line x1="0" y1="${y2.toFixed(3)}" x2="50" y2="${y2.toFixed(3)}" stroke="${clr}" stroke-width="1"/>`,
+        // vertical spine connecting the two arms
+        `<line x1="50" y1="${y1.toFixed(3)}" x2="50" y2="${y2.toFixed(3)}" stroke="${clr}" stroke-width="1"/>`,
+        // horizontal arm from spine midpoint to right-round card
+        `<line x1="50" y1="${yMid.toFixed(3)}" x2="100" y2="${yMid.toFixed(3)}" stroke="${clr}" stroke-width="1"/>`
+      );
+    }
+    return `<svg viewBox="0 0 100 100" preserveAspectRatio="none">${lines.join('')}</svg>`;
+  }
+
+  // ── Build HTML ───────────────────────────────────────────────────
+  const parts = rounds.map((rnd, ri) => {
+    const games    = roundMap.get(rnd);
+    const isLast   = ri === rounds.length - 1;
+    // Slots in later rounds get proportionally larger flex so one game
+    // is vertically centred across the pair of games it receives from.
+    // R0→flex:1, R1→flex:2, R2→flex:4, R3→flex:8 …
+    const slotFlex = Math.pow(2, ri);
+
+    const slotsHTML = games.map(g => `
+      <div class="bracket-slot" style="flex:${slotFlex}">
+        ${bracketMatchHTML(g, isLast)}
+      </div>
+    `).join('');
+
+    const col = `
       <div class="bracket-round-col">
         <div class="bracket-round-hdr">
-          ${esc(roundLabel(rnd, rounds))}
+          ${esc(roundLabel(ri))}
           <span class="round-key">(${esc(rnd)})</span>
         </div>
-        <div class="bracket-games-col">${gamesHTML}</div>
+        <div class="bracket-slots-col">${slotsHTML}</div>
       </div>
-      ${ri < rounds.length - 1 ? '<div class="bracket-connector"><div class="bracket-connector-line"></div></div>' : ''}
     `;
-  }).join('');
+
+    if (!isLast) {
+      const conn = `
+        <div class="bracket-conn-col">
+          <div class="bracket-conn-hdr-spacer"></div>
+          <div class="bracket-conn-svg-wrap">
+            ${connectorSVG(gameCounts[ri], gameCounts[ri + 1])}
+          </div>
+        </div>
+      `;
+      return col + conn;
+    }
+    return col;
+  });
 
   body.innerHTML = `
     <div class="bracket-outer">
-      <div class="bracket-row">${cols}</div>
+      <div class="bracket-row">${parts.join('')}</div>
     </div>
   `;
 }
 
 function bracketMatchHTML(game, isChampion) {
-  const reported  = isReported(game);
-  const winner    = reported ? (game.winner || '').trim() : null;
+  const reported = isReported(game);
+  const winner   = reported ? (game.winner || '').trim() : null;
+
+  // Extract seed number from names like "Dodgeball Dynamos (#3)" → "3"
+  function extractSeed(name) {
+    const m = /\(#(\d+)\)/.exec(name || '');
+    return m ? m[1] : null;
+  }
 
   function teamRowHTML(teamName, isWinner) {
-    const isPlaceholder = !teamName || teamName.startsWith('Winner') || teamName === 'TBD' || teamName === '—';
+    const n = (teamName || '').trim();
+    // A placeholder is an un-determined slot: "Winner P1", "TBD", blank, or «—»
+    const isPlaceholder = !n || /^Winner\s+P/i.test(n) || n === 'TBD' || n === '—';
+
     let rowCls = 'bracket-team-row';
     if (isPlaceholder) rowCls += ' placeholder';
     else if (isWinner) rowCls += ' winner';
 
-    const seed = isPlaceholder ? '?' : '—';
+    const seed     = isPlaceholder ? '?' : (extractSeed(n) || '—');
     const winLabel = isWinner ? '<span class="bt-win-label">W</span>' : '';
 
     return `
       <div class="${rowCls}">
-        <div class="bt-seed">${seed}</div>
-        <div class="bt-name">${esc(teamName || 'TBD')}</div>
+        <div class="bt-seed">${esc(seed)}</div>
+        <div class="bt-name">${esc(n || 'TBD')}</div>
         ${winLabel}
       </div>
     `;
   }
 
   return `
-    <div class="bracket-match ${isChampion ? 'champion' : ''}">
+    <div class="bracket-match${isChampion ? ' champion' : ''}">
       ${teamRowHTML(game.team1, reported && winner === game.team1)}
       ${teamRowHTML(game.team2, reported && winner === game.team2)}
     </div>
