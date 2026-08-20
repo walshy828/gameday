@@ -1,4 +1,3 @@
-version: '3.9'
 services:
   pos:
     build: .
@@ -6,3 +5,30 @@ services:
       - "8888:8888"
     env_file: .env
     restart: always
+    depends_on:
+      db:
+        condition: service_healthy
+
+  # Local MariaDB datastore, used when DATA_BACKEND=local (see .env).
+  # Safe to leave running even in firebase mode — it just sits idle.
+  # Point DB_HOST at an external server instead if you don't want this
+  # container managing your data.
+  db:
+    image: mariadb:11
+    restart: always
+    environment:
+      MARIADB_ROOT_PASSWORD: ${MARIADB_ROOT_PASSWORD:-change-me-now}
+      MARIADB_DATABASE: ${DB_NAME:-gameday}
+      MARIADB_USER: ${DB_USER:-gameday}
+      MARIADB_PASSWORD: ${DB_PASSWORD:-gameday1}
+    volumes:
+      - mariadb_data:/var/lib/mysql
+      - ./server/datastores/schema.sql:/docker-entrypoint-initdb.d/01-schema.sql:ro
+    healthcheck:
+      test: [ "CMD", "healthcheck.sh", "--connect", "--innodb_initialized" ]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+
+volumes:
+  mariadb_data:
