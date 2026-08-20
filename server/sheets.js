@@ -1,29 +1,12 @@
-// server/sheets.js (Firebase + Sheets bridge)
+// server/sheets.js — Firebase Realtime Database reads/writes.
+// The Google Sheets mirror previously embedded here has moved to
+// server/sheetsMirror.js so it has no dependency on Firebase and can run
+// under either DATA_BACKEND.
 import dotenv from 'dotenv';
 import admin from './firebase.js';
-import { google } from 'googleapis';
 dotenv.config();
 
 const BASE_REF = 'dodgeball-tournament/divisions';
-
-// Google Sheets config (used when available). If not configured, Sheets writes will be skipped.
-const SPREADSHEET_ID = process.env.SPREADSHEET_ID || null;
-let jwtClient = null;
-let sheetsApi = null;
-if (process.env.GOOGLE_CLIENT_EMAIL && process.env.GOOGLE_PRIVATE_KEY && SPREADSHEET_ID) {
-  try {
-    jwtClient = new google.auth.JWT({
-      email: process.env.GOOGLE_CLIENT_EMAIL,
-      key: process.env.GOOGLE_PRIVATE_KEY.replace(/\\n/g, '\n'),
-      scopes: ['https://www.googleapis.com/auth/spreadsheets', 'https://www.googleapis.com/auth/drive.readonly']
-    });
-    sheetsApi = google.sheets({ version: 'v4', auth: jwtClient });
-  } catch (e) {
-    console.warn('Google Sheets client not initialized:', e.message || e);
-    jwtClient = null;
-    sheetsApi = null;
-  }
-}
 
 /**
  * Read division names from the Firebase Realtime Database.
@@ -94,12 +77,13 @@ export async function getSchedule(sheetName) {
 }
 
 /**
- * Save match result - writes to columns H: L (admin columns) and updates a JSON history column (M).
- * matchData must include: sheetName, rowIndex, adminName, winner, playersRemaining, notes
+ * Save match result into Firebase Realtime Database under the schedule entry.
+ * The Google Sheets mirror write has moved to sheetsMirror.js and is called
+ * separately (see server/index.js) so it stays independent of this backend.
+ * matchData must include: sheetName, firebaseIndex, adminName, winner, playersRemaining, notes
  */
 export async function saveMatchResult(matchData) {
-  // Save match result into Firebase Realtime Database under the schedule entry
-  const { sheetName, firebaseIndex, rowIndex, adminName, winner, playersRemaining, notes } = matchData;
+  const { sheetName, firebaseIndex, adminName, winner, playersRemaining, notes } = matchData;
   if (!sheetName || (firebaseIndex === undefined || firebaseIndex === null)) {
     return { success: false, error: 'Invalid sheetName/firebaseIndex' };
   }
@@ -114,67 +98,14 @@ export async function saveMatchResult(matchData) {
     lastUpdated: new Date().toISOString()
   };
 
-  const results = { firebase: null, sheets: null };
-
-  // Update the schedule entry in Firebase
   try {
     await entryRef.update(updatePayload);
     // push history
     const historyRef = entryRef.child('history');
     await historyRef.push({ name: adminName || '', winner: winner || '', playersRemaining: playersRemaining || '', notes: notes || '', date: new Date().toISOString() });
-    results.firebase = { success: true };
+    return { success: true, results: { firebase: { success: true } } };
   } catch (e) {
     console.error('Firebase update failed', e);
-    results.firebase = { success: false, error: e.toString() };
+    return { success: false, results: { firebase: { success: false, error: e.toString() } } };
   }
-
-  // Also update Google Sheets if configured and rowIndex provided
-  if (sheetsApi && jwtClient && typeof rowIndex !== 'undefined' && rowIndex !== null) {
-    try {
-      // authorize jwt client (no-op if already authorized)
-      await jwtClient.authorize();
-
-      // Read existing history JSON in column M (col 13)
-      const historyRangeA1 = `${sheetName}!M${rowIndex}`;
-      const historyResp = await sheetsApi.spreadsheets.values.get({
-        spreadsheetId: SPREADSHEET_ID, range: historyRangeA1, valueRenderOption: 'UNFORMATTED_VALUE'
-      });
-      let historyArray = [];
-      const current = (historyResp.data.values || [])[0] && (historyResp.data.values[0][0]);
-      if (current) {
-        try { historyArray = JSON.parse(current); if (!Array.isArray(historyArray)) historyArray = []; } catch (e) { historyArray = []; }
-      }
-      historyArray.push({ name: adminName || '', winner: winner || '', playersRemaining: playersRemaining || '', notes: notes || '', date: new Date().toISOString() });
-
-      // Prepare batch update: set admin columns H..L and history column M
-      const valuesForAdmin = [[adminName || '', winner || '', playersRemaining || '', notes || '', new Date().toISOString()]];
-      const requests = [
-        {
-          range: `${sheetName}!H${rowIndex}:L${rowIndex}`,
-          values: valuesForAdmin
-        },
-        {
-          range: `${sheetName}!M${rowIndex}`,
-          values: [[JSON.stringify(historyArray)]]
-        }
-      ];
-
-      await sheetsApi.spreadsheets.values.batchUpdate({
-        spreadsheetId: SPREADSHEET_ID,
-        requestBody: {
-          valueInputOption: 'RAW',
-          data: requests
-        }
-      });
-
-      results.sheets = { success: true };
-    } catch (e) {
-      console.error('Sheets update failed', e);
-      results.sheets = { success: false, error: e.toString() };
-    }
-  } else {
-    results.sheets = { success: false, error: 'Sheets API not configured or rowIndex missing' };
-  }
-
-  return { success: true, results };
 }

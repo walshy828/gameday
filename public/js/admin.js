@@ -1,11 +1,12 @@
 // Avoid importing from main.js (circular). Use the api wrapper directly.
 import { validateAdmin, saveMatchResult as apiSaveMatchResult } from './api.js';
 import { getFilterableTeamName, parseRoundTime } from './schedule.js';
+import { switchView } from './navigation.js';
 
 // Core renderer (kept private) — we'll expose a debounced public wrapper below
 function renderAdminMatchEntryViewImpl() {
     if (!App.state.isAdmin) {
-        document.getElementById('admin-match-list').innerHTML = '<p class="text-center py-4 text-gray-500">Please log in as an Admin to access match entry.</p>';
+        document.getElementById('admin-match-list').innerHTML = '<p class="py-4 text-center text-sm text-white/45">Please sign in to access match entry.</p>';
         return;
     }
     
@@ -92,152 +93,110 @@ function renderAdminMatchEntryViewImpl() {
     
     // ... (Filter Info rendering logic remains the same) ...
     
-    let infoText = `Showing matches in <span class="text-lime-400">${App.config.currentSheetName}</span>`;
-    if (selectedTeam !== 'all') infoText += `, filtered by Team: <span class="text-lime-400">${selectedTeam}</span>`;
-    if (selectedCourt !== 'all') infoText += `, filtered by Court: <span class="text-lime-400">${selectedCourt}</span>`;
-    if (isHidingPlayed) infoText += `, <span class="text-lime-400">Played Games Hidden</span> 🚫`;
-    
+    // Title + identity line (design §9: "Tournament control" for tournament
+    // managers, "Court n results" for court managers).
+    const titleEl = document.getElementById('admin-title');
+    if (titleEl) {
+        titleEl.textContent = App.state.isSuperAdmin
+            ? 'Tournament control'
+            : `Court ${App.state.selectedCourt || '?'} results`;
+    }
+    const whoEl = document.getElementById('admin-who');
+    if (whoEl) {
+        const name = App.state.reporterName || 'Staff';
+        whoEl.textContent = App.state.isSuperAdmin
+            ? `${name} · tournament manager · all courts`
+            : `${name} · court manager · court ${App.state.selectedCourt || '?'} · ${App.config.currentSheetName}`;
+    }
+
+    let infoText = `Showing <span class="text-gold-l">${esc(App.config.currentSheetName)}</span>`;
+    if (selectedTeam !== 'all') infoText += ` · team <span class="text-gold-l">${esc(selectedTeam)}</span>`;
+    if (selectedCourt !== 'all') infoText += ` · court <span class="text-gold-l">${esc(selectedCourt)}</span>`;
+    if (isHidingPlayed) infoText += ` · <span class="text-gold-l">reported games hidden</span>`;
+
     filterInfoDiv.classList.remove('hidden');
     filterInfoDiv.innerHTML = infoText;
 
     const fragment = document.createDocumentFragment(); //for batching updates
     Object.entries(groupedMatches).forEach(([roundTime, games]) => {
-        const roundHeader = document.createElement('h3');
-        roundHeader.className = 'round-header text-xl md:text-2xl font-bold text-white bg-indigo-900 p-3 md:p-4 rounded-lg shadow-inner mt-4 border-l-4 border-lime-500';
-        //roundHeader.className = 'round-header text-xl md:text-2xl font-bold text-lime bg-admin-bg/50 p-3 md:p-4 rounded-lg shadow-inner mt-4 border-l-4 border-lime-500';
-        roundHeader.textContent = `Round: ${roundTime}`;
-        fragment.appendChild(roundHeader);
+        // Design §9: one light card per round — scope kicker on the left, game
+        // count on the right, then a 20px-radius row per game.
+        const card = document.createElement('section');
+        card.className = 'card-light p-4';
+
+        const head = document.createElement('div');
+        head.className = 'flex items-baseline justify-between gap-2.5';
+        head.innerHTML = `
+            <span class="kicker !tracking-[.12em] text-mute">${esc(roundTime)}</span>
+            <span class="kicker !tracking-[.08em]" style="color:var(--mar)">${games.length} GAME${games.length === 1 ? '' : 'S'}</span>
+        `;
+        card.appendChild(head);
+
+        const rows = document.createElement('div');
+        rows.className = 'mt-3 grid gap-1.5';
 
         games.forEach(game => {
-            // Find the original index 
-            const gameIndex = App.data.allScheduleData.findIndex(g => 
+            // Find the original index
+            const gameIndex = App.data.allScheduleData.findIndex(g =>
                 g.roundTime === game.roundTime && g.court === game.court && g.team1 === game.team1 && g.team2 === game.team2
             );
-            
-            const card = document.createElement('div');
-            card.id = `game-entry-${gameIndex}`;
-            
-            // Highlight the card if it has admin data but official data is missing or different
-            const hasAdminEntry = game.adminWinner || game.adminName || game.adminPlayersRemaining;
-            const hasOfficialGameWinner = !!game.winner
-            const cardClass = hasOfficialGameWinner
-                ? 'border-lime-400 border-2'
-                : hasAdminEntry
-                    ? 'border-amber-400 border-2'
-                    : 'border-gray-700';
 
-            card.className = `match-entry-card bg-gray-800 p-2 sm:p-2.5 rounded-lg shadow-sm flex flex-col sm:flex-row sm:justify-between sm:items-center gap-2 border ${cardClass}`;
-            //card.className = `match-entry-card bg-gray-800 p-3 md:p-4 rounded-xl shadow-lg flex flex-col md:flex-row items-center justify-between space-y-3 md:space-y-0 border ${cardClass}`;
-            
-            // --- Official Data (Standard Size) ---
+            const row = document.createElement('div');
+            row.id = `game-entry-${gameIndex}`;
+            row.className = 'match-entry-card flex items-center gap-2.5 rounded-[20px] p-3';
+
             const officialIsCompleted = game.winner && game.winner.trim() !== '' && game.winner.trim() !== 'TBA' && game.winner.trim() !== '—';
-            const officialPlayersDisplay = officialIsCompleted ? `<span class="text-white font-mono">${game.playersRemaining || 0}</span>` : '<span class="text-gray-500">—</span>';
-            
-            //Highlight the official game winner
             const winnerName = game.winner ? game.winner.trim() : null;
-            const playersRemainingText = game.playersRemaining ? ` (${game.playersRemaining})` : '';
-            const winnerDecoration = ' <span class="text-green-400">✅</span>';
-            const tieDecoration = '<span class="text-yellow-400">[T]</span>'
+            const reportedByAdmin = !!(game.adminWinner && game.adminWinner.trim() !== '' && game.adminWinner.trim() !== '—');
+            const isReported = officialIsCompleted || reportedByAdmin;
 
-            // Build the display strings for each team
-            let team1Display = game.team1 || 'TBD';
-            let team2Display = game.team2 || 'TBD';
+            // Unreported rows carry the gold "needs you" tint; reported ones go flat.
+            row.style.background = isReported ? '#F5F5F6' : 'rgba(224,184,99,.14)';
 
-            // Check for the official winner and apply styling/emoji
-            if (officialIsCompleted) {
-                if (winnerName === game.team1) {
-                    // Highlight Team 1, add checkmark, and players remaining
-                    team1Display = `<span class="text-lime-400 font-extrabold">${game.team1}${winnerDecoration}${playersRemainingText}</span>`;
-                } else if (winnerName === game.team2) {
-                    // Highlight Team 2, add checkmark, and players remaining
-                    team2Display = `<span class="text-lime-400 font-extrabold">${game.team2}${winnerDecoration}${playersRemainingText}</span>`;
-                } else if(App.settings.is_tie_allowed && winnerName==="tie") {
-                    team1Display = `${game.team1}${tieDecoration}`;
-                    team2Display = `${game.team2}${tieDecoration}`;
-                }
-            }
-
-            // --- Admin Data (Small, Different Color) ---
-            const adminWinnerText = game.adminWinner || '—';
-            const adminPlayersText = game.adminPlayersRemaining || '—';
-            const adminNameText = game.adminName || '—';
-            let noteEmoji = '';
-
-            if(game.notes) {
-                noteEmoji=' 📝';
-            }
-            
-            const adminDisplay = `
-                <div class="mt-2 text-xs text-accent/80 font-medium space-y-0.5 md:mt-0 md:pl-4 md:border-l md:border-gray-700">
-                    <p class="whitespace-nowrap"><span class="font-bold">Admin Winner:</span> ${adminWinnerText}</p>
-                    <p class="whitespace-nowrap"><span class="font-bold">Admin Players Left:</span> ${adminPlayersText}</p>
-                    <p class="whitespace-nowrap"><span class="font-bold">Admin Name:</span> ${adminNameText}</p>
-                </div>
-            `;
-
-            // 1. Define button classes and hover behavior
-            let buttonBaseClasses = "flex items-center justify-center px-1 py-0.5 text-[11px] font-semibold rounded-md transition shadow"; 
-
-            // 2. Determine colors based on adminWinnerText value
-            let buttonColorClasses;
-            let buttonHoverClasses;
-
-            // Check if adminWinnerText has a value (i.e., is not '—' and is not an empty string)
-            if (adminWinnerText && adminWinnerText.trim() !== '—') {
-                // Game is already reported by Admin: use gray/slate classes
-                buttonColorClasses = "bg-slate-500 text-gray-900";
-                buttonHoverClasses = "hover:bg-slate-400";
+            // Result stamp: amber "not reported" prompt, or the green confirmation.
+            let stamp, stampColor;
+            if (isReported) {
+                const w = winnerName || game.adminWinner.trim();
+                const left = game.playersRemaining ?? game.adminPlayersRemaining ?? 0;
+                const by = game.adminName || '—';
+                stamp = App.settings.is_tie_allowed && w === 'tie'
+                    ? `Tie · ${by}`
+                    : `${w} won · ${left} left · ${by}${game.notes ? ' · 📝' : ''}`;
+                stampColor = 'var(--ok)';
             } else {
-                // Game is NOT reported by Admin: use lime classes
-                buttonColorClasses = "bg-lime-500 text-gray-900";
-                buttonHoverClasses = "hover:bg-lime-400";
+                stamp = 'Not reported yet';
+                stampColor = '#B8873A';
             }
 
-            // 3. Combine classes for the button
-            //const buttonClasses = `${buttonColorClasses} ${buttonHoverClasses}`;
-            const buttonClasses = `${buttonBaseClasses} ${buttonColorClasses} ${buttonHoverClasses}`;
+            const meta = `COURT ${game.court || '—'} · ${roundTime}${game.match ? ` · M${game.match}` : ''}`;
 
-
-            card.innerHTML = `
-                <div class="flex flex-col sm:flex-row sm:items-center sm:justify-between w-full gap-2">
-                
-                <div class="flex flex-col sm:flex-row sm:items-center gap-1 sm:gap-3 text-base sm:text-lg leading-tight">
-                    <div class="font-semibold text-lime-400">Court: ${game.court || '—'}</div>
-                    <div class="font-bold text-white">
-                    ${team1Display} 
-                    <span class="text-gray-400">vs</span> <br class="sm:hidden">
-                    ${team2Display}
-                    </div>
+            row.innerHTML = `
+                <div class="min-w-0 flex-1">
+                    <div class="kicker !tracking-[.1em] text-mute">${esc(meta)}</div>
+                    <div class="mt-1.5 truncate text-sm font-semibold leading-[1.4] tracking-[-.01em] text-ink">${esc(game.team1 || 'TBD')}</div>
+                    <div class="truncate text-sm font-semibold leading-[1.4] tracking-[-.01em] text-ink">${esc(game.team2 || 'TBD')}</div>
+                    <div class="mt-1.5 text-[11px] font-medium leading-[1.4]" style="color:${stampColor}">${esc(stamp)}</div>
                 </div>
-                
-                <div class="flex flex-col items-start sm:flex-row sm:items-center gap-2 shrink-0 text-[11px] sm:text-xs text-gray-400">
-                    
-                    <div class="flex w-full justify-between sm:w-auto"> 
-                    
-                    <div>
-                        <span class="font-semibold text-white">W:</span> ${adminWinnerText}
-                        <span class="font-semibold text-white ml-2">P:</span> ${adminPlayersText}
-                        <span class="font-semibold text-white ml-2">By:</span> ${adminNameText} ${noteEmoji}
-                    </div>
-                    
-                    <div>
-                        <span class="font-semibold text-white">&nbsp;M:</span> ${game.match || '—'} 
-                    </div>
-                    
-                    </div>
-                    
-                    <button onclick="showMatchEntryModal(${gameIndex})"
-                        class="${buttonClasses} w-full sm:w-fit"> 
-                        Report Game
-                    </button>
-                </div>
-                </div>
+                <button onclick="showMatchEntryModal(${gameIndex})"
+                        class="flex-none rounded-[15px] px-4 py-3 text-[13px] font-semibold leading-none ${isReported ? 'btn-outline !rounded-[15px]' : 'btn-gold !rounded-[15px]'}">
+                    ${isReported ? 'Edit' : 'Report'}
+                </button>
             `;
-            
-            fragment.appendChild(card);
+
+            rows.appendChild(row);
         });
+
+        card.appendChild(rows);
+        fragment.appendChild(card);
     });
     matchListDiv.appendChild(fragment);
+}
+
+/** Escapes a value for safe interpolation into a template-literal row. */
+function esc(str) {
+    const d = document.createElement('div');
+    d.textContent = str ?? '';
+    return d.innerHTML;
 }
 
 // Simple debounce utility to coalesce rapid calls into a single render
@@ -283,29 +242,50 @@ function updateAdminUI() {
     const adminEntryTab = document.getElementById('admin-entry-tab');
     const adminControls = document.getElementById('admin-controls');
     const adminTimerControls = document.getElementById('admin-panel');
+    const setupGear = document.getElementById('admin-setup-gear');
+    const liveTab = document.getElementById('live-tab');
+    const chatTab = document.getElementById('chat-tab');
+    const infoAdminLink = document.getElementById('info-admin-link');
 
     if (!adminButton || !adminStatusText || !adminEntryTab) return;
+
+    if (infoAdminLink) {
+        infoAdminLink.querySelector('span').textContent = App.state.isAdmin ? 'Back to my admin view →' : 'Admin login →';
+        infoAdminLink.onclick = App.state.isAdmin ? () => switchView('admin-entry') : showAdminLoginModal;
+    }
 
     if (App.state.isAdmin) {
         adminStatusText.textContent = 'Logout';
         adminButton.classList.remove('bg-gray-700', 'hover:bg-gray-600', 'text-accent');
-        adminButton.classList.add('bg-lime-600', 'hover:bg-lime-500', 'text-white');
+        adminButton.classList.add('bg-gold', 'hover:bg-gold-d', 'text-white');
         adminButton.onclick = logoutAdmin;
         adminEntryTab.classList.remove('hidden'); // Show Admin Tab
-        if(App.state.isSuperAdmin) adminTimerControls.classList.remove('hidden');
+        if (chatTab) chatTab.classList.remove('hidden'); // Show Chat Tab (staff only)
+        if (liveTab) liveTab.classList.add('hidden'); // Staff get the clock on Admin instead
+        // Redirect off LIVE if we were sitting on it when signing in.
+        if (App.state.currentView === 'live') switchView('admin-entry');
+        if (App.state.isSuperAdmin) {
+            adminTimerControls.classList.remove('hidden');
+            if (setupGear) setupGear.classList.remove('hidden');
+        }
     } else {
         adminStatusText.textContent = 'Admin';
-        adminButton.classList.remove('bg-lime-600', 'hover:bg-lime-500', 'text-white');
+        adminButton.classList.remove('bg-gold', 'hover:bg-gold-d', 'text-white');
         adminButton.classList.add('bg-gray-700', 'hover:bg-gray-600', 'text-accent');
         adminButton.onclick = showAdminLoginModal;
         adminEntryTab.classList.add('hidden'); // Hide Admin Tab
         if (adminControls) adminControls.classList.add('hidden');
+        if (adminTimerControls) adminTimerControls.classList.add('hidden');
+        if (setupGear) setupGear.classList.add('hidden');
+        if (chatTab) chatTab.classList.add('hidden');
+        if (liveTab) liveTab.classList.remove('hidden');
     }
 }
 
 function showAdminLoginModal() {
     const modal = document.getElementById('admin-login-modal');
     const passwordInput = document.getElementById('admin-password-input');
+    const nameInput = document.getElementById('admin-name-field');
     const message = document.getElementById('admin-login-message');
 
     // Show the modal
@@ -313,10 +293,40 @@ function showAdminLoginModal() {
 
     // Clear previous input and messages
     passwordInput.value = '';
+    nameInput.value = localStorage.getItem('lastAdminName') || '';
     message.classList.add('hidden');
 
+    renderLoginCourtPicker();
+
     // Wait a short moment to ensure the modal is visible before focusing
-    setTimeout(() => passwordInput.focus(), 50);
+    setTimeout(() => nameInput.focus(), 50);
+}
+
+/**
+ * Renders the "Your Court" 4-up picker in the login modal. Only meaningful
+ * for the court-manager role — ignored server-side/client-side if the
+ * password turns out to belong to the tournament manager.
+ */
+function renderLoginCourtPicker() {
+    const wrap = document.getElementById('login-court-picker');
+    if (!wrap) return;
+    wrap.innerHTML = '';
+
+    const selected = App.state.selectedCourt || '1';
+    ['1', '2', '3', '4'].forEach(court => {
+        const btn = document.createElement('button');
+        btn.type = 'button';
+        btn.textContent = 'C' + court;
+        const isActive = court === selected;
+        // Light segmented picker on the modal sheet (design §3 "Your court").
+        btn.className = 'rounded-[14px] py-2.5 text-[13px] font-semibold leading-none transition-colors ' +
+            (isActive ? 'bg-white text-ink shadow-[0_2px_6px_rgba(0,0,0,.07)]' : 'text-mute');
+        btn.onclick = () => {
+            App.state.selectedCourt = court;
+            renderLoginCourtPicker();
+        };
+        wrap.appendChild(btn);
+    });
 }
 
 function hideAdminLoginModal() {
@@ -325,6 +335,7 @@ function hideAdminLoginModal() {
 
 async function loginAdmin() {
     const passwordInputEl = document.getElementById('admin-password-input');
+    const nameInputEl = document.getElementById('admin-name-field');
     const loginMessage = document.getElementById('admin-login-message');
     const loginButton = document.getElementById('login-button');
 
@@ -339,31 +350,47 @@ async function loginAdmin() {
     }
 
     const password = passwordInputEl.value;
+    const reporterName = (nameInputEl?.value || '').trim();
     loginMessage.classList.add('hidden');
+
+    if (!reporterName) {
+        loginMessage.textContent = 'Your name is required.';
+        loginMessage.classList.remove('hidden');
+        return;
+    }
+
     loginButton.disabled = true;
-    loginButton.textContent = 'Verifying...';
+    loginButton.textContent = 'Verifying…';
 
     try {
     // Use the API helper which returns the validation result
     const result = await validateAdmin(password);
-        
+
         if (result && result.isAdmin) {
             App.state.isAdmin = true;
-            
+            App.state.reporterName = reporterName;
+            localStorage.setItem('lastAdminName', reporterName);
+            sessionStorage.setItem('reporterName', reporterName);
+
             //store this for persitstance
             sessionStorage.setItem('isAdmin', 'true');
             sessionStorage.setItem('isSuperAdmin', 'false');
             sessionStorage.setItem('adminAuthToken', result.token);
-            if (result.isSuperAdmin && result.firebaseToken) {
-                try {
-                await firebase.auth().signInWithCustomToken(result.firebaseToken);
-                console.log('Super admin signed in to Firebase successfully');
-                } catch (err) {
-                console.error('Firebase sign-in error:', err);
+            if (result.isSuperAdmin) {
+                // Firebase custom-token sign-in is only meaningful (and only
+                // returned by the server) when DATA_BACKEND=firebase — local
+                // mode's superadmin auth relies solely on the SHA-256 authToken.
+                if (result.firebaseToken && window.__DATA_BACKEND__ !== 'local') {
+                    try {
+                    await firebase.auth().signInWithCustomToken(result.firebaseToken);
+                    console.log('Super admin signed in to Firebase successfully');
+                    } catch (err) {
+                    console.error('Firebase sign-in error:', err);
+                    }
+                    sessionStorage.setItem('firebaseToken', result.firebaseToken);
                 }
                 App.state.isSuperAdmin = true;
                 sessionStorage.setItem('isSuperAdmin', 'true');
-                sessionStorage.setItem('firebaseToken', result.firebaseToken);
                 // initialize/move timer overlay for superadmin (if present)
                 if (typeof window.initTimerOverlay === 'function') window.initTimerOverlay();
                 gtag('event', 'login', {
@@ -372,6 +399,12 @@ async function loginAdmin() {
                     user_id: 'superadmin' // optional, only if you have one
                 });
             } else {
+                // Court manager — the court picked in the login modal scopes
+                // their Admin tab's results list (see admin-court-select
+                // default in main.js's loadData()).
+                const court = App.state.selectedCourt || '1';
+                App.state.selectedCourt = court;
+                sessionStorage.setItem('selectedCourt', court);
                 gtag('event', 'login', {
                     method: 'web', // or 'google', 'facebook', etc.
                     success: true,
@@ -382,8 +415,8 @@ async function loginAdmin() {
             hideAdminLoginModal();
             updateAdminUI();
             switchView('admin-entry'); // Go straight to admin view after login
-            showStatus('Successfully logged in as Admin.', false);
-            setTimeout(() => showStatus(null), 3000); 
+            showStatus(`Signed in as ${reporterName}.`, false);
+            setTimeout(() => showStatus(null), 3000);
             
         } else {
             App.state.isAdmin = false;
@@ -402,23 +435,29 @@ async function loginAdmin() {
         loginMessage.classList.remove('hidden');
     } finally {
         loginButton.disabled = false;
-        loginButton.textContent = 'Login';
+        loginButton.textContent = 'Sign in →';
     }
 }
 
 function logoutAdmin() {
     App.state.isAdmin = false;
+    App.state.isSuperAdmin = false;
+    App.state.reporterName = '';
+    App.state.selectedCourt = '';
     //remove admin persistance
     sessionStorage.removeItem('isAdmin');
     sessionStorage.removeItem('isSuperAdmin');
     sessionStorage.removeItem('firebaseToken');
-    firebase.auth().signOut();
+    sessionStorage.removeItem('reporterName');
+    sessionStorage.removeItem('selectedCourt');
+    if (window.__DATA_BACKEND__ !== 'local') {
+        firebase.auth().signOut();
+    }
+    // The timer controls live inside #admin-panel now, which updateAdminUI()
+    // hides for non-superadmins — no separate teardown needed.
     updateAdminUI();
-    //hide timer controls if present.
-    const _timerOverlay = document.getElementById('timer-controls-overlay');
-    if (_timerOverlay) _timerOverlay.classList.add('hidden');
-    // If the user was in the admin tab, switch them out
-    if (App.state.currentView === 'admin-entry') {
+    // If the user was in a staff-only tab, switch them out
+    if (['admin-entry', 'settings', 'chat'].includes(App.state.currentView)) {
         switchView('standings');
     }
     showStatus('Logged out of Admin Mode.', false);
@@ -446,41 +485,59 @@ function showMatchEntryModal(gameIndex) {
     App.admin.currentGameIndex = gameIndex; 
 
     // Clear previous state and message
-    winnerSelect.innerHTML = '<option value="—">— Select Winner —</option>';
     saveMessage.classList.add('hidden');
-    
+
     // 1. Populate Match Info Display
-    matchInfoDisplay.textContent = `${game.roundTime} | Court ${game.court || '—'} | ${game.team1 || 'TBD'} vs ${game.team2 || 'TBD'}`;
+    matchInfoDisplay.textContent = `Court ${game.court || '—'} · ${game.roundTime} · ${App.config.currentSheetName}`;
 
-    // 2. Populate Winner Dropdown
-    const teams = [game.team1, game.team2].filter(t => t && t.trim() !== '');
-    teams.forEach(team => {
-        const option = document.createElement('option');
-        option.value = team;
-        option.textContent = team;
-        winnerSelect.appendChild(option);
-    });
-
-    if(App.settings.is_tie_allowed) {
-        const option = document.createElement('option');
-        option.value = "tie";
-        option.textContent = "⚖️ tie";
-        winnerSelect.appendChild(option);
-    }
-    
-    // 3. Set current values (if available)
+    // 2. Set the current winner, then paint the tiles for it
     const currentWinner = (game.adminWinner && game.adminWinner.trim() !== 'TBA') ? game.adminWinner.trim() : '—';
     winnerSelect.value = currentWinner;
-    
+    renderWinnerTiles(game);
+
     playersInput.value = game.adminPlayersRemaining || 0;
     notesTextarea.value = game.notes || '';
     
-    // Set default admin name if previously entered in the session
-    const lastAdminName = localStorage.getItem('lastAdminName') || '';
-    adminNameInput.value = lastAdminName;
+    // Default to the name captured at login (falls back to the last name
+    // typed anywhere, for sessions that predate the login name field).
+    adminNameInput.value = App.state.reporterName || localStorage.getItem('lastAdminName') || '';
 
     // 4. Show the modal
     modal.classList.remove('hidden');
+}
+
+/**
+ * "Who won?" choice tiles (design §10). Replaces the old <select> — the value
+ * still lives on the hidden #modal-winner-select input so the save path and
+ * its validation are unchanged.
+ */
+function renderWinnerTiles(game) {
+    const wrap = document.getElementById('modal-winner-tiles');
+    const winnerSelect = document.getElementById('modal-winner-select');
+    if (!wrap || !winnerSelect) return;
+
+    const options = [game.team1, game.team2]
+        .filter(t => t && t.trim() !== '')
+        .map(t => ({ value: t, label: t }));
+
+    if (App.settings.is_tie_allowed) {
+        options.push({ value: 'tie', label: '🤝 Horn sounded even — tie' });
+    }
+
+    wrap.innerHTML = '';
+    options.forEach(opt => {
+        const btn = document.createElement('button');
+        btn.type = 'button';
+        btn.className = 'tile-light';
+        btn.textContent = opt.label;
+        btn.dataset.selected = String(winnerSelect.value === opt.value);
+        btn.onclick = () => {
+            // Tapping the selected tile clears it, matching the old "—" option.
+            winnerSelect.value = winnerSelect.value === opt.value ? '—' : opt.value;
+            renderWinnerTiles(game);
+        };
+        wrap.appendChild(btn);
+    });
 }
 
 function hideMatchEntryModal() {
@@ -524,7 +581,7 @@ async function saveMatchResultFromModal() {
     localStorage.setItem('lastAdminName', adminName);
 
     saveButton.disabled = true;
-    saveButton.textContent = 'Saving...';
+    saveButton.textContent = 'Saving…';
     messageElement.classList.add('hidden');
     messageElement.textContent = '';
 
@@ -535,11 +592,10 @@ async function saveMatchResultFromModal() {
     if (!authToken) {
         messageElement.textContent = 'Authentication error - Please log in again.';
         messageElement.classList.remove('hidden');
-        messageElement.classList.remove('text-lime-400');
-        messageElement.classList.add('text-red-400');
+        messageElement.style.color = 'var(--warn)';
 
         saveButton.disabled = false;
-        saveButton.textContent = 'Save Result';
+        saveButton.textContent = 'Submit result';
         return
     }
 
@@ -571,8 +627,7 @@ async function saveMatchResultFromModal() {
         if (result.success) {
             messageElement.textContent = 'Result saved!';
             messageElement.classList.remove('hidden');
-            messageElement.classList.remove('text-red-400');
-            messageElement.classList.add('text-lime-400');
+            messageElement.style.color = 'var(--ok)';
             
             // Reload all data to refresh standings and schedule
             await loadData(App.config.currentSheetName); 
@@ -585,8 +640,7 @@ async function saveMatchResultFromModal() {
             const errMsg = result.error || 'Server reported failure.';
             messageElement.textContent = 'ERROR: ' + errMsg;
             messageElement.classList.remove('hidden');
-            messageElement.classList.remove('text-lime-400');
-            messageElement.classList.add('text-red-400');
+            messageElement.style.color = 'var(--warn)';
             // If the server flagged logout, clear token and force re-login
             if (result.logout) {
                 sessionStorage.removeItem('adminAuthToken');
@@ -608,11 +662,10 @@ async function saveMatchResultFromModal() {
             messageElement.textContent = 'ERROR: ' + (error.message || 'Unknown error');
         }
         messageElement.classList.remove('hidden');
-        messageElement.classList.remove('text-lime-400');
-        messageElement.classList.add('text-red-400');
+        messageElement.style.color = 'var(--warn)';
     } finally {
         saveButton.disabled = false;
-        saveButton.textContent = 'Save Result';
+        saveButton.textContent = 'Submit result';
     }
 }
 
@@ -654,6 +707,8 @@ function checkLoginStatus() {
     App.state.isSuperAdmin = (isSuperAdmin === 'true');
     if (firebaseToken) App.state.firebaseToken = firebaseToken;
     App.state.isAdmin = (isAdmin === 'true');
+    App.state.reporterName = sessionStorage.getItem('reporterName') || '';
+    App.state.selectedCourt = sessionStorage.getItem('selectedCourt') || '';
 
     // The updateAdminUI() call below will handle showing the correct buttons.
 }

@@ -1,7 +1,6 @@
 /**
  * Filters the schedule data based on public dropdown selections and renders the table.
  */
-import { getCurrentFilteredTeam } from './main.js';
 function updateScheduleView() {
     const teamSelect = document.getElementById('team-select');
     const courtSelect = document.getElementById('court-select');
@@ -113,166 +112,136 @@ function updateScheduleView() {
 * Renders the schedule data into the schedule table. (Public View)
 */
 function renderScheduleView(schedule) {
-    // We are now rendering into the container div, not a tbody.
-    // Assuming the container for the schedule is a div with the ID 'schedule-table-container' 
-    // or similar, instead of a 'tbody' with ID 'schedule-table-body'.
     const scheduleContainer = document.getElementById('schedule-view-container');
     if (!scheduleContainer) return;
 
     scheduleContainer.innerHTML = ''; // Clear previous content
 
+    // Court-count kicker on the title row (design §7)
+    const courtLabel = document.getElementById('schedule-court-count');
+    if (courtLabel) {
+        const n = getUniqueCourts().length;
+        courtLabel.textContent = n ? `${n} COURT${n === 1 ? '' : 'S'}` : '';
+    }
+
     if (schedule.length === 0) {
-        scheduleContainer.innerHTML = '<p class="text-center py-4 text-gray-500">No schedule or results data available based on current filters.</p>';
+        scheduleContainer.innerHTML = '<p class="py-4 text-center text-sm text-white/45">No schedule or results data available based on current filters.</p>';
         return;
     }
 
-    const currentTeam = getCurrentFilteredTeam();
-    let firstUnplayedGameFound = false;
+    // --- Group by round time -----------------------------------------------
+    // Design §7 renders one card per round (time chip + status label) holding a
+    // row per court, rather than one card per game. `schedule` is already sorted
+    // chronologically by updateScheduleView(), so insertion order is the round
+    // order and a Map preserves it.
+    const rounds = new Map();
+    schedule.forEach(game => {
+        const key = game.roundTime || 'TBD';
+        if (!rounds.has(key)) rounds.set(key, []);
+        rounds.get(key).push(game);
+    });
 
-    const winnerHighlightClass = 'text-lime-300 font-extrabold';
-    const checkmark = '<span class="text-lime-500 ml-1">✅</span>';
-    const tieHighlightClass = 'text-yellow-100';
-    const tieIndicator = '<span class="text-yellow-300">[T]</span>';
-
-    // Helper map for mobile border color fallback
-    const mobileBorderColorMap = {
-        'border-green-600': '#059669', // Green
-        'border-red-600': '#DC2626',   // Red
-        'border-accent': '#FFBF00',    // Amber (Assumes border-accent maps to a specific amber color)
-        'border-gray-700': '#374151',  // Gray
-        'border-gray-600': '#4B5563'   // Darker Gray
-    };
-
-    // Use a simple screen width check for mobile/desktop
-    const isMobile = window.innerWidth <= 768; // 768px is a common tablet/mobile cutoff
+    // The "live" round is the earliest one with an unreported game — everything
+    // before it is FINAL, everything after is UPCOMING. That's the same signal
+    // the old renderer used for its single amber "next game" highlight.
+    const roundKeys = [...rounds.keys()];
+    const liveKey = roundKeys.find(key => rounds.get(key).some(g => !isReported(g)));
 
     const fragment = document.createDocumentFragment();  //to batch updates
-    schedule.forEach(game => {
-        const card = document.createElement('div');
-        
-        // --- Determine Card Styling (Borders & Backgrounds) ---
-        let cardClasses = 'schedule-card bg-gray-800/50 p-3 rounded-lg shadow-md mb-3 border-l-4 transition duration-150 ease-in-out';
-        let backgroundClass = 'bg-gray-800/50';
-        let borderClasses = 'border-gray-600'; // Default
-        
-        if (game.isBye) {
-            // Styling for BYE rounds
-            borderClasses = 'border-gray-700'; // Match the default unplayed game
-            cardClasses = 'schedule-card bg-gray-900/10 p-3 rounded-lg shadow-md mb-3 border-l-4 border-gray-700 text-accent font-semibold transition duration-150 ease-in-out';
-            card.innerHTML = `
-                <div class="flex flex-col">
-                    <div class="text-base font-bold mb-1">${game.roundTime || 'TBD'} <span class="mr-2">😴</span></div>
-                    <div class="flex items-center text-sm md:text-base">
-                            ${game.team} has a **BYE**
-                    </div>
-                </div>
-            `;
-        } else {
-            const isCompleted = game.winner && game.winner.trim() !== '' && game.winner.trim() !== 'TBA' && game.winner.trim() !== '—';
-            
-            if (isCompleted) {
-        if (currentTeam !== 'all') {
-            const winnerTrimmed = game.winner.trim();
-            if (winnerTrimmed === currentTeam) {
-                backgroundClass = 'bg-green-900/10';
-                borderClasses = 'border-green-600'; // Green for Win
-            } else if(App.settings.is_tie_allowed && winnerTrimmed==="tie") {
-                backgroundClass = 'bg-green-900/10';
-                borderClasses = 'border-green-200'; // light green for the tie
-            } else {
-                backgroundClass = 'bg-red-900/10';
-                borderClasses = 'border-red-600'; // Red for Loss
-            }
-        } else {
-            backgroundClass = 'bg-gray-800/50';
-            borderClasses = 'border-gray-600';
-        }
-    } else {
-        if (!firstUnplayedGameFound) {
-            // Highlight the next upcoming game
-            borderClasses = 'border-accent'; // AMBER for Next Game
-            backgroundClass = 'bg-gray-700/50'; // Use a distinct background for next game
-            firstUnplayedGameFound = true;
-        } else {
-            borderClasses = 'border-gray-700';
-            backgroundClass = 'bg-gray-800/50';
-        }
-    }
-            
-            cardClasses += ` ${backgroundClass}`;
 
-            // --- Team Display Logic ---
-            let team1Classes = 'font-bold';
-            let team2Classes = 'font-bold';
-            let team1Emoji = '';
-            let team2Emoji = '';
-            
-            if (isCompleted) {
-                const winnerTrimmed = game.winner.trim();
-                if (winnerTrimmed === game.team1) {
-                    team1Classes += ` ${winnerHighlightClass}`;
-                    team1Emoji = checkmark;
-                } else if (winnerTrimmed === game.team2) {
-                    team2Classes += ` ${winnerHighlightClass}`;
-                    team2Emoji = checkmark;
-                } else if (App.settings.is_tie_allowed && winnerTrimmed==="tie") {
-                    team1Classes += ` ${tieHighlightClass}`;
-                    team1Emoji = tieIndicator;
-                    team2Classes += ` ${tieHighlightClass}`;
-                    team2Emoji = tieIndicator;
-                }
-            }
-            
-            // Player Remaining display logic
-            const playersRemainingDisplay = isCompleted ? (game.playersRemaining || '—') : '—';
+    roundKeys.forEach(roundTime => {
+        const games = rounds.get(roundTime);
+        const live = roundTime === liveKey;
+        const done = liveKey === undefined || roundKeys.indexOf(roundTime) < roundKeys.indexOf(liveKey);
 
-            // --- Card Content Structure ---
-            // Main flex container for content, allowing for horizontal/vertical stacking
-            card.innerHTML = `
-                    <div class="flex flex-col w-full"> 
-                        <div class="flex justify-between w-full mb-2 text-lg">
-                            <div class="font-bold text-white text-base leading-tight">
-                                ${game.roundTime || 'TBD'}
-                            </div>
-                            <div class="font-bold text-white text-base leading-tight">
-                                Court ${game.court || ' —'}
-                            </div>
-                        </div>
-                        
-                        <div class="relative flex flex-col text-sm md:text-base flex-grow min-w-0">
-                            <div class="flex items-center flex-wrap text-base">
-                                <span class="${team1Classes} whitespace-nowrap">${game.team1 || 'TBD'}${team1Emoji}</span>
-                                <span class="text-gray-500 font-normal ml-2 mr-2">vs</span>
-                            </div>
-                            <div class="flex items-center text-base mt-1 justify-between">
-                                <span class="${team2Classes} whitespace-nowrap">${game.team2 || 'TBD'}${team2Emoji}</span>
-                                <div class="text-xs text-gray-400 font-semibold">
-                                    M:${game.match || '—'}
-                                </div>
-                            </div>
-                        </div>
-                    </div>
+        const card = document.createElement('section');
+        card.className = 'rounded-[26px] border p-3.5 shadow-[0_14px_36px_rgba(0,0,0,.26)]';
+        card.style.background = live ? 'rgba(255,255,255,.95)' : 'rgba(255,255,255,.055)';
+        card.style.borderColor = live ? 'rgba(224,184,99,.5)' : 'rgba(255,255,255,.1)';
+
+        const chipStyle = live
+            ? 'background:linear-gradient(135deg,var(--gold) 0%,var(--gold-d) 100%);color:#2A1B08'
+            : 'background:rgba(255,255,255,.08);color:rgba(255,255,255,.7)';
+
+        const head = document.createElement('div');
+        head.className = 'flex items-center gap-2.5';
+        head.innerHTML = `
+            <span class="rounded-full px-2.5 py-1.5 text-[11px] font-semibold leading-none tracking-[.02em]" style="${chipStyle}">${esc(roundTime)}</span>
+            <span class="text-[9px] font-semibold leading-none tracking-[.12em]" style="color:${live ? 'var(--mar)' : 'rgba(255,255,255,.4)'}">${live ? 'ON COURT NOW' : done ? 'FINAL' : 'UPCOMING'}</span>
+        `;
+        card.appendChild(head);
+
+        const rows = document.createElement('div');
+        rows.className = 'mt-2.5 grid gap-[5px]';
+
+        games.forEach(game => {
+            const row = document.createElement('div');
+            row.className = 'flex items-center gap-2.5 rounded-2xl px-3 py-2.5';
+            row.style.background = live ? '#F5F5F6' : 'rgba(255,255,255,.05)';
+
+            if (game.isBye) {
+                row.innerHTML = `
+                    <span class="flex-none w-[26px] h-[26px] rounded-[9px] text-center text-[10px] font-bold leading-[26px]"
+                          style="background:${live ? 'rgba(123,29,43,.1)' : 'rgba(255,255,255,.08)'};color:${live ? 'var(--mar)' : 'rgba(255,255,255,.6)'}">—</span>
+                    <span class="flex-1 min-w-0 truncate text-[13px] font-semibold leading-[1.4]" style="color:${live ? 'var(--ink)' : 'rgba(255,255,255,.86)'}">${esc(game.team)}</span>
+                    <span class="flex-none text-right text-[9px] font-semibold leading-[1.3] tracking-[.08em]" style="color:${live ? 'var(--mute)' : 'rgba(255,255,255,.38)'}">BYE</span>
                 `;
+                rows.appendChild(row);
+                return;
             }
-        // --- Final Border Application ---
-    
-            if (isMobile) {
-                // On mobile, remove all default border classes and apply inline style
-                const mobileColor = mobileBorderColorMap[borderClasses] || '#374151';
-                card.style.borderLeft = `4px solid ${mobileColor}`;
+
+            const reported = isReported(game);
+            const winner = reported ? game.winner.trim() : null;
+            const tie = reported && App.settings.is_tie_allowed && winner === 'tie';
+            const aWon = reported && winner === game.team1;
+            const bWon = reported && winner === game.team2;
+
+            // Losing side dims; winner (or both, on a tie) stays at full strength.
+            const dim = live ? 'var(--mute)' : 'rgba(255,255,255,.38)';
+            const strong = live ? 'var(--ink)' : 'rgba(255,255,255,.86)';
+
+            let res, resColor;
+            if (reported) {
+                res = tie ? 'TIE' : `WIN · ${game.playersRemaining ?? 0}`;
+                resColor = live ? 'var(--mar)' : 'var(--gold)';
+            } else if (live) {
+                res = 'ON COURT';
+                resColor = 'var(--ok)';
             } else {
-                // On desktop/larger screens, apply the Tailwind utility class
-                cardClasses += ` ${borderClasses} border-solid`; // Added border-solid for robustness
+                res = esc(roundTime);
+                resColor = 'rgba(255,255,255,.38)';
             }
 
+            row.innerHTML = `
+                <span class="flex-none w-[26px] h-[26px] rounded-[9px] text-center text-[10px] font-bold leading-[26px]"
+                      style="background:${live ? 'rgba(123,29,43,.1)' : 'rgba(255,255,255,.08)'};color:${live ? 'var(--mar)' : 'rgba(255,255,255,.6)'}">C${esc(game.court || '?')}</span>
+                <span class="flex-1 min-w-0">
+                    <span class="block truncate text-[13px] font-semibold leading-[1.4]" style="color:${reported && !aWon && !tie ? dim : strong}">${esc(game.team1 || 'TBD')}</span>
+                    <span class="block truncate text-[13px] font-semibold leading-[1.4]" style="color:${reported && !bWon && !tie ? dim : strong}">${esc(game.team2 || 'TBD')}</span>
+                </span>
+                <span class="flex-none text-right text-[9px] font-semibold leading-[1.3] tracking-[.08em]" style="color:${resColor}">${res}</span>
+            `;
+            rows.appendChild(row);
+        });
 
-        // Remove any default border-gray-700 that might have been in the base cardClasses
-        cardClasses = cardClasses.replace('border-gray-700', '').trim().replace(/\s+/g, ' ');
-        
-        card.className = cardClasses.trim();
+        card.appendChild(rows);
         fragment.appendChild(card);
     });
+
     scheduleContainer.appendChild(fragment);
+}
+
+/** A game counts as played once it carries a real winner value. */
+function isReported(game) {
+    const w = (game.winner || '').trim();
+    return w !== '' && w !== 'TBA' && w !== '—';
+}
+
+/** Escapes a value for safe interpolation into a template-literal row. */
+function esc(str) {
+    const d = document.createElement('div');
+    d.textContent = str ?? '';
+    return d.innerHTML;
 }
 
     /**
@@ -386,10 +355,10 @@ function buildPagerContent(pageItems) {
 
     // Build the HTML for the current page
     return pageItems.map(item => `
-        <span class="standings-pager-item flex items-center gap-1.5 px-3 border-r border-gray-800 last:border-r-0">
-            <span class="font-bold text-lime-400 text-sm">${item.rank || '?'}</span>
-            <span class="font-medium text-gray-300 text-sm">${item.team}</span>
-            <span class="font-mono text-xs text-gray-500">(${item.record || '0-0'})</span>
+        <span class="standings-pager-item flex items-center gap-1.5 px-3 border-r border-white/10 last:border-r-0">
+            <span class="text-sm font-bold text-gold-l tabular-nums">${esc(item.rank || '?')}</span>
+            <span class="text-sm font-medium text-white/75">${esc(item.team)}</span>
+            <span class="text-xs text-white/40 tabular-nums">(${esc(item.record || '0-0')})</span>
         </span>
     `).join('');
 }

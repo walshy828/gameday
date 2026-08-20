@@ -1,5 +1,12 @@
+import { getDivisions } from './api.js';
+import { initSettingsView } from './settings.js';
+import { onChatTabOpened } from './chat.js';
+import { renderLiveView } from './live.js';
+
 /**
- * Fetches all unhidden sheet names from the Apps Script backend.
+ * Fetches all division (sheet) names via the /api/divisions REST endpoint.
+ * Backend-agnostic: works identically whether the server is running against
+ * Firebase or a local database (DATA_BACKEND).
  */
 const DIVISION_STORAGE_KEY = 'selectedDivision';
 
@@ -7,26 +14,23 @@ async function fetchDivisionNames() {
     showStatus('Fetching divisions...');
 
     try {
-    const snapshot = await firebase.database().ref('dodgeball-tournament/divisions').once('value');
-    const divisionsData = snapshot.val();
+    const divisionNames = await getDivisions();
 
-    if (!divisionsData) throw new Error("No divisions found in Firebase.");
+    if (!divisionNames || !divisionNames.length) throw new Error("No divisions found.");
 
-    // Division names = top-level keys
-    App.data.allDivisionNames = Object.keys(divisionsData);
+    App.data.allDivisionNames = divisionNames;
+
+    renderGateDivisions();
 
     const storedDivision = localStorage.getItem(DIVISION_STORAGE_KEY);
     if (storedDivision && App.data.allDivisionNames.includes(storedDivision)) {
-        App.config.currentSheetName = storedDivision;
+        // Returning visitor — skip the gate and go straight back into the app.
+        await enterApp(storedDivision);
     } else {
-        App.config.currentSheetName = App.data.allDivisionNames[0];
+        // First-time visitor (or no prior selection) — wait at the gate for
+        // a division tap; renderGateDivisions() above already populated it.
+        showGate();
     }
-
-    renderDivisionDropdown();
-    await loadData(App.config.currentSheetName);
-
-    // Start watching this division for live updates
-    watchDivision(App.config.currentSheetName);
 
     } catch (error) {
     console.error("Error fetching division names:", error);
@@ -34,7 +38,60 @@ async function fetchDivisionNames() {
     }
 }
 
+/**
+ * Renders the division card grid on the Gate screen. Reuses the same
+ * `App.data.allDivisionNames` fetched for the in-app dropdown/pill picker —
+ * just a different presentation of the same data source.
+ */
+function renderGateDivisions() {
+    const grid = document.getElementById('gate-division-grid');
+    if (!grid) return;
+    grid.innerHTML = '';
+
+    App.data.allDivisionNames.forEach(name => {
+        const btn = document.createElement('button');
+        btn.className = 'text-left rounded-2xl p-3.5 border border-white/[.12] bg-white/[.06] hover:bg-white/10 transition-colors';
+        btn.innerHTML = `<span class="block text-lg font-bold tracking-tight text-gray-50">${name}</span>`;
+        btn.onclick = () => enterApp(name);
+        grid.appendChild(btn);
+    });
+}
+
+/** Shows the Gate screen and hides the app shell. */
+function showGate() {
+    App.state.screen = 'gate';
+    document.getElementById('gate-screen')?.classList.remove('hidden');
+    document.getElementById('app-screen')?.classList.add('hidden');
+    document.getElementById('bottom-tab-bar')?.classList.add('hidden');
+}
+
+/** Returns to the Gate screen from within the app (the header "Change" chip). */
+function goToGate() {
+    showGate();
+}
+
+/**
+ * Selects a division and enters the app shell — the target of both a Gate
+ * division-card tap and a returning-visitor auto-resume.
+ */
+async function enterApp(divisionName) {
+    App.config.currentSheetName = divisionName;
+    localStorage.setItem(DIVISION_STORAGE_KEY, divisionName);
+
+    App.state.screen = 'app';
+    document.getElementById('gate-screen')?.classList.add('hidden');
+    document.getElementById('app-screen')?.classList.remove('hidden');
+    document.getElementById('bottom-tab-bar')?.classList.remove('hidden');
+
+    renderDivisionDropdown();
+    await loadData(divisionName);
+    watchDivision(divisionName);
+}
+
 function renderDivisionDropdown() {
+    const headerLabel = document.getElementById('header-division-label');
+    if (headerLabel) headerLabel.textContent = App.config.currentSheetName || '—';
+
     const wrapperDesktop = document.getElementById('division-selector-wrapper');
     const wrapperMobile = document.getElementById('division-selector-wrapper-mobile');
     if (!wrapperDesktop || !wrapperMobile) return;
@@ -199,7 +256,10 @@ function handleDivisionChange(event) {
 }
 
 function updateSheetInfoDisplay() {
-    document.getElementById('sheet-info').innerHTML = `Last updated: <span id="last-updated">...</span>`;
+    // The "last updated" stamp lives at the foot of the INFO tab in the
+    // redesign — reset just the timestamp, the label around it is static.
+    const el = document.getElementById('last-updated');
+    if (el) el.textContent = '…';
 }
 
 
@@ -222,7 +282,7 @@ function initializeFilter(retainedTeam = 'all', retainedCourt = 'all', retainedA
         select.innerHTML = '';
         const allOption = document.createElement('option');
         allOption.value = 'all';
-        allOption.textContent = filter.type === 'team' ? 'All Teams (Show Full Schedule)' : 'All Courts';
+        allOption.textContent = filter.type === 'team' ? 'All teams' : 'All courts';
         select.appendChild(allOption);
 
         const data = filter.type === 'team' ? App.data.teamNames : App.data.courtNames;
@@ -251,29 +311,42 @@ function switchView(view) {
     //                view: view
     //                });
     const views = {
+        'live': document.getElementById('live-view'),
         'standings': document.getElementById('standings-view'),
         'schedule': document.getElementById('schedule-view'),
-        'admin-entry': document.getElementById('admin-match-entry-view')
+        'info': document.getElementById('info-view'),
+        'admin-entry': document.getElementById('admin-match-entry-view'),
+        'chat': document.getElementById('chat-view'),
+        'settings': document.getElementById('settings-view')
     };
     const tabs = {
+        'live': document.getElementById('live-tab'),
         'standings': document.getElementById('standings-tab'),
         'schedule': document.getElementById('schedule-tab'),
-        'admin-entry': document.getElementById('admin-entry-tab')
+        'info': document.getElementById('info-tab'),
+        'admin-entry': document.getElementById('admin-entry-tab'),
+        'chat': document.getElementById('chat-tab')
+        // 'settings' has no bottom-tab entry — it's reached via the gear
+        // icon on the Admin view and has its own "← Admin" back button.
     };
 
     Object.keys(views).forEach(v => {
         const tab = tabs[v];
         const viewEl = views[v];
+        if (!viewEl) return;
 
         if (v === view) {
             viewEl.classList.remove('hidden');
             if (tab) {
-                tab.classList.add(v === 'admin-entry' ? 'tab-admin-active' : 'tab-active');
-                tab.classList.remove(v === 'admin-entry' ? 'tab-active' : 'tab-admin-active');
+                tab.classList.add(v === 'admin-entry' || v === 'settings' ? 'tab-admin-active' : 'tab-active');
+                tab.classList.remove(v === 'admin-entry' || v === 'settings' ? 'tab-active' : 'tab-admin-active');
             }
             // Trigger specific view update
             if (v === 'schedule') updateScheduleView();
             if (v === 'admin-entry') updateAdminMatchEntryView();
+            if (v === 'settings') initSettingsView();
+            if (v === 'chat') onChatTabOpened();
+            if (v === 'live') renderLiveView();
 
         } else {
             viewEl.classList.add('hidden');
@@ -287,7 +360,11 @@ function switchView(view) {
 export {
     fetchDivisionNames,
     renderDivisionDropdown,
+    renderGateDivisions,
     handleDivisionChange,
     initializeFilter,
-    switchView
+    switchView,
+    showGate,
+    goToGate,
+    enterApp
 };

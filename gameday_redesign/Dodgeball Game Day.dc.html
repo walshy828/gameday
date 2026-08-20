@@ -1,0 +1,1050 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link rel="stylesheet" href="_ds/modernist-20a3b9ce-788f-4922-aa8d-b2b19e3d9e99/styles.css">
+<script src="_ds/modernist-20a3b9ce-788f-4922-aa8d-b2b19e3d9e99/_ds_bundle.js"></script>
+<style>
+:root{
+  --color-accent:#6E1B26; --color-accent-600:#5A1520; --color-accent-700:#4A1119;
+  --mar:#6E1B26; --mar-d:#4A1119; --mar-l:#8C2632;
+  --gold:#C9A961; --gold-l:#E6D3A0; --gold-d:#9B7C3A;
+  --ink:#181413; --bone:#F3F2F2; --paper:#FFFFFF;
+}
+body{margin:0;background:var(--ink);font-family:"Archivo",system-ui,sans-serif}
+a{color:var(--mar);text-decoration:none}
+a:hover{color:var(--mar-l)}
+button{font-family:"Archivo",system-ui,sans-serif;cursor:pointer;border-radius:0}
+select,input,textarea{font-family:"Archivo",system-ui,sans-serif;border-radius:0}
+@keyframes livepulse{0%,100%{opacity:1}50%{opacity:.35}}
+</style>
+</helmet>
+
+<div style="min-height:100vh;background:var(--ink);display:flex;flex-direction:column">
+
+  <div style="display:flex;flex-wrap:wrap;align-items:center;justify-content:space-between;gap:12px;padding:9px 14px;background:#0D0A0A;border-bottom:2px solid var(--gold);color:#F3F2F2">
+    <div style="font:600 10px/1 Archivo,sans-serif;letter-spacing:.16em;text-transform:uppercase;color:var(--gold)">Prototype · Algonquin Dodgeball Game Day</div>
+    <div style="display:flex;gap:14px;align-items:center">
+      <div style="font:600 10px/1 Archivo,sans-serif;letter-spacing:.1em;color:#8E8785">{{ sessionLabel }}</div>
+      <div style="display:flex;gap:2px;border:1px solid #3A3231">
+        <sc-for list="{{ vpBtns }}" as="b" hint-placeholder-count="2">
+          <button onClick="{{ b.on }}" style="{{ b.style }}">{{ b.label }}</button>
+        </sc-for>
+      </div>
+    </div>
+  </div>
+
+  <div style="flex:1;display:flex;justify-content:center;padding:22px 14px 40px">
+  <div style="width:100%;max-width:{{ frameW }};background:var(--bone);border:2px solid #000;box-shadow:0 18px 50px rgba(0,0,0,.55);display:flex;flex-direction:column;min-height:790px;position:relative;overflow:hidden">
+
+    <sc-if value="{{ atGate }}">
+      <div style="flex:1;background:var(--mar);color:var(--bone);padding:30px 22px 34px;position:relative;overflow:hidden">
+        <div style="position:absolute;right:-70px;top:120px;width:280px;height:280px;border:14px solid rgba(201,169,97,.16);border-radius:50%"></div>
+        <div style="position:absolute;right:30px;top:330px;width:120px;height:120px;border:10px solid rgba(201,169,97,.1);border-radius:50%"></div>
+        <div style="position:relative;display:flex;align-items:center;gap:12px">
+          <img src="assets/algonquin-hockey.png" alt="Algonquin Hockey" style="width:56px;height:56px" />
+          <div>
+            <div style="font:800 12px/1 Archivo,sans-serif;letter-spacing:.2em;color:var(--gold)">ALGONQUIN HOCKEY PRESENTS</div>
+            <div style="font:800 30px/.95 Archivo,sans-serif;letter-spacing:-.02em;margin-top:5px">DODGEBALL<br />TOURNAMENT</div>
+          </div>
+        </div>
+        <div style="height:2px;background:var(--gold);margin:22px 0 20px"></div>
+        <div style="font:800 13px/1 Archivo,sans-serif;letter-spacing:.16em;color:var(--gold)">PICK YOUR DIVISION</div>
+        <p style="font:400 13px/1.5 Archivo,sans-serif;color:rgba(243,242,242,.72);margin:8px 0 18px;max-width:34ch">Standings and schedule all stay inside the division you pick. Live ones are on the floor right now.</p>
+        <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(152px,1fr));gap:2px;background:rgba(201,169,97,.35)">
+          <sc-for list="{{ divisions }}" as="d" hint-placeholder-count="6">
+            <button onClick="{{ d.on }}" style="{{ d.style }}">
+              <span style="display:flex;align-items:center;gap:6px;font:800 11px/1 Archivo,sans-serif;letter-spacing:.16em;color:#9B7C3A">{{ d.kicker }}<span style="{{ d.liveStyle }}">{{ d.liveTag }}</span></span>
+              <span style="font:800 22px/1 Archivo,sans-serif;letter-spacing:-.01em;color:#181413;margin-top:8px">{{ d.short }}</span>
+              <span style="font:400 12px/1 Archivo,sans-serif;color:#6B6462;margin-top:8px">{{ d.meta }}</span>
+            </button>
+          </sc-for>
+        </div>
+        <div style="height:2px;background:rgba(201,169,97,.35);margin:22px 0 14px"></div>
+        <div style="display:flex;align-items:center;justify-content:space-between;gap:12px">
+          <div style="font:400 11px/1.5 Archivo,sans-serif;color:rgba(243,242,242,.55);max-width:24ch">All proceeds support Algonquin Regional hockey.</div>
+          <button onClick="{{ goLogin }}" style="flex:none;display:flex;align-items:center;gap:7px;border:2px solid var(--gold);background:transparent;color:var(--gold);padding:10px 12px;font:800 11px/1 Archivo,sans-serif;letter-spacing:.12em">🔒 STAFF LOGIN</button>
+        </div>
+      </div>
+    </sc-if>
+
+    <sc-if value="{{ atLogin }}">
+      <div style="flex:1;display:flex;flex-direction:column;background:var(--ink);min-height:0">
+        <div style="padding:20px 18px 15px;color:var(--bone)">
+          <button onClick="{{ leaveLogin }}" style="border:0;background:transparent;color:#8E8785;padding:0;font:800 10px/1 Archivo,sans-serif;letter-spacing:.14em">← BACK TO THE TOURNAMENT</button>
+          <div style="display:flex;align-items:center;gap:11px;margin-top:14px">
+            <img src="assets/algonquin-hockey.png" alt="" style="width:40px;height:40px" />
+            <div>
+              <div style="font:800 10px/1 Archivo,sans-serif;letter-spacing:.18em;color:var(--gold)">STAFF SIGN-IN</div>
+              <div style="font:800 24px/1.05 Archivo,sans-serif;margin-top:6px">Sign in to run games</div>
+            </div>
+          </div>
+        </div>
+        <div style="flex:1;overflow:auto;background:var(--paper);border-top:2px solid var(--gold);padding:15px;display:grid;gap:15px;align-content:start">
+          <div>
+            <div style="font:800 10px/1 Archivo,sans-serif;letter-spacing:.12em;color:#6B6462;margin-bottom:7px">ROLE</div>
+            <div style="display:grid;gap:2px;background:#000;padding:2px">
+              <sc-for list="{{ roleTiles }}" as="r" hint-placeholder-count="2">
+                <button onClick="{{ r.on }}" style="{{ r.style }}">
+                  <span style="display:block;font:800 15px/1.1 Archivo,sans-serif">{{ r.label }}</span>
+                  <span style="display:block;font:400 11px/1.35 Archivo,sans-serif;margin-top:4px;opacity:.75">{{ r.blurb }}</span>
+                </button>
+              </sc-for>
+            </div>
+          </div>
+          <div>
+            <div style="font:800 10px/1 Archivo,sans-serif;letter-spacing:.12em;color:#6B6462;margin-bottom:6px">YOUR NAME</div>
+            <input value="{{ reporter }}" onChange="{{ onReporter }}" placeholder="e.g. Maya R." style="width:100%;padding:12px;border:2px solid #000;background:var(--bone);font:600 15px/1 Archivo,sans-serif" />
+          </div>
+          <div>
+            <div style="font:800 10px/1 Archivo,sans-serif;letter-spacing:.12em;color:#6B6462;margin-bottom:6px">ACCESS CODE</div>
+            <input value="{{ pin }}" onChange="{{ onPin }}" placeholder="4-digit code" style="width:100%;padding:12px;border:2px solid #000;background:var(--bone);font:800 18px/1 Archivo,sans-serif;letter-spacing:.3em" />
+          </div>
+          <sc-if value="{{ pickCourt }}">
+            <div>
+              <div style="font:800 10px/1 Archivo,sans-serif;letter-spacing:.12em;color:#6B6462;margin-bottom:6px">YOUR COURT</div>
+              <div style="display:grid;grid-template-columns:repeat(4,1fr);gap:2px;background:#000;padding:2px">
+                <sc-for list="{{ courtBtns }}" as="b" hint-placeholder-count="4">
+                  <button onClick="{{ b.on }}" style="{{ b.style }}">{{ b.label }}</button>
+                </sc-for>
+              </div>
+              <div style="font:400 11px/1.4 Archivo,sans-serif;color:#6B6462;margin-top:7px">{{ courtHint }}</div>
+            </div>
+          </sc-if>
+          <button onClick="{{ startShift }}" style="{{ startShiftStyle }}">SIGN IN →</button>
+          <div style="font:400 11px/1.5 Archivo,sans-serif;color:#6B6462">Two shared codes run the day — <strong>1234</strong> for court managers, <strong>4321</strong> for the tournament manager. Your name is stamped on every result you submit.</div>
+        </div>
+      </div>
+    </sc-if>
+
+    <sc-if value="{{ inApp }}" hint-placeholder-val="{{ true }}">
+    <div style="display:flex;flex-direction:column;flex:1;min-height:0">
+
+      <div style="background:var(--mar);color:var(--bone);padding:10px 14px;display:flex;align-items:center;gap:10px;border-bottom:2px solid var(--gold)">
+        <img src="assets/algonquin-hockey.png" alt="" style="width:36px;height:36px;flex:none" />
+        <div style="flex:1;min-width:0">
+          <div style="font:800 14px/1 Archivo,sans-serif;letter-spacing:.01em">DODGEBALL TOURNAMENT</div>
+          <button onClick="{{ backToGate }}" style="margin-top:5px;display:inline-flex;align-items:center;gap:6px;background:var(--gold);color:#3A2A0C;border:0;padding:3px 7px;font:800 10px/1 Archivo,sans-serif;letter-spacing:.12em">{{ divLabel }} <span style="opacity:.6">CHANGE</span></button>
+        </div>
+        <sc-if value="{{ showClock }}" hint-placeholder-val="{{ true }}">
+          <div style="flex:none;background:#0A0808;border:2px solid var(--gold-d);padding:5px 9px;text-align:right;min-width:88px">
+            <div style="font:800 25px/1 Archivo,sans-serif;color:{{ clockColor }};font-variant-numeric:tabular-nums">{{ clockText }}</div>
+            <div style="font:600 9px/1 Archivo,sans-serif;letter-spacing:.1em;color:#8E8785;margin-top:4px">{{ clockLabel }}</div>
+          </div>
+        </sc-if>
+      </div>
+
+      <div style="background:var(--gold);color:#3A2A0C;padding:7px 14px;display:flex;gap:8px;align-items:baseline;border-bottom:2px solid var(--gold-d)">
+        <span style="font:800 10px/1.3 Archivo,sans-serif;letter-spacing:.14em;flex:none">📣 NOW</span>
+        <span style="font:600 12px/1.35 Archivo,sans-serif">{{ pinnedText }}</span>
+      </div>
+
+      <div style="flex:1;min-height:0;overflow:auto;padding:16px 14px 20px">
+
+        <sc-if value="{{ isLive }}" hint-placeholder-val="{{ true }}">
+          <div>
+            <div style="background:var(--ink);color:var(--bone);padding:14px;position:relative;overflow:hidden">
+              <div style="position:absolute;left:0;right:0;top:50%;height:2px;background:rgba(201,169,97,.25)"></div>
+              <div style="position:relative;display:flex;justify-content:space-between;align-items:flex-start;gap:12px">
+                <div>
+                  <div style="font:800 10px/1 Archivo,sans-serif;letter-spacing:.18em;color:var(--gold)">{{ roundKicker }}</div>
+                  <div style="font:800 34px/1 Archivo,sans-serif;letter-spacing:-.02em;margin-top:8px">{{ roundTime }}</div>
+                  <div style="font:400 12px/1.4 Archivo,sans-serif;color:#9C9492;margin-top:6px">{{ roundSub }}</div>
+                </div>
+                <div style="display:flex;align-items:center;gap:7px;background:rgba(201,169,97,.14);border:1px solid var(--gold-d);padding:5px 8px">
+                  <span style="width:8px;height:8px;background:{{ statusDot }};animation:livepulse 1.4s infinite;flex:none"></span>
+                  <span style="font:800 10px/1 Archivo,sans-serif;letter-spacing:.14em;color:var(--gold-l)">{{ statusText }}</span>
+                </div>
+              </div>
+              <div style="position:relative;margin-top:12px;display:flex;gap:8px;align-items:center">
+                <span style="flex:1;height:8px;background:#2A2423"><span style="{{ reportedBarStyle }}"></span></span>
+                <span style="font:800 10px/1 Archivo,sans-serif;letter-spacing:.1em;color:var(--gold-l)">{{ reportedLabel }}</span>
+              </div>
+            </div>
+
+            <div style="display:grid;gap:10px;margin-top:12px">
+              <sc-for list="{{ courts }}" as="c" hint-placeholder-count="4">
+                <div style="background:var(--paper);border:2px solid #000">
+                  <div style="display:flex;justify-content:space-between;align-items:stretch;border-bottom:2px solid #000">
+                    <div style="background:var(--gold);color:#3A2A0C;padding:6px 10px;font:800 12px/1.2 Archivo,sans-serif;letter-spacing:.14em">{{ c.court }}</div>
+                    <div style="padding:6px 10px;font:800 11px/1.2 Archivo,sans-serif;letter-spacing:.12em;color:{{ c.statusColor }}">{{ c.status }}</div>
+                  </div>
+                  <sc-for list="{{ c.sides }}" as="s" hint-placeholder-count="2">
+                    <div style="display:flex;align-items:center;gap:10px;padding:9px 10px;border-left:5px solid {{ s.bar }}">
+                      <span style="font-size:19px;line-height:1;flex:none">{{ s.emoji }}</span>
+                      <span style="flex:1;min-width:0;font:800 15px/1.2 Archivo,sans-serif;color:{{ s.color }};overflow:hidden;text-overflow:ellipsis;white-space:nowrap">{{ s.name }}</span>
+                      <span style="flex:none;font:800 10px/1.2 Archivo,sans-serif;letter-spacing:.1em;color:var(--mar)">{{ s.tag }}</span>
+                    </div>
+                  </sc-for>
+                  <div style="border-top:1px solid #D7D3D3;padding:6px 10px;display:flex;justify-content:space-between;font:600 11px/1.3 Archivo,sans-serif;color:#6B6462">
+                    <span>NEXT · {{ c.nextTime }}</span>
+                    <span style="text-align:right;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;max-width:60%">{{ c.next }}</span>
+                  </div>
+                </div>
+              </sc-for>
+            </div>
+
+            <div style="height:2px;background:var(--color-divider);margin:20px 0 14px"></div>
+            <div style="font:800 11px/1 Archivo,sans-serif;letter-spacing:.16em;color:#6B6462">TOP OF THE TABLE</div>
+            <div style="margin-top:10px;display:grid;gap:2px;background:#D7D3D3">
+              <sc-for list="{{ topThree }}" as="t" hint-placeholder-count="3">
+                <div style="background:var(--paper);display:flex;align-items:center;gap:10px;padding:9px 10px">
+                  <span style="width:22px;height:22px;background:var(--mar);color:var(--gold);font:800 12px/22px Archivo,sans-serif;text-align:center;flex:none">{{ t.rank }}</span>
+                  <span style="font-size:16px;flex:none">{{ t.emoji }}</span>
+                  <span style="flex:1;min-width:0;font:800 14px/1.2 Archivo,sans-serif;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">{{ t.name }}</span>
+                  <span style="font:600 12px/1 Archivo,sans-serif;color:#6B6462;font-variant-numeric:tabular-nums">{{ t.rec }}</span>
+                  <span style="font:800 17px/1 Archivo,sans-serif;color:var(--mar);font-variant-numeric:tabular-nums;min-width:44px;text-align:right">{{ t.pts }}</span>
+                </div>
+              </sc-for>
+            </div>
+          </div>
+        </sc-if>
+
+        <sc-if value="{{ isStandings }}">
+          <div>
+            <div style="display:flex;justify-content:space-between;align-items:baseline;gap:10px">
+              <h3 style="margin:0;font:800 25px/1 Archivo,sans-serif;letter-spacing:-.02em">Standings</h3>
+              <span style="font:800 10px/1 Archivo,sans-serif;letter-spacing:.14em;color:#6B6462">{{ scoringLabel }}</span>
+            </div>
+            <div style="background:var(--mar);color:var(--gold);padding:6px 10px;margin-top:12px;font:800 10px/1.2 Archivo,sans-serif;letter-spacing:.14em">EVERY TEAM MAKES THE PLAYOFFS — THIS IS YOUR SEED</div>
+            <div style="height:2px;background:#000"></div>
+            <div style="display:flex;padding:7px 10px;font:800 10px/1 Archivo,sans-serif;letter-spacing:.12em;color:#6B6462;gap:10px">
+              <span style="width:22px">#</span><span style="flex:1">TEAM</span><span style="width:58px;text-align:right">W-L-T</span><span style="width:52px;text-align:right">PTS</span>
+            </div>
+            <div style="display:grid;gap:2px;background:#D7D3D3">
+              <sc-for list="{{ standings }}" as="t" hint-placeholder-count="12">
+                <div style="background:{{ t.rowBg }};display:flex;align-items:center;gap:10px;padding:10px">
+                  <span style="width:22px;height:22px;background:{{ t.rankBg }};color:{{ t.rankFg }};font:800 12px/22px Archivo,sans-serif;text-align:center;flex:none">{{ t.rank }}</span>
+                  <span style="font-size:17px;flex:none">{{ t.emoji }}</span>
+                  <span style="flex:1;min-width:0;font:800 14px/1.2 Archivo,sans-serif;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">{{ t.name }}</span>
+                  <span style="width:58px;text-align:right;font:600 12px/1 Archivo,sans-serif;color:#6B6462;font-variant-numeric:tabular-nums">{{ t.rec }}</span>
+                  <span style="width:52px;text-align:right;font:800 18px/1 Archivo,sans-serif;color:var(--mar);font-variant-numeric:tabular-nums">{{ t.pts }}</span>
+                </div>
+              </sc-for>
+            </div>
+            <p style="margin:14px 0 0;font:400 11px/1.5 Archivo,sans-serif;color:#6B6462">Ties broken by players remaining across wins (0.01 per player) — that's the decimal.</p>
+          </div>
+        </sc-if>
+
+        <sc-if value="{{ isSchedule }}">
+          <div>
+            <div style="display:flex;justify-content:space-between;align-items:baseline;gap:10px">
+              <h3 style="margin:0;font:800 25px/1 Archivo,sans-serif;letter-spacing:-.02em">Schedule</h3>
+              <span style="font:800 10px/1 Archivo,sans-serif;letter-spacing:.14em;color:#6B6462">{{ courtCountLabel }}</span>
+            </div>
+            <div style="height:2px;background:#000;margin:12px 0 12px"></div>
+            <select onChange="{{ onTeamFilter }}" value="{{ teamFilter }}" style="width:100%;padding:10px;border:2px solid #000;background:var(--paper);font:800 13px/1 Archivo,sans-serif">
+              <option value="all">ALL TEAMS</option>
+              <sc-for list="{{ teamOptions }}" as="o" hint-placeholder-count="6">
+                <option value="{{ o.id }}">{{ o.name }}</option>
+              </sc-for>
+            </select>
+            <div style="margin-top:14px;display:grid;gap:14px">
+              <sc-for list="{{ rounds }}" as="r" hint-placeholder-count="4">
+                <div>
+                  <div style="display:flex;align-items:center;gap:9px">
+                    <span style="background:{{ r.chipBg }};color:{{ r.chipFg }};padding:4px 8px;font:800 11px/1.2 Archivo,sans-serif;letter-spacing:.12em">{{ r.time }}</span>
+                    <span style="font:800 10px/1 Archivo,sans-serif;letter-spacing:.14em;color:#6B6462">{{ r.label }}</span>
+                    <span style="flex:1;height:2px;background:var(--color-divider)"></span>
+                  </div>
+                  <div style="margin-top:8px;display:grid;gap:2px;background:#D7D3D3">
+                    <sc-for list="{{ r.games }}" as="g" hint-placeholder-count="4">
+                      <div style="background:var(--paper);display:flex;align-items:center;gap:10px;padding:9px 10px;border-left:5px solid {{ g.bar }}">
+                        <span style="font:800 10px/1.2 Archivo,sans-serif;letter-spacing:.1em;color:#6B6462;flex:none;width:26px">{{ g.court }}</span>
+                        <span style="flex:1;min-width:0">
+                          <span style="display:block;font:800 13px/1.3 Archivo,sans-serif;color:{{ g.aColor }};overflow:hidden;text-overflow:ellipsis;white-space:nowrap">{{ g.a }}</span>
+                          <span style="display:block;font:800 13px/1.3 Archivo,sans-serif;color:{{ g.bColor }};overflow:hidden;text-overflow:ellipsis;white-space:nowrap">{{ g.b }}</span>
+                        </span>
+                        <span style="flex:none;text-align:right;font:800 10px/1.3 Archivo,sans-serif;letter-spacing:.1em;color:{{ g.resColor }}">{{ g.res }}</span>
+                      </div>
+                    </sc-for>
+                  </div>
+                </div>
+              </sc-for>
+            </div>
+          </div>
+        </sc-if>
+
+        <sc-if value="{{ isMore }}">
+          <div>
+            <h3 style="margin:0;font:800 25px/1 Archivo,sans-serif;letter-spacing:-.02em">Tournament Info</h3>
+            <div style="height:2px;background:#000;margin:12px 0 14px"></div>
+            <div style="font:800 11px/1 Archivo,sans-serif;letter-spacing:.16em;color:#6B6462">ANNOUNCEMENTS</div>
+            <div style="margin-top:9px;display:grid;gap:2px;background:#D7D3D3">
+              <sc-for list="{{ announcements }}" as="a" hint-placeholder-count="3">
+                <div style="background:var(--paper);padding:10px;border-left:5px solid {{ a.bar }}">
+                  <div style="font:800 10px/1 Archivo,sans-serif;letter-spacing:.12em;color:#6B6462">{{ a.time }} · {{ a.tag }}</div>
+                  <div style="font:600 13px/1.4 Archivo,sans-serif;margin-top:5px">{{ a.text }}</div>
+                </div>
+              </sc-for>
+            </div>
+            <div style="height:2px;background:var(--color-divider);margin:20px 0 14px"></div>
+            <div style="font:800 11px/1 Archivo,sans-serif;letter-spacing:.16em;color:#6B6462">HOUSE RULES</div>
+            <div style="margin-top:9px;display:grid;gap:2px;background:#D7D3D3">
+              <sc-for list="{{ rules }}" as="r" hint-placeholder-count="6">
+                <div style="background:var(--paper);display:flex;gap:10px;padding:10px">
+                  <span style="font:800 13px/1.4 Archivo,sans-serif;color:var(--mar);flex:none;width:18px">{{ r.n }}</span>
+                  <span style="font:400 13px/1.45 Archivo,sans-serif;text-wrap:pretty">{{ r.text }}</span>
+                </div>
+              </sc-for>
+            </div>
+            <div style="height:2px;background:var(--color-divider);margin:20px 0 14px"></div>
+            <div style="background:var(--mar);color:var(--bone);padding:16px">
+              <div style="font:800 11px/1 Archivo,sans-serif;letter-spacing:.16em;color:var(--gold)">FUNDRAISER</div>
+              <div style="font:800 20px/1.15 Archivo,sans-serif;margin-top:8px">Every entry backs Algonquin hockey.</div>
+              <p style="font:400 12px/1.5 Archivo,sans-serif;color:rgba(243,242,242,.72);margin:8px 0 0">Raffle tickets at the scorer's table all day. Bring a food pantry donation.</p>
+            </div>
+            <button onClick="{{ staffButton }}" style="margin-top:16px;width:100%;display:flex;align-items:center;gap:8px;border:2px solid #000;background:transparent;padding:13px;font:800 12px/1 Archivo,sans-serif;letter-spacing:.12em">🔒 {{ staffLinkLabel }}</button>
+          </div>
+        </sc-if>
+
+        <sc-if value="{{ isAdmin }}">
+          <div>
+            <div style="display:flex;justify-content:space-between;align-items:center;gap:10px">
+              <div>
+                <h3 style="margin:0;font:800 22px/1 Archivo,sans-serif;letter-spacing:-.02em">{{ adminTitle }}</h3>
+                <div style="font:600 11px/1.3 Archivo,sans-serif;color:#6B6462;margin-top:6px">{{ adminWho }}</div>
+              </div>
+              <button onClick="{{ endShift }}" style="border:2px solid #000;background:transparent;padding:8px 10px;font:800 10px/1 Archivo,sans-serif;letter-spacing:.12em">SIGN OUT</button>
+            </div>
+
+            <sc-if value="{{ isCourtManager }}">
+              <div style="margin-top:14px;background:var(--paper);border:2px solid #000;padding:12px">
+                <div style="font:800 10px/1 Archivo,sans-serif;letter-spacing:.12em;color:#6B6462">MY COURT</div>
+                <div style="display:grid;grid-template-columns:repeat(4,1fr);gap:2px;background:#000;padding:2px;margin-top:9px">
+                  <sc-for list="{{ courtSwitchBtns }}" as="b" hint-placeholder-count="4">
+                    <button onClick="{{ b.on }}" style="{{ b.style }}">{{ b.label }}</button>
+                  </sc-for>
+                </div>
+                <div style="font:400 11px/1.4 Archivo,sans-serif;color:#6B6462;margin-top:9px">Moved courts mid-day? Tap the new one — the game list below follows you. Sign out when you hand the court over.</div>
+              </div>
+            </sc-if>
+
+            <sc-if value="{{ isManager }}">
+              <div style="margin-top:14px;background:var(--ink);color:var(--bone);padding:14px">
+                <div style="display:flex;justify-content:space-between;align-items:baseline;gap:10px">
+                  <div style="font:800 11px/1 Archivo,sans-serif;letter-spacing:.16em;color:var(--gold)">TIMER CONTROLS</div>
+                  <div style="font:600 10px/1 Archivo,sans-serif;letter-spacing:.1em;color:#8E8785">{{ roundKicker }}</div>
+                </div>
+                <div style="font:800 46px/1 Archivo,sans-serif;font-variant-numeric:tabular-nums;margin:10px 0 12px;color:{{ clockColor }}">{{ clockText }}</div>
+                <div style="display:grid;grid-template-columns:1fr 1.3fr 1fr;gap:6px">
+                  <button onClick="{{ minus30 }}" style="border:2px solid #3A3231;background:#221D1C;color:var(--bone);padding:13px 0;font:800 13px/1 Archivo,sans-serif">−30s</button>
+                  <button onClick="{{ toggleClock }}" style="{{ playStyle }}">{{ playLabel }}</button>
+                  <button onClick="{{ plus30 }}" style="border:2px solid #3A3231;background:#221D1C;color:var(--bone);padding:13px 0;font:800 13px/1 Archivo,sans-serif">+30s</button>
+                </div>
+                <div style="height:1px;background:#3A3231;margin:14px 0"></div>
+                <button onClick="{{ toggleAfter }}" style="display:flex;align-items:center;gap:9px;border:0;background:transparent;padding:0;color:var(--bone);font:800 12px/1 Archivo,sans-serif;letter-spacing:.06em">
+                  <span style="{{ afterBoxStyle }}">{{ afterMark }}</span> AFTER-ROUND TIMER
+                </button>
+                <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:6px;margin-top:10px;opacity:{{ afterOpacity }}">
+                  <button onClick="{{ afterMinus }}" style="border:2px solid #3A3231;background:#221D1C;color:var(--bone);padding:11px 0;font:800 12px/1 Archivo,sans-serif">−15s</button>
+                  <span style="border:2px solid var(--gold-d);color:var(--gold-l);padding:11px 0;font:800 12px/1 Archivo,sans-serif;text-align:center;font-variant-numeric:tabular-nums">{{ afterSecLabel }}</span>
+                  <button onClick="{{ afterPlus }}" style="border:2px solid #3A3231;background:#221D1C;color:var(--bone);padding:11px 0;font:800 12px/1 Archivo,sans-serif">+15s</button>
+                </div>
+                <div style="display:grid;grid-template-columns:1fr 1fr;gap:6px;margin-top:10px">
+                  <button onClick="{{ prevRound }}" style="border:2px solid #3A3231;background:#221D1C;color:var(--bone);padding:13px 0;font:800 12px/1 Archivo,sans-serif;letter-spacing:.06em">PREV ROUND</button>
+                  <button onClick="{{ nextRound }}" style="border:2px solid var(--gold-d);background:transparent;color:var(--gold-l);padding:13px 0;font:800 12px/1 Archivo,sans-serif;letter-spacing:.06em">NEXT ROUND</button>
+                </div>
+                <div style="display:flex;align-items:center;justify-content:space-between;gap:10px;margin-top:14px;border-top:1px solid #3A3231;padding-top:12px">
+                  <span style="font:800 12px/1 Archivo,sans-serif;letter-spacing:.06em">SHOW CLOCK TO EVERYONE</span>
+                  <button onClick="{{ toggleShowClock }}" style="{{ showClockStyle }}"><span style="{{ showClockKnob }}"></span></button>
+                </div>
+              </div>
+              <div style="margin-top:10px;background:var(--paper);border:2px solid #000;padding:12px">
+                <div style="font:800 10px/1 Archivo,sans-serif;letter-spacing:.12em;color:#6B6462">DIVISIONS ON THE FLOOR</div>
+                <div style="display:flex;flex-wrap:wrap;gap:6px;margin-top:9px">
+                  <sc-for list="{{ activeChips }}" as="c" hint-placeholder-count="2">
+                    <button onClick="{{ c.on }}" style="{{ c.style }}">{{ c.label }}</button>
+                  </sc-for>
+                </div>
+                <div style="font:400 11px/1.4 Archivo,sans-serif;color:#6B6462;margin-top:9px">Tap to switch which division you're managing. Court managers only see the division running on their court.</div>
+              </div>
+
+              <div style="margin-top:10px;background:var(--paper);border:2px solid #000;padding:12px">
+                <div style="display:flex;justify-content:space-between;align-items:baseline;gap:10px">
+                  <div style="font:800 10px/1 Archivo,sans-serif;letter-spacing:.12em;color:#6B6462">ANNOUNCEMENTS</div>
+                  <div style="font:600 10px/1 Archivo,sans-serif;color:#6B6462">Newest active one runs in the banner</div>
+                </div>
+                <div style="display:flex;flex-wrap:wrap;gap:6px;margin-top:10px">
+                  <sc-for list="{{ annTags }}" as="t" hint-placeholder-count="4">
+                    <button onClick="{{ t.on }}" style="{{ t.style }}">{{ t.label }}</button>
+                  </sc-for>
+                </div>
+                <textarea value="{{ annDraft }}" onChange="{{ onAnnDraft }}" placeholder="e.g. Grades 5–6 semifinals move to Court 1 at 4:20." style="width:100%;height:62px;margin-top:8px;padding:10px;border:2px solid #000;background:var(--bone);font:400 13px/1.4 Archivo,sans-serif;resize:none"></textarea>
+                <div style="display:grid;grid-template-columns:1fr;gap:6px;margin-top:8px">
+                  <button onClick="{{ annPost }}" style="{{ annPostStyle }}">{{ annPostLabel }}</button>
+                  <sc-if value="{{ annEditing }}">
+                    <button onClick="{{ annCancel }}" style="border:2px solid #000;background:transparent;padding:11px;font:800 11px/1 Archivo,sans-serif;letter-spacing:.1em;text-align:left">CANCEL EDIT</button>
+                  </sc-if>
+                </div>
+                <div style="height:1px;background:#D7D3D3;margin:12px 0"></div>
+                <div style="display:grid;gap:2px;background:#D7D3D3">
+                  <sc-for list="{{ annList }}" as="a" hint-placeholder-count="3">
+                    <div style="background:var(--paper);padding:10px;border-left:5px solid {{ a.bar }}">
+                      <div style="font:800 10px/1 Archivo,sans-serif;letter-spacing:.12em;color:#6B6462">{{ a.time }} · {{ a.tag }}</div>
+                      <div style="font:600 13px/1.4 Archivo,sans-serif;margin-top:5px;color:{{ a.textColor }}">{{ a.text }}</div>
+                      <div style="display:flex;gap:6px;margin-top:9px">
+                        <button onClick="{{ a.toggle }}" style="{{ a.toggleStyle }}">{{ a.toggleLabel }}</button>
+                        <button onClick="{{ a.edit }}" style="border:2px solid #000;background:transparent;padding:6px 8px;font:800 9px/1 Archivo,sans-serif;letter-spacing:.08em">EDIT</button>
+                        <button onClick="{{ a.del }}" style="border:2px solid #A8321C;background:transparent;color:#A8321C;padding:6px 8px;font:800 9px/1 Archivo,sans-serif;letter-spacing:.08em">DELETE</button>
+                      </div>
+                    </div>
+                  </sc-for>
+                </div>
+              </div>
+            </sc-if>
+
+            <div style="height:2px;background:#000;margin:16px 0 0"></div>
+            <div style="display:flex;justify-content:space-between;padding:8px 0;font:800 10px/1 Archivo,sans-serif;letter-spacing:.12em;color:#6B6462">
+              <span>{{ adminScope }}</span><span>{{ adminCount }}</span>
+            </div>
+            <div style="display:grid;gap:2px;background:#D7D3D3">
+              <sc-for list="{{ adminGames }}" as="g" hint-placeholder-count="5">
+                <div style="background:var(--paper);padding:10px;border-left:5px solid {{ g.bar }};display:flex;align-items:center;gap:10px">
+                  <div style="flex:1;min-width:0">
+                    <div style="font:800 10px/1 Archivo,sans-serif;letter-spacing:.1em;color:#6B6462">{{ g.meta }}</div>
+                    <div style="font:800 14px/1.35 Archivo,sans-serif;margin-top:5px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">{{ g.a }}</div>
+                    <div style="font:800 14px/1.35 Archivo,sans-serif;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">{{ g.b }}</div>
+                    <div style="font:600 11px/1.3 Archivo,sans-serif;color:#6B6462;margin-top:6px">{{ g.stamp }}</div>
+                  </div>
+                  <button onClick="{{ g.on }}" style="{{ g.btnStyle }}">{{ g.btn }}</button>
+                </div>
+              </sc-for>
+            </div>
+          </div>
+        </sc-if>
+
+        <sc-if value="{{ isChat }}">
+          <div style="display:flex;flex-direction:column;min-height:100%">
+            <div style="display:flex;justify-content:space-between;align-items:baseline;gap:10px">
+              <h3 style="margin:0;font:800 25px/1 Archivo,sans-serif;letter-spacing:-.02em">Crew Chat</h3>
+              <span style="font:800 10px/1 Archivo,sans-serif;letter-spacing:.14em;color:#6B6462">COURTS 1–4 + DESK</span>
+            </div>
+            <div style="font:400 12px/1.4 Archivo,sans-serif;color:#6B6462;margin-top:7px">{{ chatSub }}</div>
+            <div style="height:2px;background:#000;margin:12px 0 0"></div>
+            <div style="display:grid;gap:2px;background:#D7D3D3;margin-top:12px">
+              <sc-for list="{{ chatMsgs }}" as="m" hint-placeholder-count="5">
+                <div style="background:{{ m.bg }};padding:10px;border-left:5px solid {{ m.bar }}">
+                  <div style="display:flex;justify-content:space-between;gap:10px">
+                    <span style="font:800 10px/1 Archivo,sans-serif;letter-spacing:.1em;color:{{ m.whoColor }}">{{ m.who }}</span>
+                    <span style="font:600 10px/1 Archivo,sans-serif;color:#9B9797;flex:none">{{ m.time }}</span>
+                  </div>
+                  <div style="font:600 13px/1.45 Archivo,sans-serif;margin-top:6px;text-wrap:pretty">{{ m.text }}</div>
+                </div>
+              </sc-for>
+            </div>
+            <div style="margin-top:12px;display:flex;gap:2px;background:#000;padding:2px">
+              <input value="{{ chatDraft }}" onChange="{{ onChatDraft }}" placeholder="Message the crew…" style="flex:1;min-width:0;padding:13px 11px;border:0;background:var(--bone);font:600 14px/1 Archivo,sans-serif" />
+              <button onClick="{{ chatSend }}" style="{{ chatSendStyle }}">SEND</button>
+            </div>
+            <div style="font:400 11px/1.4 Archivo,sans-serif;color:#6B6462;margin-top:8px">Posting as {{ chatWho }} — fans never see this channel.</div>
+          </div>
+        </sc-if>
+
+        <sc-if value="{{ isSettings }}">
+          <div>
+            <h3 style="margin:0;font:800 25px/1 Archivo,sans-serif;letter-spacing:-.02em">Game Settings</h3>
+            <div style="height:2px;background:#000;margin:12px 0 14px"></div>
+            <div style="background:var(--paper);border:2px solid #000;padding:12px">
+              <div style="display:flex;justify-content:space-between;align-items:center;gap:10px">
+                <div style="font:800 14px/1.2 Archivo,sans-serif">Google Sheet sync</div>
+                <span style="background:#2F7D4F;color:#fff;padding:3px 7px;font:800 9px/1.3 Archivo,sans-serif;letter-spacing:.1em">CONNECTED</span>
+              </div>
+              <p style="font:400 12px/1.45 Archivo,sans-serif;color:#6B6462;margin:7px 0 0">The sheet is the document of record. Match data is pulled from it into this app.</p>
+              <div style="display:flex;align-items:center;gap:10px;margin-top:11px;flex-wrap:wrap">
+                <button onClick="{{ syncNow }}" style="border:2px solid #000;background:var(--gold);padding:10px 12px;font:800 11px/1 Archivo,sans-serif;letter-spacing:.1em">↻ SYNC NOW</button>
+                <span style="font:600 11px/1.3 Archivo,sans-serif;color:#6B6462">Last sync: {{ synced }}</span>
+              </div>
+              <div style="height:1px;background:#D7D3D3;margin:12px 0"></div>
+              <div style="display:flex;align-items:center;justify-content:space-between;gap:10px">
+                <span style="font:800 12px/1.2 Archivo,sans-serif">Auto-sync</span>
+                <button onClick="{{ toggleAuto }}" style="{{ autoStyle }}"><span style="{{ autoKnob }}"></span></button>
+              </div>
+              <div style="display:flex;gap:6px;margin-top:10px;opacity:{{ autoOpacity }}">
+                <sc-for list="{{ syncRates }}" as="r" hint-placeholder-count="3">
+                  <button onClick="{{ r.on }}" style="{{ r.style }}">{{ r.label }}</button>
+                </sc-for>
+              </div>
+              <div style="height:1px;background:#D7D3D3;margin:12px 0"></div>
+              <div style="font:800 10px/1 Archivo,sans-serif;letter-spacing:.12em;color:#6B6462">SYNC SCOPE · ACTIVE DIVISIONS ONLY</div>
+              <div style="display:flex;flex-wrap:wrap;gap:6px;margin-top:9px">
+                <sc-for list="{{ divToggles }}" as="d" hint-placeholder-count="6">
+                  <button onClick="{{ d.on }}" style="{{ d.style }}">{{ d.mark }} {{ d.label }}</button>
+                </sc-for>
+              </div>
+              <div style="font:400 11px/1.4 Archivo,sans-serif;color:#6B6462;margin-top:9px">{{ scopeNote }}</div>
+            </div>
+            <div style="height:2px;background:var(--color-divider);margin:18px 0 12px"></div>
+            <div style="font:800 11px/1 Archivo,sans-serif;letter-spacing:.16em;color:#6B6462">SCORING &amp; CLOCK</div>
+            <div style="margin-top:9px;display:grid;gap:2px;background:#D7D3D3">
+              <sc-for list="{{ numSettings }}" as="s" hint-placeholder-count="4">
+                <div style="background:var(--paper);display:flex;align-items:center;gap:10px;padding:10px">
+                  <span style="flex:1;font:800 14px/1.2 Archivo,sans-serif">{{ s.label }}</span>
+                  <button onClick="{{ s.dec }}" style="width:36px;height:36px;border:2px solid #000;background:var(--bone);font:800 16px/1 Archivo,sans-serif">–</button>
+                  <span style="min-width:52px;text-align:center;font:800 17px/1 Archivo,sans-serif;font-variant-numeric:tabular-nums">{{ s.value }}</span>
+                  <button onClick="{{ s.inc }}" style="width:36px;height:36px;border:2px solid #000;background:var(--bone);font:800 16px/1 Archivo,sans-serif">+</button>
+                </div>
+              </sc-for>
+            </div>
+            <div style="height:2px;background:var(--color-divider);margin:18px 0 12px"></div>
+            <div style="font:800 11px/1 Archivo,sans-serif;letter-spacing:.16em;color:#6B6462">RECENT SYNC HISTORY</div>
+            <div style="margin-top:9px;display:grid;gap:2px;background:#D7D3D3">
+              <sc-for list="{{ syncHistory }}" as="h" hint-placeholder-count="3">
+                <div style="background:var(--paper);display:flex;align-items:center;gap:10px;padding:9px 10px">
+                  <span style="font:600 11px/1.3 Archivo,sans-serif;color:#6B6462;width:74px;flex:none">{{ h.time }}</span>
+                  <span style="background:#2F7D4F;color:#fff;padding:2px 6px;font:800 9px/1.4 Archivo,sans-serif;letter-spacing:.08em;flex:none">OK</span>
+                  <span style="flex:1;font:600 11px/1.3 Archivo,sans-serif;color:#6B6462;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">{{ h.detail }}</span>
+                </div>
+              </sc-for>
+            </div>
+          </div>
+        </sc-if>
+      </div>
+
+      <div style="display:flex;background:var(--ink);border-top:2px solid var(--gold)">
+        <sc-for list="{{ navItems }}" as="n" hint-placeholder-count="5">
+          <button onClick="{{ n.on }}" style="{{ n.style }}">
+            <span style="font-size:16px;line-height:1">{{ n.icon }}</span>
+            <span style="font:800 9px/1 Archivo,sans-serif;letter-spacing:.1em;margin-top:5px">{{ n.label }}</span>
+          </button>
+        </sc-for>
+      </div>
+    </div>
+    </sc-if>
+
+    <sc-if value="{{ modalOpen }}">
+      <div style="position:absolute;inset:0;background:rgba(10,8,8,.72);display:flex;align-items:flex-end;justify-content:center;padding:14px">
+        <div style="width:100%;max-width:420px;background:var(--paper);border:2px solid #000;box-shadow:0 -8px 40px rgba(0,0,0,.5)">
+          <div style="background:var(--mar);color:var(--bone);padding:12px 14px">
+            <div style="font:800 10px/1 Archivo,sans-serif;letter-spacing:.16em;color:var(--gold)">REPORT FINAL RESULT</div>
+            <div style="font:800 16px/1.25 Archivo,sans-serif;margin-top:7px">{{ modalMeta }}</div>
+          </div>
+          <div style="padding:14px;display:grid;gap:14px">
+            <div>
+              <div style="font:800 10px/1 Archivo,sans-serif;letter-spacing:.12em;color:#6B6462;margin-bottom:6px">WHO WON?</div>
+              <div style="display:grid;gap:2px;background:#000;padding:2px">
+                <sc-for list="{{ modalSides }}" as="s" hint-placeholder-count="3">
+                  <button onClick="{{ s.on }}" style="{{ s.style }}">{{ s.label }}</button>
+                </sc-for>
+              </div>
+            </div>
+            <div>
+              <div style="font:800 10px/1 Archivo,sans-serif;letter-spacing:.12em;color:#6B6462;margin-bottom:6px">WINNER'S PLAYERS LEFT (TIEBREAK)</div>
+              <div style="display:flex;align-items:center;gap:2px;background:#000;padding:2px">
+                <button onClick="{{ decRem }}" style="width:48px;height:48px;border:0;background:var(--bone);font:800 20px/1 Archivo,sans-serif">–</button>
+                <span style="flex:1;text-align:center;background:var(--bone);height:48px;font:800 24px/48px Archivo,sans-serif;font-variant-numeric:tabular-nums">{{ modalRem }}</span>
+                <button onClick="{{ incRem }}" style="width:48px;height:48px;border:0;background:var(--bone);font:800 20px/1 Archivo,sans-serif">+</button>
+              </div>
+            </div>
+            <div>
+              <div style="font:800 10px/1 Archivo,sans-serif;letter-spacing:.12em;color:#6B6462;margin-bottom:6px">NOTES · OPTIONAL</div>
+              <textarea onChange="{{ onNotes }}" placeholder="Forfeit, injury, sideline drama…" style="width:100%;height:62px;padding:10px;border:2px solid #000;background:var(--bone);font:400 13px/1.4 Archivo,sans-serif;resize:none"></textarea>
+            </div>
+            <div style="font:600 11px/1.4 Archivo,sans-serif;color:#6B6462">{{ modalStamp }}</div>
+            <div style="display:grid;grid-template-columns:1fr 1.6fr;gap:8px">
+              <button onClick="{{ closeModal }}" style="border:2px solid #000;background:transparent;padding:14px;font:800 12px/1 Archivo,sans-serif;letter-spacing:.1em">CANCEL</button>
+              <button onClick="{{ saveResult }}" style="{{ saveStyle }}">SUBMIT RESULT</button>
+            </div>
+          </div>
+        </div>
+      </div>
+    </sc-if>
+
+    <sc-if value="{{ toast }}">
+      <div style="position:absolute;left:14px;right:14px;bottom:74px;background:var(--gold);color:#3A2A0C;border:2px solid #000;padding:11px 12px;font:800 12px/1.3 Archivo,sans-serif">{{ toast }}</div>
+    </sc-if>
+
+  </div>
+  </div>
+</div>
+
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props="{&quot;$preview&quot;:{&quot;width&quot;:1100,&quot;height&quot;:900}}">
+const POOL = [
+  ['Dodgeball Dynasty','👑'],['The Jailbreakers','🔒'],['The Rolling Stones','🪨'],['Just Dodge It','💨'],
+  ['Yeet Fleet','🚀'],['Hot Diggity Doge','🐶'],['Sock Rockets','🧦'],['Turbo Turtles','🐢'],
+  ['Gummy Gators','🐊'],['Pancake Posse','🥞'],['Sneaker Sharks','🦈'],['Cookie Monsters','🍪'],
+  ['Zamboni Zoomers','🧊'],['Slapshot Squad','🏒'],['Bouncy Bandits','🎯'],['Mini Moose','🫎'],
+  ['Red Line Rebels','🚨'],['Puck Luck','🍀'],['Duck Duck Dodge','🦆'],['Ice Cold Crew','❄️'],
+  ['Wicked Fast','⚡'],['Team Toast','🍞'],['Court Jesters','🃏'],['Blizzard Brigade','🌨️']
+];
+const DIVS = [
+  {id:'g12',short:'1–2',kicker:'GRADES',label:'Grades 1–2',n:14,seed:3},
+  {id:'g34',short:'3–4',kicker:'GRADES',label:'Grades 3–4',n:15,seed:7},
+  {id:'g56',short:'5–6',kicker:'GRADES',label:'Grades 5–6',n:16,seed:11},
+  {id:'g78',short:'7–8',kicker:'GRADES',label:'Grades 7–8',n:15,seed:5},
+  {id:'gg56',short:'5–6',kicker:'GIRLS',label:'Girls 5–6',n:10,seed:17,girls:true},
+  {id:'gg78',short:'7–8',kicker:'GIRLS',label:'Girls 7–8',n:8,seed:23,girls:true}
+];
+const RULES = [
+  'Head shots do not count. Aim below the shoulders — always.',
+  'Catch a live throw and the thrower is out, plus one teammate comes back in.',
+  'Step over the centerline and you are out. Refs are high schoolers; their call is final.',
+  'A game ends when one side is empty or the horn sounds. Most players standing wins.',
+  'If the horn sounds even, it is a tie — 1 point each.',
+  'Coaches and parents stay behind the bleacher line. No exceptions, no negotiating.'
+];
+const rnd = s => { const x = Math.sin(s * 12.9898) * 43758.5453; return x - Math.floor(x); };
+
+class Component extends DCLogic {
+  state = {
+    viewport: 'phone', screen: 'gate', divId: null, tab: 'live',
+    role: null, roleDraft: 'admin', reporter: '', pin: '', court: 1,
+    active: ['g56', 'gg56'], managing: 'g56',
+    clock: 178, running: true, round: 3, showClock: true,
+    afterOn: false, afterSec: 30,
+    results: {}, modal: null, mWinner: null, mRem: 3, mNotes: '',
+    anns: [
+      { id: 3, mins: 29, tag: 'ALL DIVISIONS', text: 'Round 4 is on. Report every final the moment the game ends — standings update live.', on: true },
+      { id: 2, mins: 22, tag: 'CONCESSIONS', text: 'Pizza is out. Raffle draw at 5:00 PM by the scorer\u2019s table.', on: true },
+      { id: 1, mins: 12, tag: 'LOST & FOUND', text: 'One maroon hoodie and a very small sneaker at the front table.', on: false }
+    ],
+    annDraft: '', annTag: 'ALL DIVISIONS', annEdit: null,
+    chat: [
+      { id: 1, mins: 8, who: 'Tournament Desk · Ellie', mgr: true, text: 'Refs — send finals in as soon as the last player is out. Do not wait for the horn.' },
+      { id: 2, mins: 14, who: 'Court 2 · Maya', mgr: false, text: 'Court 2 is down to one good ball, can someone bring a spare?' },
+      { id: 3, mins: 15, who: 'Tournament Desk · Ellie', mgr: true, text: 'On the way with two.' },
+      { id: 4, mins: 21, who: 'Court 4 · Devin', mgr: false, text: 'Team on Court 4 only has 5 players — playing short, result still counts?' },
+      { id: 5, mins: 22, who: 'Tournament Desk · Ellie', mgr: true, text: 'Yes — play it, note it in the result.' }
+    ], chatDraft: '',
+    teamFilter: 'all', toast: null,
+    settings: { courts: 4, gameLen: 6, win: 3, tie: 1 },
+    auto: true, rate: '30s', synced: '12 sec ago'
+  };
+
+  componentDidMount() {
+    this.timer = setInterval(() => {
+      if (!this.state.running) return;
+      this.setState(s => ({ clock: s.clock > 0 ? s.clock - 1 : 0 }));
+    }, 1000);
+  }
+  componentWillUnmount() { clearInterval(this.timer); }
+
+  flash(msg) { this.setState({ toast: msg }); clearTimeout(this._t); this._t = setTimeout(() => this.setState({ toast: null }), 2600); }
+  div(id) { return DIVS.find(d => d.id === (id || this.state.divId)); }
+
+  teams(div) {
+    const out = [];
+    for (let i = 0; i < div.n; i++) {
+      const p = POOL[(i * 5 + div.seed) % POOL.length];
+      out.push({ id: div.id + '-' + i, name: p[0], emoji: p[1] });
+    }
+    return out;
+  }
+
+  schedule(div) {
+    const ts = this.teams(div), courts = this.state.settings.courts, rounds = [];
+    const arr = ts.slice();
+    if (arr.length % 2) arr.push(null);
+    const N = arr.length, half = N / 2;
+    for (let r = 0; r < 8; r++) {
+      const rot = [arr[0]].concat(arr.slice(1).map((_, i) => arr[1 + ((i + r) % (N - 1))]));
+      const pairs = [];
+      for (let i = 0; i < half; i++) pairs.push([rot[i], rot[N - 1 - i]]);
+      const games = [];
+      for (let k = 0; k < half && games.length < courts; k++) {
+        const p = pairs[(r * courts + k) % half];
+        if (!p[0] || !p[1]) continue;
+        games.push({ id: div.id + '-' + r + '-' + games.length, court: games.length + 1, round: r, a: p[0], b: p[1] });
+      }
+      rounds.push({ round: r, mins: 5 + r * 8, games });
+    }
+    return rounds;
+  }
+
+  timeAt(mins) {
+    const t = 15 * 60 + mins, h = Math.floor(t / 60), m = t % 60;
+    return ((h - 1) % 12 + 1) + ':' + String(m).padStart(2, '0') + ' PM';
+  }
+
+  result(g, divSeed) {
+    const o = this.state.results[g.id];
+    if (o) return o;
+    if (g.round >= this.state.round) return null;
+    const k = rnd(g.round * 31 + g.court * 7 + divSeed);
+    if (k > 0.93) return { tie: true, rem: 0, by: 'Sheet' };
+    return { winner: k > 0.5 ? 'a' : 'b', rem: 1 + Math.floor(k * 5), by: 'Sheet' };
+  }
+
+  table(div) {
+    const map = {};
+    this.teams(div).forEach(t => map[t.id] = { ...t, w: 0, l: 0, t: 0, rem: 0 });
+    this.schedule(div).forEach(r => r.games.forEach(g => {
+      const res = this.result(g, div.seed);
+      if (!res) return;
+      const A = map[g.a.id], B = map[g.b.id];
+      if (res.tie) { A.t++; B.t++; return; }
+      const W = res.winner === 'a' ? A : B, L = res.winner === 'a' ? B : A;
+      W.w++; W.rem += res.rem || 0; L.l++;
+    }));
+    return Object.values(map)
+      .map(t => ({ ...t, pts: t.w * this.state.settings.win + t.t * this.state.settings.tie + t.rem * 0.01 }))
+      .sort((a, b) => b.pts - a.pts || b.w - a.w || a.name.localeCompare(b.name));
+  }
+
+  toggle(on, w) {
+    return {
+      style: 'width:' + w + 'px;height:26px;border:2px solid ' + (on ? '#2F7D4F' : '#8E8785') + ';background:' +
+        (on ? '#2F7D4F' : 'transparent') + ';padding:0 2px;display:flex;align-items:center;justify-content:' + (on ? 'flex-end' : 'flex-start'),
+      knob: 'display:block;width:18px;height:18px;background:' + (on ? '#fff' : '#8E8785')
+    };
+  }
+
+  go(tab) { return () => this.setState({ tab, toast: null }); }
+
+  renderVals() {
+    const s = this.state, S = s.settings;
+    const seg = (on, active) => ({
+      on, style: 'border:0;padding:6px 10px;font:800 10px/1 Archivo,sans-serif;letter-spacing:.1em;background:' +
+        (active ? 'var(--gold)' : 'transparent') + ';color:' + (active ? '#3A2A0C' : '#B9B2B0')
+    });
+    const v = {
+      frameW: s.viewport === 'phone' ? '412px' : '900px',
+      sessionLabel: s.role ? (s.role === 'manager' ? 'TOURNAMENT MANAGER · ' : 'COURT ' + s.court + ' MANAGER · ') + s.reporter.toUpperCase() : 'FAN VIEW',
+      vpBtns: [
+        { label: 'PHONE', ...seg(() => this.setState({ viewport: 'phone' }), s.viewport === 'phone') },
+        { label: 'TABLET', ...seg(() => this.setState({ viewport: 'tablet' }), s.viewport === 'tablet') }
+      ],
+      atGate: s.screen === 'gate', atLogin: s.screen === 'login', inApp: s.screen === 'app',
+      toast: s.toast,
+      divisions: DIVS.map(d => {
+        const live = s.active.indexOf(d.id) >= 0;
+        return {
+          kicker: d.kicker, short: d.short, meta: d.n + ' teams',
+          liveTag: live ? '· LIVE NOW' : '',
+          liveStyle: 'font:800 9px/1 Archivo,sans-serif;letter-spacing:.12em;color:' + (live ? '#2F7D4F' : 'transparent'),
+          on: () => this.setState({ divId: d.id, screen: 'app', tab: 'live', teamFilter: 'all' }),
+          style: 'display:flex;flex-direction:column;align-items:flex-start;text-align:left;background:' +
+            (live ? 'var(--bone)' : '#E2E0DF') + ';border:0;padding:14px 12px 13px;min-height:104px'
+        };
+      }),
+      goLogin: () => this.setState({ screen: 'login' }),
+      leaveLogin: () => this.setState({ screen: s.divId ? 'app' : 'gate' }),
+      roleTiles: [
+        { id: 'admin', label: 'Court manager', blurb: 'Report the final of every game on your court.' },
+        { id: 'manager', label: 'Tournament manager', blurb: 'Clock, rounds, announcements, settings, every court.' }
+      ].map(r => ({
+        label: r.label, blurb: r.blurb, on: () => this.setState({ roleDraft: r.id }),
+        style: 'display:block;width:100%;text-align:left;border:0;padding:13px 12px;background:' +
+          (s.roleDraft === r.id ? 'var(--mar)' : 'var(--bone)') + ';color:' + (s.roleDraft === r.id ? 'var(--bone)' : '#181413')
+      })),
+      reporter: s.reporter, pin: s.pin,
+      onReporter: e => this.setState({ reporter: e.target.value }),
+      onPin: e => this.setState({ pin: e.target.value.slice(0, 4) }),
+      pickCourt: s.roleDraft === 'admin',
+      courtBtns: [1, 2, 3, 4].map(c => ({
+        label: 'C' + c, on: () => this.setState({ court: c }),
+        style: 'border:0;padding:13px 0;font:800 14px/1 Archivo,sans-serif;background:' +
+          (s.court === c ? 'var(--mar)' : 'var(--bone)') + ';color:' + (s.court === c ? 'var(--gold)' : '#181413')
+      })),
+      courtHint: 'Court ' + s.court + ' is running ' + this.div(s.active[(s.court - 1) % s.active.length]).label + ' right now.',
+      startShiftStyle: 'border:0;background:var(--mar);color:var(--bone);padding:15px;font:800 13px/1 Archivo,sans-serif;letter-spacing:.12em;text-align:left',
+      startShift: () => {
+        const need = s.roleDraft === 'manager' ? '4321' : '1234';
+        if (!s.reporter.trim()) return this.flash('Enter your name — results are stamped with it.');
+        if (s.pin !== need) return this.flash('That code is not right for this role.');
+        const dv = s.roleDraft === 'manager' ? (s.managing || s.active[0]) : s.active[(s.court - 1) % s.active.length].id || s.active[(s.court - 1) % s.active.length];
+        this.setState({
+          role: s.roleDraft, screen: 'app', tab: 'admin', pin: '',
+          divId: typeof dv === 'string' ? dv : s.active[0]
+        }, () => this.flash(s.roleDraft === 'manager' ? 'Signed in · tournament manager' : 'Signed in · Court ' + s.court));
+      }
+    };
+    if (s.screen !== 'app' || !s.divId) return v;
+
+    const div = this.div(), sched = this.schedule(div), tbl = this.table(div);
+    const cur = sched[Math.min(s.round, sched.length - 1)];
+    const nxt = sched[Math.min(s.round + 1, sched.length - 1)];
+    const mm = Math.floor(s.clock / 60), ss = String(s.clock % 60).padStart(2, '0');
+    const reported = cur.games.filter(g => this.result(g, div.seed)).length;
+    const isManager = s.role === 'manager';
+    const annSorted = s.anns.slice().sort((a, b) => b.mins - a.mins);
+    const pinned = annSorted.filter(a => a.on)[0];
+
+    Object.assign(v, {
+      divLabel: div.label.toUpperCase(),
+      clockText: mm + ':' + ss,
+      clockColor: s.clock <= 30 ? '#FF6A4D' : 'var(--gold)',
+      clockLabel: s.running ? 'ROUND CLOCK' : 'PAUSED',
+      showClock: s.showClock || isManager,
+      pinnedText: pinned ? pinned.tag + ' · ' + pinned.text : 'No announcements posted yet.',
+      isLive: s.tab === 'live', isStandings: s.tab === 'standings', isSchedule: s.tab === 'schedule',
+      isMore: s.tab === 'more', isChat: s.tab === 'chat', isAdmin: s.tab === 'admin', isSettings: s.tab === 'settings',
+      roundKicker: 'ROUND ' + (s.round + 1) + ' OF ' + sched.length + ' · ' + div.label.toUpperCase(),
+      roundTime: this.timeAt(cur.mins),
+      roundSub: cur.games.length + ' games on ' + S.courts + ' courts · ' + S.win + ' points a win',
+      statusDot: s.running ? '#4FD37A' : '#FF6A4D',
+      statusText: s.running ? 'ROUND RUNNING' : 'CLOCK STOPPED',
+      reportedLabel: reported + '/' + cur.games.length + ' REPORTED',
+      reportedBarStyle: 'display:block;height:8px;background:var(--gold);width:' + Math.round(reported / cur.games.length * 100) + '%',
+      courts: cur.games.map(g => {
+        const res = this.result(g, div.seed);
+        const nx = nxt.games.find(x => x.court === g.court) || g;
+        const win = k => res && !res.tie && res.winner === k;
+        return {
+          court: 'COURT ' + g.court,
+          status: res ? (res.tie ? 'FINAL · TIE' : 'FINAL') : 'AWAITING RESULT',
+          statusColor: res ? '#2F7D4F' : '#A8321C',
+          sides: ['a', 'b'].map(k => ({
+            emoji: g[k].emoji, name: g[k].name,
+            color: res && !res.tie && !win(k) ? '#9B9797' : '#181413',
+            bar: win(k) ? 'var(--gold)' : 'transparent',
+            tag: win(k) ? 'WON · ' + res.rem + ' LEFT' : ''
+          })),
+          nextTime: this.timeAt(nxt.mins),
+          next: nx.a.name + ' vs ' + nx.b.name
+        };
+      }),
+      topThree: tbl.slice(0, 3).map((t, i) => ({ rank: i + 1, emoji: t.emoji, name: t.name, rec: t.w + '-' + t.l + '-' + t.t, pts: t.pts.toFixed(2) })),
+      scoringLabel: S.win + ' PTS WIN · ' + S.tie + ' TIE',
+      standings: tbl.map((t, i) => ({
+        rank: i + 1, emoji: t.emoji, name: t.name, rec: t.w + '-' + t.l + '-' + t.t, pts: t.pts.toFixed(2),
+        rowBg: i % 2 ? '#F7F5F5' : '#FFFFFF',
+        rankBg: i < 4 ? 'var(--mar)' : '#EAE9E9', rankFg: i < 4 ? 'var(--gold)' : '#6B6462'
+      })),
+      courtCountLabel: S.courts + ' COURTS',
+      teamFilter: s.teamFilter,
+      teamOptions: this.teams(div).map(t => ({ id: t.id, name: t.emoji + '  ' + t.name })),
+      onTeamFilter: e => this.setState({ teamFilter: e.target.value }),
+      rounds: sched.map(r => {
+        const games = r.games.filter(g => s.teamFilter === 'all' || g.a.id === s.teamFilter || g.b.id === s.teamFilter);
+        const live = r.round === s.round, done = r.round < s.round;
+        return {
+          time: this.timeAt(r.mins), label: live ? 'ON COURT NOW' : done ? 'FINAL' : 'ROUND ' + (r.round + 1),
+          chipBg: live ? 'var(--mar)' : done ? '#EAE9E9' : 'var(--ink)',
+          chipFg: live ? 'var(--gold)' : done ? '#6B6462' : 'var(--bone)',
+          games: games.map(g => {
+            const res = this.result(g, div.seed), aw = res && res.winner === 'a', bw = res && res.winner === 'b';
+            return {
+              court: 'C' + g.court, a: g.a.emoji + '  ' + g.a.name, b: g.b.emoji + '  ' + g.b.name,
+              aColor: res && !aw && !res.tie ? '#9B9797' : '#181413',
+              bColor: res && !bw && !res.tie ? '#9B9797' : '#181413',
+              bar: live ? 'var(--gold)' : res ? 'var(--mar)' : '#D7D3D3',
+              res: res ? (res.tie ? 'TIE' : 'WIN · ' + res.rem + ' LEFT') : live ? 'IN PROGRESS' : this.timeAt(r.mins),
+              resColor: res ? 'var(--mar)' : live ? '#2F7D4F' : '#9B9797'
+            };
+          })
+        };
+      }).filter(r => r.games.length)
+    });
+
+
+    v.announcements = annSorted.filter(a => a.on).map((a, i) => ({
+      time: this.timeAt(a.mins), tag: a.tag, text: a.text, bar: i === 0 ? 'var(--mar)' : 'var(--gold)'
+    }));
+    v.annTags = ['ALL DIVISIONS', 'CONCESSIONS', 'LOST & FOUND', 'SCHEDULE'].map(t => ({
+      label: t, on: () => this.setState({ annTag: t }),
+      style: 'border:2px solid #000;padding:6px 9px;font:800 9px/1 Archivo,sans-serif;letter-spacing:.1em;background:' +
+        (s.annTag === t ? 'var(--gold)' : 'transparent') + ';color:#181413'
+    }));
+    v.annDraft = s.annDraft;
+    v.onAnnDraft = e => this.setState({ annDraft: e.target.value });
+    v.annEditing = !!s.annEdit;
+    v.annPostLabel = s.annEdit ? 'SAVE CHANGES' : 'POST ANNOUNCEMENT';
+    v.annPostStyle = 'border:0;background:' + (s.annDraft.trim() ? 'var(--mar)' : '#BAB6B6') +
+      ';color:var(--bone);padding:12px;font:800 11px/1 Archivo,sans-serif;letter-spacing:.1em;text-align:left';
+    v.annCancel = () => this.setState({ annEdit: null, annDraft: '' });
+    v.annPost = () => {
+      const text = s.annDraft.trim();
+      if (!text) return this.flash('Write the announcement first.');
+      if (s.annEdit) {
+        this.setState(p => ({
+          anns: p.anns.map(a => a.id === s.annEdit ? { ...a, text, tag: p.annTag } : a),
+          annEdit: null, annDraft: ''
+        }), () => this.flash('Announcement updated.'));
+      } else {
+        const mins = cur.mins + 1;
+        this.setState(p => ({
+          anns: p.anns.concat([{ id: Date.now(), mins, tag: p.annTag, text, on: true }]),
+          annDraft: ''
+        }), () => this.flash('Posted · now showing on every phone in the gym.'));
+      }
+    };
+    v.annList = annSorted.map(a => ({
+      time: this.timeAt(a.mins), tag: a.tag, text: a.text,
+      bar: a.on ? 'var(--mar)' : '#D7D3D3',
+      textColor: a.on ? '#181413' : '#9B9797',
+      toggleLabel: a.on ? 'ACTIVE' : 'HIDDEN',
+      toggleStyle: 'border:2px solid #000;padding:6px 8px;font:800 9px/1 Archivo,sans-serif;letter-spacing:.08em;background:' +
+        (a.on ? '#2F7D4F' : 'transparent') + ';color:' + (a.on ? '#fff' : '#6B6462'),
+      toggle: () => this.setState(p => ({ anns: p.anns.map(x => x.id === a.id ? { ...x, on: !x.on } : x) })),
+      edit: () => this.setState({ annEdit: a.id, annDraft: a.text, annTag: a.tag }),
+      del: () => this.setState(p => ({ anns: p.anns.filter(x => x.id !== a.id), annEdit: null, annDraft: '' }), () => this.flash('Announcement deleted.'))
+    }));
+    const meLabel = isManager ? 'Tournament Desk · ' + s.reporter : 'Court ' + s.court + ' · ' + s.reporter;
+    v.chatWho = meLabel;
+    v.chatSub = isManager ? 'Every court manager sees this channel.' : 'Court managers and the tournament desk.';
+    v.chatMsgs = s.chat.slice().sort((a, b) => a.mins - b.mins).map(m => {
+      const mine = m.who === meLabel;
+      return {
+        who: m.who, time: this.timeAt(m.mins), text: m.text,
+        bar: m.mgr ? 'var(--mar)' : 'var(--gold)',
+        bg: mine ? '#FBF6EA' : 'var(--paper)',
+        whoColor: m.mgr ? 'var(--mar)' : '#6B6462'
+      };
+    });
+    v.chatDraft = s.chatDraft;
+    v.onChatDraft = e => this.setState({ chatDraft: e.target.value });
+    v.chatSendStyle = 'flex:none;border:0;background:' + (s.chatDraft.trim() ? 'var(--mar)' : '#BAB6B6') +
+      ';color:var(--bone);padding:0 16px;font:800 11px/1 Archivo,sans-serif;letter-spacing:.1em';
+    v.chatSend = () => {
+      const text = s.chatDraft.trim();
+      if (!text) return;
+      this.setState(p => ({
+        chat: p.chat.concat([{ id: Date.now(), mins: cur.mins + 2, who: meLabel, mgr: isManager, text }]),
+        chatDraft: ''
+      }));
+    };
+    v.rules = RULES.map((text, i) => ({ n: i + 1, text }));
+    v.staffLinkLabel = s.role ? 'BACK TO MY ADMIN VIEW' : 'STAFF LOGIN';
+    v.staffButton = () => s.role ? this.setState({ tab: 'admin' }) : this.setState({ screen: 'login' });
+
+    v.navItems = [
+      { id: 'live', label: 'LIVE', icon: '🔴' }, { id: 'standings', label: 'STANDINGS', icon: '🏆' },
+      { id: 'schedule', label: 'GAMES', icon: '🗓️' }, { id: 'more', label: 'INFO', icon: '📣' }
+    ].concat(s.role ? [{ id: 'admin', label: 'ADMIN', icon: '🛠️' }, { id: 'chat', label: 'CHAT', icon: '💬' }] : [])
+      .concat(isManager ? [{ id: 'settings', label: 'SETUP', icon: '⚙️' }] : [])
+      .map(n => ({
+        icon: n.icon, label: n.label, on: this.go(n.id),
+        style: 'flex:1;display:flex;flex-direction:column;align-items:center;justify-content:center;padding:9px 2px;border:0;border-top:3px solid ' +
+          (s.tab === n.id ? 'var(--gold)' : 'transparent') + ';background:transparent;color:' + (s.tab === n.id ? 'var(--gold)' : '#8E8785')
+      }));
+
+    v.isManager = isManager;
+    v.adminTitle = isManager ? 'Tournament control' : 'Court ' + s.court + ' results';
+    v.isCourtManager = !isManager;
+    v.adminWho = s.reporter + (isManager ? ' · tournament manager · all courts' : ' · court manager · court ' + s.court + ' · ' + div.label);
+    v.adminScope = isManager ? 'ALL COURTS · ROUND ' + (s.round + 1) : 'COURT ' + s.court + ' · ROUNDS ' + s.round + '–' + (s.round + 2);
+    v.endShift = () => this.setState({ role: null, tab: 'live', reporter: '', pin: '' }, () => this.flash('Signed out. Back to the fan view.'));
+    v.courtSwitchBtns = [1, 2, 3, 4].map(c => ({
+      label: 'COURT ' + c, on: () => this.setState({ court: c }, () => this.flash('Now reporting Court ' + c + '.')),
+      style: 'border:0;padding:12px 0;font:800 12px/1 Archivo,sans-serif;letter-spacing:.06em;background:' +
+        (s.court === c ? 'var(--mar)' : 'var(--bone)') + ';color:' + (s.court === c ? 'var(--gold)' : '#181413')
+    }));
+
+    v.toggleClock = () => this.setState(p => ({ running: !p.running }));
+    v.playLabel = s.running ? 'STOP' : 'START';
+    v.playStyle = 'border:2px solid ' + (s.running ? '#A8321C' : '#2F7D4F') + ';background:' + (s.running ? '#A8321C' : '#2F7D4F') +
+      ';color:#fff;padding:13px 0;font:800 14px/1 Archivo,sans-serif;letter-spacing:.06em';
+    v.minus30 = () => this.setState(p => ({ clock: Math.max(0, p.clock - 30) }));
+    v.plus30 = () => this.setState(p => ({ clock: p.clock + 30 }));
+    v.toggleAfter = () => this.setState(p => ({ afterOn: !p.afterOn }));
+    v.afterMark = s.afterOn ? '✕' : '';
+    v.afterBoxStyle = 'width:18px;height:18px;border:2px solid var(--gold-d);background:' + (s.afterOn ? 'var(--gold)' : 'transparent') +
+      ';color:#3A2A0C;font:800 11px/15px Archivo,sans-serif;text-align:center;flex:none';
+    v.afterOpacity = s.afterOn ? '1' : '.45';
+    v.afterSecLabel = s.afterSec + 's';
+    v.afterMinus = () => this.setState(p => ({ afterSec: Math.max(15, p.afterSec - 15) }));
+    v.afterPlus = () => this.setState(p => ({ afterSec: Math.min(180, p.afterSec + 15) }));
+    v.prevRound = () => this.setState(p => ({ round: Math.max(0, p.round - 1), clock: p.settings.gameLen * 60, running: false }),
+      () => this.flash('Back to round ' + Math.max(1, s.round)));
+    v.nextRound = () => this.setState(p => ({ round: Math.min(7, p.round + 1), clock: p.settings.gameLen * 60, running: true }),
+      () => this.flash('Horn. Round ' + Math.min(8, s.round + 2) + ' is live.'));
+    v.toggleShowClock = () => this.setState(p => ({ showClock: !p.showClock }));
+    const t1 = this.toggle(s.showClock, 52);
+    v.showClockStyle = t1.style; v.showClockKnob = t1.knob;
+    v.activeChips = s.active.map(id => ({
+      label: this.div(id).label.toUpperCase(), on: () => this.setState({ divId: id, managing: id, teamFilter: 'all' }),
+      style: 'border:2px solid #000;padding:7px 10px;font:800 10px/1 Archivo,sans-serif;letter-spacing:.1em;background:' +
+        (s.divId === id ? 'var(--mar)' : 'transparent') + ';color:' + (s.divId === id ? 'var(--gold)' : '#181413')
+    }));
+
+    const pool = [];
+    [sched[s.round - 1], sched[s.round], sched[s.round + 1]].forEach(r => {
+      if (r) r.games.forEach(g => { if (isManager || g.court === s.court) pool.push({ ...g, mins: r.mins }); });
+    });
+    v.adminCount = pool.length + ' GAMES';
+    v.adminGames = pool.map(g => {
+      const res = this.result(g, div.seed), own = !!s.results[g.id];
+      return {
+        meta: 'COURT ' + g.court + ' · ' + this.timeAt(g.mins) + (g.round === s.round ? ' · THIS ROUND' : ''),
+        a: g.a.emoji + '  ' + g.a.name, b: g.b.emoji + '  ' + g.b.name,
+        stamp: res
+          ? (res.tie ? 'Tie' : (res.winner === 'a' ? g.a.name : g.b.name) + ' won · ' + res.rem + ' left') + ' · ' + (own ? s.reporter : res.by)
+          : 'Not reported yet',
+        bar: res ? 'var(--mar)' : 'var(--gold)',
+        btn: res ? 'EDIT' : 'REPORT',
+        btnStyle: 'flex:none;border:2px solid #000;background:' + (res ? 'transparent' : 'var(--gold)') +
+          ';padding:13px 12px;font:800 11px/1 Archivo,sans-serif;letter-spacing:.1em',
+        on: () => this.setState({ modal: { ...g }, mWinner: res && !res.tie ? res.winner : res ? 'tie' : null, mRem: res ? res.rem : 3, mNotes: '' })
+      };
+    });
+
+    const m = s.modal;
+    v.modalOpen = !!m;
+    if (m) {
+      v.modalMeta = 'Court ' + m.court + ' · ' + this.timeAt(m.mins) + ' · ' + div.label;
+      v.modalSides = [
+        { key: 'a', label: m.a.emoji + '  ' + m.a.name },
+        { key: 'b', label: m.b.emoji + '  ' + m.b.name },
+        { key: 'tie', label: '🤝  Horn sounded even — tie' }
+      ].map(o => ({
+        label: o.label, on: () => this.setState({ mWinner: o.key }),
+        style: 'display:block;width:100%;text-align:left;border:0;padding:14px 12px;font:800 14px/1.2 Archivo,sans-serif;background:' +
+          (s.mWinner === o.key ? 'var(--mar)' : 'var(--bone)') + ';color:' + (s.mWinner === o.key ? 'var(--gold)' : '#181413')
+      }));
+      v.modalRem = s.mWinner === 'tie' ? 0 : s.mRem;
+      v.decRem = () => this.setState(p => ({ mRem: Math.max(0, p.mRem - 1) }));
+      v.incRem = () => this.setState(p => ({ mRem: Math.min(8, p.mRem + 1) }));
+      v.onNotes = e => this.setState({ mNotes: e.target.value });
+      v.modalStamp = 'Reported by ' + (s.reporter || '—') + ' · writes straight to the tournament sheet';
+      v.closeModal = () => this.setState({ modal: null });
+      v.saveStyle = 'border:0;background:' + (s.mWinner ? 'var(--mar)' : '#BAB6B6') +
+        ';color:var(--bone);padding:14px;font:800 13px/1 Archivo,sans-serif;letter-spacing:.1em';
+      v.saveResult = () => {
+        if (!s.mWinner) return this.flash('Pick a winner (or tie) first.');
+        const res = s.mWinner === 'tie' ? { tie: true, rem: 0, by: s.reporter } : { winner: s.mWinner, rem: s.mRem, by: s.reporter };
+        this.setState(p => ({ results: { ...p.results, [m.id]: res }, modal: null, synced: 'just now' }),
+          () => this.flash('Final saved · standings updated · sheet synced'));
+      };
+    }
+
+    v.synced = s.synced;
+    v.syncNow = () => { this.setState({ synced: 'just now' }); this.flash('Pulled the latest rows from the tournament sheet.'); };
+    v.toggleAuto = () => this.setState(p => ({ auto: !p.auto }));
+    const t2 = this.toggle(s.auto, 52);
+    v.autoStyle = t2.style; v.autoKnob = t2.knob;
+    v.autoOpacity = s.auto ? '1' : '.45';
+    v.syncRates = ['30s', '1 min', '5 min'].map(r => ({
+      label: r, on: () => this.setState({ rate: r }),
+      style: 'border:2px solid #000;padding:8px 11px;font:800 11px/1 Archivo,sans-serif;background:' +
+        (s.rate === r ? 'var(--gold)' : 'transparent') + ';color:#181413'
+    }));
+    v.divToggles = DIVS.map(d => {
+      const on = s.active.indexOf(d.id) >= 0;
+      return {
+        label: d.label.toUpperCase(), mark: on ? '✕' : '·',
+        on: () => this.setState(p => {
+          const next = on ? p.active.filter(x => x !== d.id) : p.active.concat([d.id]);
+          return { active: next.length ? next : p.active };
+        }),
+        style: 'border:2px solid #000;padding:7px 10px;font:800 10px/1 Archivo,sans-serif;letter-spacing:.1em;background:' +
+          (on ? 'var(--mar)' : 'transparent') + ';color:' + (on ? 'var(--gold)' : '#6B6462')
+      };
+    });
+    v.scopeNote = 'Syncing ' + s.active.length + ' division' + (s.active.length > 1 ? 's' : '') + ' every ' + s.rate + ' — usually one grade division, two when a girls division runs alongside.';
+    const num = (key, label, min, max) => ({
+      label, value: S[key],
+      dec: () => this.setState(p => ({ settings: { ...p.settings, [key]: Math.max(min, p.settings[key] - 1) } })),
+      inc: () => this.setState(p => ({ settings: { ...p.settings, [key]: Math.min(max, p.settings[key] + 1) } }))
+    });
+    v.numSettings = [num('win', 'Points per win', 1, 5), num('tie', 'Points per tie', 0, 3),
+      num('courts', 'Courts running', 2, 4), num('gameLen', 'Round length (min)', 2, 12)];
+    v.syncHistory = [
+      { time: this.timeAt(cur.mins), detail: s.active.length + ' divisions · ' + tbl.length + ' standings · ' + sched.length * S.courts + ' matches' },
+      { time: this.timeAt(cur.mins - 8), detail: s.active.length + ' divisions · auto · 0.7s' },
+      { time: this.timeAt(cur.mins - 16), detail: s.active.length + ' divisions · manual · 0.6s' }
+    ];
+    return v;
+  }
+}
+
+</script>
+</body>
+</html>

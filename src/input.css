@@ -1,3 +1,212 @@
 @tailwind base;
 @tailwind components;
 @tailwind utilities;
+
+@layer base {
+  /* Page ground — the maroon-to-black wash the design gets from the prototype's
+     frame background. The gradient itself lives in --page-wash (index.html
+     :root); it has to be applied to `body` from THIS sheet, because this sheet
+     loads after index.html's inline <style> and would otherwise override any
+     `background` set on `body` there.
+     `fixed` is load-bearing: .app-header paints the same wash the same way, and
+     that is what makes the opaque header's bottom edge invisible. */
+  body {
+    background: var(--page-wash);
+    background-attachment: fixed;
+    background-repeat: no-repeat;
+  }
+}
+
+@layer components {
+  /* Dark glass card — used on dark backgrounds (live/admin/chat cards) */
+  .card-dark {
+    @apply rounded-[26px] border border-white/10 bg-white/5 backdrop-blur-xl shadow-[0_16px_44px_rgba(0,0,0,.3)];
+  }
+
+  /* Light glass card — used for standings/schedule/admin-list surfaces */
+  .card-light {
+    @apply rounded-[26px] border border-white/50 bg-white/95 backdrop-blur-xl shadow-[0_16px_44px_rgba(0,0,0,.3)];
+  }
+
+  /* ---------------------------------------------------------------
+     Screen chrome — every tab is a bare title row over the page
+     background, NOT a bordered panel. `.screen` replaces the old
+     `.data-card` wrapper the pre-redesign views used.
+     --------------------------------------------------------------- */
+  .screen {
+    @apply block;
+  }
+  /* Chat is the one screen that needs a column flex box (composer pinned
+     under a scrolling message list), so it opts out of `.screen`'s block. */
+  #chat-view.screen:not(.hidden) {
+    @apply flex flex-col;
+  }
+  /* Title row: 700 26px title left, 600 10px/.1em kicker right (design §6–§11) */
+  .screen-head {
+    @apply flex items-baseline justify-between gap-2.5 px-1;
+  }
+  .screen-title {
+    @apply m-0 text-[26px] font-bold leading-[1.05] tracking-[-.03em] text-[#F5F5F6];
+  }
+  .screen-kicker {
+    @apply flex-none text-[10px] font-semibold leading-none tracking-[.1em] text-white/45 uppercase;
+  }
+  /* Small uppercase card label (600 10px/.14em) */
+  .kicker {
+    @apply text-[10px] font-semibold leading-none tracking-[.14em] uppercase;
+  }
+
+  /* Glass form controls (schedule filters, composer) — 18px radius */
+  .select-glass {
+    @apply w-full box-border rounded-[18px] border border-white/15 bg-white/[.07] px-[15px] py-3.5
+           text-[13px] font-semibold text-[#F1F1F2] outline-none backdrop-blur-lg appearance-none;
+    background-image: url("data:image/svg+xml;charset=utf-8,%3Csvg xmlns='http://www.w3.org/2000/svg' width='11' height='7' viewBox='0 0 11 7' fill='none' stroke='%23F3DCA9' stroke-width='1.6' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M1 1.2 5.5 5.6 10 1.2'/%3E%3C/svg%3E");
+    background-repeat: no-repeat;
+    background-position: right 15px center;
+    padding-right: 38px;
+  }
+  .select-glass option {
+    background: #18181A;
+    color: #F1F1F2;
+  }
+
+  /* Floating bottom tab bar (design: inset 14px, 26px radius, 7px padding) */
+  .tabbar {
+    @apply fixed left-3.5 right-3.5 z-50 flex gap-0.5 rounded-[26px] border border-white/[.12] p-[7px]
+           shadow-[0_18px_44px_rgba(0,0,0,.5)];
+    bottom: calc(14px + env(safe-area-inset-bottom, 0px));
+    background: rgba(20, 20, 22, 0.72);
+    backdrop-filter: blur(28px) saturate(160%);
+    -webkit-backdrop-filter: blur(28px) saturate(160%);
+    /* Matches the content column (`max-w-2xl` on the main wrapper) so the bar
+       lines up with the cards above it on tablet/desktop. */
+    max-width: 672px;
+    margin-inline: auto;
+  }
+
+  /* Primary maroon-gradient button */
+  .btn-primary {
+    @apply rounded-2xl border-0 bg-gradient-to-br from-mar-l to-mar text-[#FAFAFB] font-semibold shadow-[0_10px_26px_rgba(123,29,43,.36)];
+  }
+
+  /* Gold-gradient button (secondary emphasis, e.g. sync/report actions) */
+  .btn-gold {
+    @apply rounded-2xl border-0 bg-gradient-to-br from-gold to-gold-d text-[#2A1B08] font-semibold;
+  }
+
+  /* Outline button on light surfaces */
+  .btn-outline {
+    @apply rounded-2xl border border-black/10 bg-white text-ink font-semibold;
+  }
+
+  /* Pill badge (gold-tinted), e.g. "Admin login", "Court manager" tags */
+  .pill-gold {
+    @apply rounded-full border border-gold/50 bg-gold/10 text-gold-l font-semibold backdrop-blur;
+  }
+
+  /* Single toggle-switch component — replaces the two ad hoc implementations */
+  .toggle-track {
+    @apply relative inline-flex h-6 w-11 items-center rounded-full transition-colors;
+  }
+  .toggle-track[data-on="true"] {
+    @apply bg-gradient-to-br from-mar-l to-mar;
+  }
+  .toggle-track[data-on="false"] {
+    @apply bg-white/15;
+  }
+  .toggle-knob {
+    @apply inline-block h-5 w-5 transform rounded-full bg-white transition-transform;
+  }
+  .toggle-track[data-on="true"] .toggle-knob {
+    @apply translate-x-5;
+  }
+  .toggle-track[data-on="false"] .toggle-knob {
+    @apply translate-x-0.5;
+  }
+
+  /* Modal shell shared by login / report-result / any future dialogs.
+     Design §10: 32px radius light sheet, maroon-gradient header band. */
+  .modal-backdrop {
+    @apply fixed inset-0 z-[100] flex items-center justify-center p-[18px];
+    background: rgba(10, 10, 11, 0.62);
+    backdrop-filter: blur(14px);
+    -webkit-backdrop-filter: blur(14px);
+  }
+  .modal-sheet {
+    @apply w-full max-h-full overflow-auto rounded-[32px] border border-white/60
+           shadow-[0_40px_90px_rgba(0,0,0,.6)];
+    max-width: 420px;
+    background: rgba(255, 255, 255, 0.97);
+    animation: sheetin 0.26s cubic-bezier(0.32, 0.72, 0, 1);
+  }
+  .modal-head {
+    @apply p-[18px] pb-4 rounded-t-[32px];
+    background: linear-gradient(140deg, var(--mar) 0%, #3a171c 100%);
+  }
+  .modal-body {
+    @apply grid gap-[15px] p-4;
+  }
+
+  /* Controls on the light modal / light card surfaces */
+  .field-light {
+    @apply w-full box-border rounded-2xl border bg-[#F3F3F4] px-3.5 py-3
+           text-[13px] leading-[1.45] text-ink outline-none;
+    border-color: var(--line, rgba(18, 18, 20, 0.09));
+  }
+  .field-light::placeholder {
+    color: #9a9a9e;
+  }
+  /* Choice tile (winner picker, court picker) on a light sheet */
+  .tile-light {
+    @apply w-full rounded-2xl border px-3.5 py-3.5 text-left text-[14px] font-semibold text-ink transition-colors;
+    border-color: var(--line, rgba(18, 18, 20, 0.09));
+    background: #f3f3f4;
+  }
+  .tile-light[data-selected="true"] {
+    border-color: var(--mar);
+    background: rgba(123, 29, 43, 0.08);
+    color: var(--mar);
+  }
+  /* Timer-control buttons on the Admin page's dark glass card (design §9) */
+  .timer-btn {
+    @apply w-full rounded-2xl border border-white/15 bg-white/[.07] py-[15px] text-[13px] font-semibold
+           leading-none text-[#F1F1F2] transition-colors;
+  }
+  .timer-btn:hover {
+    @apply bg-white/10;
+  }
+  /* Start (go) and Stop share the middle cell — only one is ever displayed. */
+  .timer-btn-go {
+    @apply border-0 text-white;
+    background: linear-gradient(135deg, var(--ok) 0%, #21774a 100%);
+  }
+  .timer-btn-stop {
+    @apply border-0 text-white;
+    background: linear-gradient(135deg, #e2604a 0%, var(--warn) 100%);
+  }
+  .timer-btn-next {
+    @apply border-gold/40 bg-gold/[.14] text-gold-l;
+  }
+
+  /* Stepper (players-left) */
+  .stepper-wrap {
+    @apply flex items-center gap-[7px] rounded-[20px] p-1.5;
+    background: #efeff0;
+  }
+  .stepper-btn {
+    @apply flex h-[50px] w-[50px] flex-none items-center justify-center rounded-[15px] border-0 bg-white
+           text-[20px] font-semibold text-ink shadow-[0_2px_6px_rgba(0,0,0,.07)];
+  }
+  .stepper-value {
+    @apply flex-1 text-center text-[26px] font-bold leading-none tracking-[-.03em] text-ink tabular-nums;
+  }
+}
+
+@keyframes glowpulse {
+  0%, 100% { opacity: 1; transform: scale(1); }
+  50% { opacity: .4; transform: scale(.82); }
+}
+@keyframes sheetin {
+  from { opacity: 0; transform: translateY(18px) scale(.97); }
+  to { opacity: 1; transform: none; }
+}

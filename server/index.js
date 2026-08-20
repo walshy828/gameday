@@ -1,16 +1,22 @@
 import express from 'express';
 import dotenv from 'dotenv';
 import path from 'path';
+import http from 'http';
 import { fileURLToPath } from 'url';
-import * as Sheets from './sheets.js';
-import * as Fb from './firebase.js';
+import { Store } from './datastores/index.js';
+import * as SheetsMirror from './sheetsMirror.js';
+import * as SheetsSync from './sheetsSync.js';
+import { applySyncSettings, initSyncScheduler } from './syncScheduler.js';
+import { initSocket } from './socket.js';
 import crypto from 'crypto';
 import axios from 'axios';
-import { initRealtimeListeners } from './firebase-listener.js';
 
 
 
 dotenv.config();
+
+const DATA_BACKEND = (process.env.DATA_BACKEND || 'firebase').toLowerCase();
+
 const app = express();
 app.use(express.json());
 
@@ -32,14 +38,15 @@ app.get('/dist/output.css', (req, res, next) => {
   });
 });
 
-// Serve a tiny runtime config JS that the frontend can read to know API_BASE.
+// Serve a tiny runtime config JS that the frontend can read to know API_BASE
+// and which data backend (firebase | local) the server is running against.
 // Set API_BASE in your Docker/hosting environment as the full API base (e.g. https://api.example.com/api)
 app.get('/config.js', (req, res) => {
   const apiBase = process.env.API_BASE || '';
   res.type('application/javascript');
   // Safely serialize the string
   const gaMeasurementId = process.env.GA_MEASUREMENT_ID || null;
-  res.send(`window.__API_BASE__ = ${JSON.stringify(apiBase)};\nwindow.__GA_MEASUREMENT_ID__ = ${JSON.stringify(gaMeasurementId)};`);
+  res.send(`window.__API_BASE__ = ${JSON.stringify(apiBase)};\nwindow.__GA_MEASUREMENT_ID__ = ${JSON.stringify(gaMeasurementId)};\nwindow.__DATA_BACKEND__ = ${JSON.stringify(DATA_BACKEND)};`);
 });
 
 // Utilities from env
@@ -51,12 +58,12 @@ const SECRET_SALT = process.env.SECRET_SALT || 'secret-salt';
 app.get('/api/allData', async (req, res) => {
   try {
     const sheetName = req.query.sheetName || 'Sheet1';
-    const settings = { 
+    const settings = {
       is_tie_allowed: (process.env.ALLOW_MATCH_TIE === 'true') || false,
       ga_measurement_id: process.env.GA_MEASUREMENT_ID || null
     };
-    const standings = await Sheets.getStandings(sheetName);
-    const schedule = await Sheets.getSchedule(sheetName);
+    const standings = await Store.getStandings(sheetName);
+    const schedule = await Store.getSchedule(sheetName);
     res.json({ settings, standings, schedule });
   } catch (e) {
     console.error('getAllData error', e);
@@ -67,7 +74,7 @@ app.get('/api/allData', async (req, res) => {
 // route: getDivisionNames
 app.get('/api/divisions', async (_req, res) => {
   try {
-    const names = await Sheets.getDivisionNames();
+    const names = await Store.getDivisionNames();
     res.json(names);
   } catch (e) {
     console.error('getDivisionNames', e);
@@ -79,7 +86,7 @@ app.get('/api/divisions', async (_req, res) => {
 app.get('/api/standings', async (req, res) => {
   const sheetName = req.query.sheetName || 'Sheet1';
   try {
-    const s = await Sheets.getStandings(sheetName);
+    const s = await Store.getStandings(sheetName);
     res.json(s);
   } catch (e) {
     res.status(500).json({ error: e.toString() });
@@ -95,7 +102,12 @@ app.post('/api/validateAdmin', async (req, res) => {
   }
   if (password === SUPERADMIN_PASSWORD) {
     const token = computeToken(SUPERADMIN_PASSWORD);
-    const firebaseToken = await Fb.createCustomToken('adminUser', { admin: true });
+    // Firebase custom auth tokens are only meaningful when the browser talks
+    // to Firebase RTDB directly (firebase mode) — local mode relies solely on
+    // this SHA-256 authToken for all admin/superadmin writes.
+    const firebaseToken = DATA_BACKEND !== 'local'
+      ? await Store.createCustomToken('adminUser', { admin: true })
+      : undefined;
     return res.json({ isAdmin: true, isSuperAdmin: true, token, firebaseToken });
   }
   res.json({ isAdmin: false, isSuperAdmin: false, error: 'Invalid password.' });
@@ -130,17 +142,18 @@ app.post('/api/saveMatchResult', async (req, res) => {
     const startTs = Date.now();
     console.log(`[${requestId}] /api/saveMatchResult START`, { sheetName: matchData?.sheetName, firebaseIndex: matchData?.firebaseIndex, rowIndex: matchData?.rowIndex, adminName: matchData?.adminName });
 
-    let sheetsResult = null;
+    // Primary write — Firebase RTDB or local MariaDB, depending on DATA_BACKEND.
+    let storeResult = null;
     try {
       const t0 = Date.now();
-      sheetsResult = await Sheets.saveMatchResult(matchData);
-      console.log(`[${requestId}] Sheets.saveMatchResult OK`, { durationMs: Date.now() - t0, sheetsResult });
+      storeResult = await Store.saveMatchResult(matchData);
+      console.log(`[${requestId}] Store.saveMatchResult OK`, { durationMs: Date.now() - t0, storeResult });
     } catch (err) {
-      console.error(`[${requestId}] Sheets.saveMatchResult FAILED`, err);
-      // continue to attempt other writes, but surface error
-      sheetsResult = { success: false, error: err.toString() };
+      console.error(`[${requestId}] Store.saveMatchResult FAILED`, err);
+      storeResult = { success: false, error: err.toString() };
     }
 
+    // Audit-log insert — independent of DATA_BACKEND, always attempted.
     let dbResult = null;
     try {
       const t0 = Date.now();
@@ -156,31 +169,317 @@ app.post('/api/saveMatchResult', async (req, res) => {
       dbResult = { success: false, error: err.toString() };
     }
 
-    // push update to firebase realtime (also log result)
-    let fbPushResult = null;
+    // Google Sheets mirror — independent of DATA_BACKEND, best-effort, only
+    // actually writes if Sheets env vars are configured.
+    let sheetsMirrorResult = null;
     try {
       const t0 = Date.now();
-      await Fb.pushMatchUpdate(matchData.sheetName, matchData.firebaseIndex, {
-        adminName: matchData.adminName,
-        adminWinner: matchData.winner,
-        adminPlayersRemaining: matchData.playersRemaining,
-        notes: matchData.notes,
-        lastUpdated: new Date().toISOString()
-      });
-      fbPushResult = { success: true, durationMs: Date.now() - t0 };
-      console.log(`[${requestId}] Fb.pushMatchUpdate OK`, fbPushResult);
+      sheetsMirrorResult = await SheetsMirror.saveMatchResult(matchData);
+      console.log(`[${requestId}] SheetsMirror.saveMatchResult`, { durationMs: Date.now() - t0, sheetsMirrorResult });
     } catch (e) {
-      console.error(`[${requestId}] Fb.pushMatchUpdate FAILED`, e);
-      fbPushResult = { success: false, error: e.toString() };
+      console.error(`[${requestId}] SheetsMirror.saveMatchResult FAILED`, e);
+      sheetsMirrorResult = { success: false, error: e.toString() };
     }
 
     const totalMs = Date.now() - startTs;
-    console.log(`[${requestId}] /api/saveMatchResult COMPLETE`, { totalMs, sheetsResult, dbResult, fbPushResult });
+    console.log(`[${requestId}] /api/saveMatchResult COMPLETE`, { totalMs, storeResult, dbResult, sheetsMirrorResult });
 
-    // Return the sheetsResult to the client for compatibility
-    res.json(sheetsResult);
+    // Return the primary store's result to the client for compatibility.
+    res.json(storeResult);
   } catch (e) {
     console.error('saveMatchResult error', e);
+    res.status(500).json({ success: false, error: e.toString() });
+  }
+});
+
+// --- Timer control endpoints (local mode only) ---
+// In firebase mode the browser talks to Firebase RTDB directly for all timer
+// state, so these endpoints exist purely for DATA_BACKEND=local, where the
+// server is the source of truth and pushes updates over Socket.IO.
+
+app.get('/api/timer', async (req, res) => {
+  try {
+    const sheetName = req.query.sheetName;
+    const state = await Store.getTimerState(sheetName);
+    res.json(state);
+  } catch (e) {
+    res.status(500).json({ error: e.toString() });
+  }
+});
+
+function requireAdmin(req, res) {
+  const authToken = req.body?.authToken || req.query?.authToken;
+  if (!isValidToken(authToken)) {
+    res.status(401).json({ success: false, error: 'Authentication failed.' });
+    return false;
+  }
+  return true;
+}
+
+app.post('/api/timer/start', async (req, res) => {
+  if (!requireAdmin(req, res)) return;
+  try {
+    const { sheetName, afterRound } = req.body;
+    const current = await Store.getTimerState(sheetName);
+    const state = afterRound
+      ? await Store.setTimerState(sheetName, {
+          running: true,
+          startTime: Date.now(),
+          duration: current.afterRoundDuration || 60,
+          startAfterRoundRunning: true
+        })
+      : await Store.setTimerState(sheetName, {
+          running: true,
+          startTime: Date.now(),
+          duration: current.duration || current.lastSetDuration || 300
+        });
+    res.json({ success: true, state });
+  } catch (e) {
+    res.status(500).json({ success: false, error: e.toString() });
+  }
+});
+
+app.post('/api/timer/stop', async (req, res) => {
+  if (!requireAdmin(req, res)) return;
+  try {
+    const { sheetName } = req.body;
+    const current = await Store.getTimerState(sheetName);
+    let remaining = current.duration;
+    if (current.running && current.startTime) {
+      const elapsed = Math.floor((Date.now() - current.startTime) / 1000);
+      remaining = Math.max((current.duration || 0) - elapsed, 0);
+    }
+    const state = await Store.setTimerState(sheetName, { running: false, duration: remaining });
+    res.json({ success: true, state });
+  } catch (e) {
+    res.status(500).json({ success: false, error: e.toString() });
+  }
+});
+
+app.post('/api/timer/reset', async (req, res) => {
+  if (!requireAdmin(req, res)) return;
+  try {
+    const { sheetName } = req.body;
+    const current = await Store.getTimerState(sheetName);
+    const state = await Store.setTimerState(sheetName, {
+      running: false,
+      duration: current.lastSetDuration || 300,
+      startAfterRoundRunning: false
+    });
+    res.json({ success: true, state });
+  } catch (e) {
+    res.status(500).json({ success: false, error: e.toString() });
+  }
+});
+
+app.post('/api/timer/adjust', async (req, res) => {
+  if (!requireAdmin(req, res)) return;
+  try {
+    const { sheetName, deltaSeconds } = req.body;
+    const state = await Store.adjustTimer(sheetName, Number(deltaSeconds) || 0);
+    res.json({ success: true, state });
+  } catch (e) {
+    res.status(500).json({ success: false, error: e.toString() });
+  }
+});
+
+app.post('/api/timer/nextRound', async (req, res) => {
+  if (!requireAdmin(req, res)) return;
+  try {
+    const { sheetName, round } = req.body;
+    const state = await Store.setTimerState(sheetName, { currentRound: round });
+    res.json({ success: true, state });
+  } catch (e) {
+    res.status(500).json({ success: false, error: e.toString() });
+  }
+});
+
+app.post('/api/timer/prevRound', async (req, res) => {
+  if (!requireAdmin(req, res)) return;
+  try {
+    const { sheetName, round } = req.body;
+    const state = await Store.setTimerState(sheetName, { currentRound: round });
+    res.json({ success: true, state });
+  } catch (e) {
+    res.status(500).json({ success: false, error: e.toString() });
+  }
+});
+
+app.post('/api/timer/afterRoundDuration', async (req, res) => {
+  if (!requireAdmin(req, res)) return;
+  try {
+    const { sheetName, afterRoundDuration } = req.body;
+    const state = await Store.setTimerState(sheetName, { afterRoundDuration: Number(afterRoundDuration) || 60 });
+    res.json({ success: true, state });
+  } catch (e) {
+    res.status(500).json({ success: false, error: e.toString() });
+  }
+});
+
+app.post('/api/timer/showClock', async (req, res) => {
+  if (!requireAdmin(req, res)) return;
+  try {
+    const { sheetName, showClock } = req.body;
+    const state = await Store.setTimerState(sheetName, { showClock: !!showClock });
+    res.json({ success: true, state });
+  } catch (e) {
+    res.status(500).json({ success: false, error: e.toString() });
+  }
+});
+
+// --- Announcements (tournament-manager authored, tournament-wide) ---
+// Reads are public (fans see the banner); writes require the superadmin
+// ("tournament manager") token. Works identically on either DATA_BACKEND —
+// all persistence/broadcast differences are inside the Store implementation.
+
+app.get('/api/announcements', async (_req, res) => {
+  try {
+    const list = await Store.getAnnouncements();
+    res.json(list);
+  } catch (e) {
+    res.status(500).json({ error: e.toString() });
+  }
+});
+
+app.post('/api/announcements', async (req, res) => {
+  if (!requireSuperAdmin(req, res)) return;
+  try {
+    const text = (req.body?.text || '').trim();
+    if (!text) return res.status(400).json({ success: false, error: 'text is required' });
+    const announcements = await Store.createAnnouncement(text);
+    res.json({ success: true, announcements });
+  } catch (e) {
+    res.status(500).json({ success: false, error: e.toString() });
+  }
+});
+
+app.post('/api/announcements/:id', async (req, res) => {
+  if (!requireSuperAdmin(req, res)) return;
+  try {
+    const id = Number(req.params.id);
+    const patch = {};
+    if (typeof req.body?.text === 'string') patch.text = req.body.text.trim();
+    if (typeof req.body?.on === 'boolean') patch.on = req.body.on;
+    const announcements = await Store.updateAnnouncement(id, patch);
+    res.json({ success: true, announcements });
+  } catch (e) {
+    res.status(500).json({ success: false, error: e.toString() });
+  }
+});
+
+app.delete('/api/announcements/:id', async (req, res) => {
+  if (!requireSuperAdmin(req, res)) return;
+  try {
+    const id = Number(req.params.id);
+    const announcements = await Store.deleteAnnouncement(id);
+    res.json({ success: true, announcements });
+  } catch (e) {
+    res.status(500).json({ success: false, error: e.toString() });
+  }
+});
+
+// --- Crew chat (staff-only; UI-gated, same posture as other staff views) ---
+// `who`/`mgr` are derived server-side from the validated authToken + the
+// client-supplied display name/court, never trusted directly from the body.
+
+app.get('/api/chat', async (_req, res) => {
+  try {
+    const list = await Store.getChatMessages();
+    res.json(list);
+  } catch (e) {
+    res.status(500).json({ error: e.toString() });
+  }
+});
+
+app.post('/api/chat', async (req, res) => {
+  if (!requireAdmin(req, res)) return;
+  try {
+    const text = (req.body?.text || '').trim();
+    if (!text) return res.status(400).json({ success: false, error: 'text is required' });
+
+    const authToken = req.body?.authToken;
+    const isMgr = authToken === computeToken(process.env.SUPERADMIN_PASSWORD || '');
+    const reporterName = (req.body?.reporterName || '').trim() || 'Staff';
+    const court = req.body?.court;
+    const who = isMgr ? `Admin · ${reporterName}` : `Court ${court || '?'} · ${reporterName}`;
+
+    const chat = await Store.postChatMessage({ who, mgr: isMgr, text });
+    res.json({ success: true, chat });
+  } catch (e) {
+    res.status(500).json({ success: false, error: e.toString() });
+  }
+});
+
+// --- Google Sheet sync endpoints (superadmin only) ---
+// Settings/status/log are persisted via the Store abstraction (Firebase RTDB
+// or MariaDB, depending on DATA_BACKEND — see server/datastores/) and
+// broadcast to clients over Socket.IO, so these routes behave the same
+// regardless of backend. Only /run and /config need the service-account
+// Sheets client, which lives in sheetsSync.js.
+
+function requireSuperAdmin(req, res) {
+  const authToken = req.body?.authToken || req.query?.authToken;
+  const expectedSuper = computeToken(process.env.SUPERADMIN_PASSWORD || '');
+  if (!authToken || authToken !== expectedSuper) {
+    res.status(403).json({ success: false, error: 'Superadmin access required.' });
+    return false;
+  }
+  return true;
+}
+
+app.get('/api/sheetSync/config', async (req, res) => {
+  if (!requireSuperAdmin(req, res)) return;
+  try {
+    const configured = SheetsSync.isConfigured();
+    const availableDivisions = configured ? await SheetsSync.getAvailableDivisions() : [];
+    res.json({
+      configured,
+      spreadsheetUrl: SheetsSync.getSpreadsheetUrl(),
+      availableDivisions
+    });
+  } catch (e) {
+    console.error('sheetSync/config error', e);
+    res.status(500).json({ error: e.toString() });
+  }
+});
+
+app.post('/api/sheetSync/run', async (req, res) => {
+  if (!requireSuperAdmin(req, res)) return;
+  try {
+    const result = await SheetsSync.syncAll('manual');
+    res.json(result);
+  } catch (e) {
+    console.error('sheetSync/run error', e);
+    res.status(500).json({ success: false, error: e.toString() });
+  }
+});
+
+app.get('/api/sheetSync/status', async (req, res) => {
+  if (!requireSuperAdmin(req, res)) return;
+  try {
+    const status = await SheetsSync.getStatus();
+    res.json(status);
+  } catch (e) {
+    console.error('sheetSync/status error', e);
+    res.status(500).json({ error: e.toString() });
+  }
+});
+
+app.post('/api/sheetSync/settings', async (req, res) => {
+  if (!requireSuperAdmin(req, res)) return;
+  try {
+    const { autoSyncEnabled, intervalSeconds, syncScope, selectedDivisions } = req.body || {};
+    const patch = {};
+    if (typeof autoSyncEnabled === 'boolean') patch.autoSyncEnabled = autoSyncEnabled;
+    if (intervalSeconds != null) patch.intervalSeconds = Math.max(Number(intervalSeconds) || 300, 10);
+    if (syncScope === 'all' || syncScope === 'selected') patch.syncScope = syncScope;
+    if (Array.isArray(selectedDivisions)) patch.selectedDivisions = selectedDivisions.filter(d => typeof d === 'string' && d.trim()).map(d => d.trim());
+
+    const status = await SheetsSync.updateSettings(patch);
+    applySyncSettings(status.settings);
+    res.json(status);
+  } catch (e) {
+    console.error('sheetSync/settings error', e);
     res.status(500).json({ success: false, error: e.toString() });
   }
 });
@@ -228,7 +527,17 @@ export async function trackServerEvent(eventName, params = {}, clientId = 'syste
 }
 
 const PORT = process.env.PORT || 8888;
-app.listen(PORT, () => console.log(`Server started at http://localhost:${PORT}`));
+const httpServer = http.createServer(app);
+initSocket(httpServer);
+httpServer.listen(PORT, () => console.log(`Server started at http://localhost:${PORT} (DATA_BACKEND=${DATA_BACKEND})`));
 
-// Then start Firebase listeners
-initRealtimeListeners();
+// Firebase's realtime listener stub is only relevant (and only safely
+// importable) when running against Firebase RTDB.
+if (DATA_BACKEND !== 'local') {
+  const { initRealtimeListeners } = await import('./firebase-listener.js');
+  initRealtimeListeners();
+}
+
+// Google Sheet auto-sync works against either backend (Store abstraction),
+// so it's started unconditionally — it's a no-op if Sheets creds aren't set.
+initSyncScheduler();

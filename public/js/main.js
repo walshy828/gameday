@@ -25,7 +25,8 @@ import {
     renderDivisionDropdown,
     handleDivisionChange,
     initializeFilter,
-    switchView
+    switchView,
+    goToGate
 } from './navigation.js';
 
 import {
@@ -43,6 +44,25 @@ import {
     renderStandings
 } from './standings.js';
 
+import {
+    syncNow,
+    toggleAutoSync,
+    setSyncInterval,
+    setCustomSyncInterval,
+    setSyncScope,
+    toggleSyncDivision
+} from './settings.js';
+
+import { getSocket } from './socketClient.js';
+import { initTimerOverlay } from './timerOverlay.js';
+import * as TimerFirebase from './timerFirebase.js';
+import * as TimerLocal from './timerLocal.js';
+import { initAnnouncements, dismissAnnouncementBanner, postAnnouncementFromSetup, cancelAnnouncementEdit } from './announcements.js';
+import { initChat, sendChatMessage } from './chat.js';
+import { renderLiveView } from './live.js';
+
+const IS_LOCAL_BACKEND = window.__DATA_BACKEND__ === 'local';
+const TimerModule = IS_LOCAL_BACKEND ? TimerLocal : TimerFirebase;
 
 // Global utility to show/hide status messages
 let statusTimer = null;
@@ -168,7 +188,12 @@ async function loadData(divisionName) {
     const savedTeamFilter = teamSelect ? teamSelect.value : 'all';
     const savedCourtFilter = courtSelect ? courtSelect.value : 'all';
     const savedAdminTeamFilter = adminTeamSelect ? adminTeamSelect.value : 'all';
-    const savedAdminCourtFilter = adminCourtSelect ? adminCourtSelect.value : 'all';
+    // Court managers default to their own court (picked at login) until they
+    // manually pick something else; the select only has a real value once
+    // its options are populated, so this only fires before that first render.
+    const savedAdminCourtFilter = (adminCourtSelect && adminCourtSelect.value)
+      ? adminCourtSelect.value
+      : (!App.state.isSuperAdmin && App.state.selectedCourt) ? App.state.selectedCourt : 'all';
 
     // Update app settings (coming from backend now)
     App.settings = settings || {};
@@ -215,6 +240,7 @@ async function loadData(divisionName) {
 
     // Update admin standings ticker
     loadAndStartStandingsPager(App.data.allStandingsData);
+    renderLiveView();
 
     showStatus(null);
 
@@ -229,7 +255,7 @@ async function loadData(divisionName) {
 
     App.refresh.isLoadingData = false;
     renderDivisionDropdown();
-    initRounds();
+    TimerModule.initRounds();
 
     // Update timestamp
     const now = new Date();
@@ -330,15 +356,68 @@ async function loadData(divisionName) {
 */
 
 let currentDivisionListener = null;
-function watchDivision(divisionName) {
-    const divisionRef = firebase.database().ref(`dodgeball-tournament/divisions/${divisionName}`);
+let socketDivisionRoom = null;
 
-    // Detach previous listener
-    if (currentDivisionListener) {
-        currentDivisionListener.off();
+// Shared by both the Firebase 'value' listener and the Socket.IO
+// 'divisionUpdate' handler — applies a fresh {standings, schedule} snapshot
+// for `divisionName` to the DOM.
+function handleDivisionSnapshot(data, divisionName) {
+  if (!data) return;
+
+  App.data.standings = data.standings || [];
+  const scheduleData = data.schedule || [];
+  App.data.allScheduleData = Array.isArray(scheduleData)
+  ? scheduleData.map((match, index) => ({ ...match, firebaseIndex: index }))
+  : Object.entries(scheduleData).map(([key, match]) => ({
+    ...match,
+    firebaseIndex: key
+    }));
+  renderStandings(App.data.standings);
+  updateScheduleView();
+  updateAdminMatchEntryView();
+  renderLiveView();
+  // If a playoff final has been completed, show the championship banner locally
+  try {
+    const finalsGame = App.data.allScheduleData && App.data.allScheduleData.find(game => game.roundTime === "P5.Finals" && game.winner);
+    if (finalsGame && typeof championshipBanner === 'function') {
+      championshipBanner();
     }
+  } catch (e) {
+    console.error('Error running championshipBanner on division update:', e);
+  }
+  gtag('event','filter_change', {
+    filter_name: 'division',
+    filter_value: divisionName
+  });
+}
 
-    currentDivisionListener = divisionRef;
+function watchDivision(divisionName) {
+  if (IS_LOCAL_BACKEND) {
+    const socket = getSocket();
+    socket.emit('joinDivision', divisionName);
+    socketDivisionRoom = divisionName;
+    // Re-registering avoids stacking listeners across division switches.
+    socket.off('divisionUpdate');
+    socket.on('divisionUpdate', (payload) => {
+      if (payload.division !== divisionName) return;
+      handleDivisionSnapshot(payload, divisionName);
+    });
+    // Timer state is per-division and TimerModule.init() ran before
+    // currentSheetName was known, so pull the current state now — otherwise
+    // the display stays stale until the next timerUpdate broadcast (e.g. a
+    // superadmin stopping/starting the timer).
+    TimerModule.refreshState?.();
+    return;
+  }
+
+  const divisionRef = firebase.database().ref(`dodgeball-tournament/divisions/${divisionName}`);
+
+  // Detach previous listener
+  if (currentDivisionListener) {
+    currentDivisionListener.off();
+  }
+
+  currentDivisionListener = divisionRef;
   // Skip the first firebase 'value' callback because `loadData()` will have
   // already performed the initial render. Subsequent 'value' events are
   // real-time updates that should trigger renders.
@@ -348,34 +427,7 @@ function watchDivision(divisionName) {
       firstSnapshot = false;
       return; // Ignore the initial callback to avoid duplicate renders
     }
-
-    const data = snapshot.val();
-    if (!data) return;
-
-    App.data.standings = data.standings || [];
-    const scheduleData = data.schedule || [];
-    App.data.allScheduleData = Array.isArray(scheduleData)
-    ? scheduleData.map((match, index) => ({ ...match, firebaseIndex: index }))
-    : Object.entries(scheduleData).map(([key, match]) => ({
-      ...match,
-      firebaseIndex: key
-      }));
-    renderStandings(App.data.standings);
-    updateScheduleView();
-    updateAdminMatchEntryView();
-    // If a playoff final has been completed, show the championship banner locally
-    try {
-      const finalsGame = App.data.allScheduleData && App.data.allScheduleData.find(game => game.roundTime === "P5.Finals" && game.winner);
-      if (finalsGame && typeof championshipBanner === 'function') {
-        championshipBanner();
-      }
-    } catch (e) {
-      console.error('Error running championshipBanner on division update:', e);
-    }
-    gtag('event','filter_change', {
-      filter_name: 'division',
-      filter_value: divisionName
-  });
+    handleDivisionSnapshot(snapshot.val(), divisionName);
   });
 }
 
@@ -440,477 +492,29 @@ if (IS_DEV_MODE) {
 document.getElementById('devMode').classList.remove('hidden');
 }
 
-const firebaseConfig = {
-  apiKey: "AIzaSyCtYdFnbp4va-wp0hJ_YnqOmucgNgOVrIg",
-  authDomain: "dodgeballgameday.firebaseapp.com",
-  databaseURL: "https://dodgeballgameday-default-rtdb.firebaseio.com",
-  projectId: "dodgeballgameday",
-  storageBucket: "dodgeballgameday.firebasestorage.app",
-  messagingSenderId: "1093977518048",
-  appId: "1:1093977518048:web:3e8017f501ee04f42f8585"
-};
-
-firebase.initializeApp(firebaseConfig);
-const db = firebase.database();
-const auth = firebase.auth(); 
-
-
-const timerRef = db.ref('timer');
-const offsetRef = db.ref('.info/serverTimeOffset');
-
-let serverOffset = 0;
-let localTimerInterval = null;
-let afterRoundEnabled = false;
-
-// --- Server offset ---
-offsetRef.on('value', snap => {
-  serverOffset = snap.val() || 0;
-});
-
-// --- Sync Indicator ---
-let lastServerTimeCheck = Date.now();
-setInterval(() => {
-  const syncIndicator = document.getElementById('sync-indicator');
-  const now = Date.now();
-  const diff = Math.abs(now - lastServerTimeCheck);
-  syncIndicator.style.background = diff < 2000 ? 'limegreen' : 'red';
-}, 2000);
-
-// --- Main Timer Listener ---
-timerRef.on('value', snapshot => {
-  const data = snapshot.val();
-  if (!data) return;
-
-  // Ensure defaults
-  if (data.duration === undefined) {
-    timerRef.update({ duration: 300, lastSetDuration: 300, running: false });
-    return;
-  }
-  const scoreboard = document.getElementById('scoreboard');
-  if (scoreboard) {
-    if (App.state.isSuperAdmin) {
-      scoreboard.style.display = 'flex'; // always visible to SuperAdmin
-    } else {
-      scoreboard.style.display = data.showClock === false ? 'none' : 'flex';
-    }
-  }
-
-  updateDisplay(data);
-  lastServerTimeCheck = Date.now();
-});
-
-// --- Show/Hide toggle switch listener ---
-const toggleSwitch = document.getElementById('toggle-display-switch');
-
-if (toggleSwitch) {
-  // This listener syncs the switch's state FROM Firebase
-  timerRef.child('showClock').on('value', snap => {
-    const showClock = snap.val() ?? true;
-
-    // 1. Update the toggle switch's checked state
-    toggleSwitch.checked = showClock;
-
-    // 2. Update the scoreboard visibility (this logic is unchanged)
-    const scoreboard = document.getElementById('scoreboard');
-    if (scoreboard) {
-      if (App.state.isSuperAdmin) {
-        scoreboard.style.display = 'flex'; // always visible locally
-      } else {
-        scoreboard.style.display = showClock ? 'flex' : 'none';
-      }
-    }
-  });
-
-  // This listener syncs the switch's state TO Firebase
-  toggleSwitch.onchange = async (e) => {
-    const isChecked = e.target.checked;
-    
-    // Update the Firebase flag
-    // This will trigger the 'on' listener above for all clients
-    await timerRef.update({ showClock: isChecked });
+// Firebase client SDK init is only needed in firebase mode — in local mode
+// the timer/scoreboard and division live-updates go through Socket.IO/REST
+// instead (see TimerLocal.init() and watchDivision() above).
+if (!IS_LOCAL_BACKEND) {
+  const firebaseConfig = {
+    apiKey: "AIzaSyCtYdFnbp4va-wp0hJ_YnqOmucgNgOVrIg",
+    authDomain: "dodgeballgameday.firebaseapp.com",
+    databaseURL: "https://dodgeballgameday-default-rtdb.firebaseio.com",
+    projectId: "dodgeballgameday",
+    storageBucket: "dodgeballgameday.firebasestorage.app",
+    messagingSenderId: "1093977518048",
+    appId: "1:1093977518048:web:3e8017f501ee04f42f8585"
   };
-  
-} else {
-  console.error('Could not find #toggle-display-switch element.');
+  firebase.initializeApp(firebaseConfig);
 }
 
-/*************** round control logic **************/
-// --- ROUND CONTROL LOGIC ---
-const roundDisplayEl = document.getElementById('current-round-display');
-const roundsRef = timerRef.child('currentRound');
-
-let allRounds = [];
-
-// Build ordered list from App.data.allScheduleData
-function loadRounds() {
-  if (!App?.data?.allScheduleData) return [];
-
-  const all = App.data.allScheduleData
-    .map(r => r.roundTime)
-    .filter(Boolean);
-
-  // Split into timed and playoff rounds
-  const timeRounds = [...new Set(all.filter(t => !t.startsWith('P')))].sort((a, b) => {
-    const parseTime = t => {
-      const [time, period] = t.split(' ');
-      let [hour, min] = time.split(':').map(Number);
-      if (period === 'PM' && hour !== 12) hour += 12;
-      if (period === 'AM' && hour === 12) hour = 0;
-      return hour * 60 + min;
-    };
-    return parseTime(a) - parseTime(b);
-  });
-
-  const playoffRounds = [...new Set(all.filter(t => t.startsWith('P')))].sort((a, b) => {
-    const nA = parseInt(a.match(/\d+/)?.[0] || '0', 10);
-    const nB = parseInt(b.match(/\d+/)?.[0] || '0', 10);
-    return nA - nB;
-  });
-
-  return [...timeRounds, ...playoffRounds];
-}
-
-
-function initRounds() {
-  if (!App?.data?.allScheduleData) return;
-
-  allRounds = loadRounds();
-
-  // Ensure currentRound is valid
-  roundsRef.once('value').then(snap => {
-    let val = (snap.val() || '').trim();
-    if (!allRounds.includes(val)) {
-      // If Firebase has a bad/mismatched value, reset to first valid round
-      roundsRef.set(allRounds[0] || 'Unknown Round');
-      console.log('currentRound fixed to:', allRounds[0]);
-    }
-  });
-
-  // Attach buttons now that rounds exist
-  const nextBtn = document.getElementById('next-round-btn');
-  const prevBtn = document.getElementById('prev-round-btn');
-
-  nextBtn.onclick = async () => {
-    const snap = await roundsRef.get();
-    const current = (snap.val() || '').trim();
-    let idx = allRounds.findIndex(r => r.trim() === current);
-    if (idx === -1) idx = 0; // fallback
-    console.log('Next clicked, current index:', idx, 'current:', current);
-
-    if (idx < allRounds.length - 1) {
-      roundsRef.set(allRounds[idx + 1]);
-    }
-  };
-
-  prevBtn.onclick = async () => {
-    const snap = await roundsRef.get();
-    const current = (snap.val() || '').trim();
-    let idx = allRounds.findIndex(r => r.trim() === current);
-    if (idx === -1) idx = 0; // fallback
-    console.log('Prev clicked, current index:', idx, 'current:', current);
-
-    if (idx > 0) {
-      roundsRef.set(allRounds[idx - 1]);
-    }
-  };
-}
-
-// --- Listen for round changes ---
-roundsRef.on('value', snap => {
-  const current = snap.val() || allRounds[0] || 'Unknown Round';
-  roundDisplayEl.textContent = current;
-});
-
-
-/**************************************************/
-
-
-// --- After-Round Duration Controls ---
-const afterRoundSettingsBtn = document.getElementById('after-round-settings-btn');
-const afterRoundSettings = document.getElementById('after-round-settings');
-const afterRoundDurationDisplay = document.getElementById('after-round-duration');
-const plusAfterBtn = document.getElementById('plus-after-btn');
-const minusAfterBtn = document.getElementById('minus-after-btn');
-
-
-// Load the stored after-round duration once
-timerRef.child('afterRoundDuration').on('value', snap => {
-  const val = snap.val() || 60;
-  afterRoundDurationDisplay.textContent = `${val}s`;
-});
-
-// Toggle visibility of the settings
-afterRoundSettingsBtn.onclick = () => {
-  afterRoundSettings.classList.toggle('hidden');
-};
-
-// Increment/decrement buttons
-plusAfterBtn.onclick = () => adjustAfterRoundTime(15);
-minusAfterBtn.onclick = () => adjustAfterRoundTime(-15);
-
-function adjustAfterRoundTime(delta) {
-  timerRef.child('afterRoundDuration').get().then(snap => {
-    let current = snap.val() || 60;
-    let updated = Math.max(15, current + delta);
-    timerRef.update({ afterRoundDuration: updated });
-  });
-}
-
-
-// --- The rest of your display / control logic ---
-function updateDisplay(timerData) {
-  // Clear any previous interval
-  clearInterval(localTimerInterval);
-
-  const timerEl = document.getElementById('timer-display');
-  const running = timerData.running;
-  const afterRound = timerData.startAfterRoundRunning;
-  const duration = timerData.duration ?? 0;
-
-  // Buttons
-  const plusBtn = document.getElementById('plus-btn');
-  const minusBtn = document.getElementById('minus-btn');
-  const startBtn = document.getElementById('start-btn');
-  const stopBtn = document.getElementById('stop-btn');
-  const resetBtn = document.getElementById('reset-btn');
-
-  const showAdjust = !running && duration === (timerData.lastSetDuration || 300);
-  plusBtn.style.display = showAdjust ? 'inline-block' : 'none';
-  minusBtn.style.display = showAdjust ? 'inline-block' : 'none';
-  startBtn.style.display = running ? 'none' : 'inline-block';
-  stopBtn.style.display = running ? 'inline-block' : 'none';
-  resetBtn.style.display = !running && !showAdjust ? 'inline-block' : 'none';
-
-  // Determine remaining seconds
-  function getRemaining() {
-    if (running) {
-      const now = Date.now() + serverOffset;
-      return Math.max(0, duration - Math.floor((now - timerData.startTime) / 1000));
-    }
-    return duration;
-  }
-
-  // Update display initially
-  let remaining = getRemaining();
-  updateTimerColor(timerEl, timerData);
-  timerEl.innerText = formatTime(remaining);
-
-  if (!running) return; // no need to run interval if not running
-
-  // --- Main interval ---
-  localTimerInterval = setInterval(() => {
-    remaining = getRemaining();
-    timerEl.innerText = formatTime(remaining);
-    updateTimerColor(timerEl, timerData);
-
-    if (remaining <= 0) {
-      clearInterval(localTimerInterval);
-
-      if (afterRound) {
-        // After-round finished, reset to original timer
-        timerRef.update({
-          duration: timerData.lastSetDuration,
-          lastSetDuration: timerData.lastSetDuration,
-          running: false,
-          startAfterRoundRunning: false
-        });
-      } else if (afterRoundEnabled) {
-        // Start after-round
-        startAfterRound(timerData.lastSetDuration || 300);
-      } else if (!App.state.isSuperAdmin) {
-        // Blink 0:00 locally for non-super admins
-        blinkThenReset(timerData.lastSetDuration || 300);
-      } else {
-        // Super admin just resets to original duration
-        timerRef.update({
-          duration: timerData.lastSetDuration,
-          running: false
-        });
-      }
-    }
-  }, 250);
-}
-
-
-
-function updateTimerColor(el, data) {
-  if (!data.running) {
-    el.style.color = 'red';
-    el.style.textShadow = '0 0 10px red';
-  } else if (data.startAfterRoundRunning) {
-    el.style.color = 'gold';
-    el.style.textShadow = '0 0 10px gold';
-  } else {
-    el.style.color = 'lightgreen';
-    el.style.textShadow = '0 0 10px lightgreen';
-  }
-}
-
-
-function formatTime(sec) {
-  const m = String(Math.floor(sec / 60)).padStart(1, '0');
-  const s = String(sec % 60).padStart(2, '0');
-  return `${m}:${s}`;
-}
-
-// --- Adjustment buttons ---
-function adjustTime(delta) {
-  timerRef.transaction(current => {
-    if (!current || current.running) return current;
-    const currentDuration = current.duration || 0;
-    let newDuration = Math.max(30, currentDuration + delta);
-    newDuration = Math.round(newDuration / 30) * 30;
-    return { ...current, duration: newDuration, lastSetDuration: newDuration, running: false };
-  });
-}
-
-// --- Start / Stop / Reset ---
-function startTimer() {
-  timerRef.once('value').then(snapshot => {
-    const data = snapshot.val() || {};
-    const duration = data.duration || 300;
-
-    const newData = {
-      startTime: firebase.database.ServerValue.TIMESTAMP,
-      running: true,
-      duration
-    };
-
-    timerRef.update(newData);
-    updateDisplay({ ...data, ...newData, startTime: Date.now() + serverOffset });
-  });
-}
-
-function stopTimer() {
-  timerRef.once('value').then(snapshot => {
-    const data = snapshot.val();
-    if (!data || !data.running) return;
-
-    const now = Date.now() + serverOffset;
-    const elapsed = Math.floor((now - data.startTime) / 1000);
-    const remaining = Math.max(data.duration - elapsed, 0);
-
-    timerRef.update({ duration: remaining, running: false });
-  });
-}
-
-function resetTimer() {
-  timerRef.once('value').then(snap => {
-    const data = snap.val();
-    if (!data) return;
-    timerRef.update({
-      duration: data.lastSetDuration || 300,
-      running: false,
-      startAfterRoundRunning: false
-    });
-  });
-}
-
-// --- After-Round Logic ---
-function startAfterRound(originalDuration) {
-  timerRef.child('afterRoundDuration').get().then(snap => {
-    const afterRoundDuration = snap.val() || 60;
-
-    timerRef.update({
-      duration: afterRoundDuration,
-      startTime: firebase.database.ServerValue.TIMESTAMP,
-      running: true,
-      startAfterRoundRunning: true
-    });
-  });
-}
-
-
-
-// --- Blink 0:00 for 5s then reset ---
-function blinkThenReset(originalDuration) {
-  const el = document.getElementById('timer-display');
-  let visible = true;
-  let count = 0;
-
-  const blinkInterval = setInterval(() => {
-    el.style.visibility = visible ? 'hidden' : 'visible';
-    visible = !visible;
-    count++;
-    if (count >= 10) { // 5 seconds @ 500ms toggle
-      clearInterval(blinkInterval);
-      el.style.visibility = 'visible';
-      // Local reset only (don't touch Firebase)
-      el.innerText = formatTime(originalDuration);
-    }
-  }, 500);
-}
-
-
-// --- Attach buttons ---
-document.getElementById('plus-btn').onclick = () => adjustTime(30);
-document.getElementById('minus-btn').onclick = () => adjustTime(-30);
-document.getElementById('start-btn').onclick = startTimer;
-document.getElementById('stop-btn').onclick = stopTimer;
-document.getElementById('reset-btn').onclick = resetTimer;
-document.getElementById('after-round-toggle').onchange = e => {
-  afterRoundEnabled = e.target.checked;
-};
-
-// Dynamic Super Admin timer controls: expose initTimerOverlay so it can be called
-// at load time or after a superadmin logs in.
-function initTimerOverlay() {
-  const isSuperAdmin = App?.state?.isSuperAdmin === true;
-  const timer = document.getElementById('scoreboard');
-  const overlay = document.getElementById('timer-controls-overlay');
-
-  if (!isSuperAdmin || !timer || !overlay) return;
-
-  // Move overlay to <body> so it’s not clipped by fixed nav
-  if (overlay.parentElement !== document.body) document.body.appendChild(overlay);
-  overlay.style.position = 'fixed'; // <-- key change: fixed instead of absolute
-  overlay.style.zIndex = 9999;
-
-  const showOverlay = () => {
-    const rect = timer.getBoundingClientRect();
-
-    // Align overlay to the right edge of the clock
-    overlay.style.left = `${rect.right}px`;
-    overlay.style.top = `${rect.bottom + 8}px`;
-    overlay.style.transform = 'translateX(-100%)'; // keep right edge aligned
-
-    overlay.classList.remove('hidden');
-    requestAnimationFrame(() => {
-      overlay.classList.remove('opacity-0', 'scale-95');
-      overlay.classList.add('opacity-100', 'scale-100');
-    });
-  };
-
-  const hideOverlay = () => {
-    overlay.classList.remove('opacity-100', 'scale-100');
-    overlay.classList.add('opacity-0', 'scale-95');
-
-    setTimeout(() => {
-      overlay.classList.add('hidden');
-    }, 150);
-  };
-
-  // ensure we don't add duplicate listeners
-  if (!timer.dataset.overlayInit) {
-    timer.addEventListener('click', (e) => {
-      e.stopPropagation();
-      const isVisible = !overlay.classList.contains('hidden');
-      isVisible ? hideOverlay() : showOverlay();
-    });
-    timer.dataset.overlayInit = 'true';
-  }
-
-  if (!document.body.dataset.overlayClickInit) {
-    document.addEventListener('click', (e) => {
-      if (!overlay.classList.contains('hidden')) {
-        if (!overlay.contains(e.target) && !timer.contains(e.target)) {
-          hideOverlay();
-        }
-      }
-    });
-    document.body.dataset.overlayClickInit = 'true';
-  }
-}
+// Sets up the round timer/scoreboard: direct Firebase RTDB listeners in
+// firebase mode, or Socket.IO + /api/timer/* REST calls in local mode.
+TimerModule.init();
+
+// Announcements banner + crew chat — same dual-backend pattern as the timer.
+initAnnouncements();
+initChat();
 
 // expose for admin code to call after login
 window.initTimerOverlay = initTimerOverlay;
@@ -952,7 +556,26 @@ exposeGlobals({
   watchDivision,
   showStatus,
   switchView,
+  goToGate,
   getCurrentFilteredTeam
+});
+
+// Expose settings view handlers (used by inline onclick handlers in index.html)
+exposeGlobals({
+  syncNow,
+  toggleAutoSync,
+  setSyncInterval,
+  setCustomSyncInterval,
+  setSyncScope,
+  toggleSyncDivision
+});
+
+// Expose announcements + chat handlers (used by inline onclick handlers)
+exposeGlobals({
+  dismissAnnouncementBanner,
+  postAnnouncementFromSetup,
+  cancelAnnouncementEdit,
+  sendChatMessage
 });
 /*
 window.loadData = loadData;
