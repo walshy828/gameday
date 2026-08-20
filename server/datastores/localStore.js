@@ -9,7 +9,7 @@ export const backend = 'local';
 
 const MAX_SYNC_LOG_ENTRIES = 25;
 
-// Self-heals databases provisioned before the announcements/chat feature
+// Self-heals databases provisioned before these features
 // existed — schema.sql only runs via docker-entrypoint-initdb.d on a fresh
 // volume, so already-deployed MariaDB instances need these created here.
 (async function ensureFeatureTables() {
@@ -33,8 +33,33 @@ const MAX_SYNC_LOG_ENTRIES = 25;
         INDEX idx_chat_ts (ts)
       )
     `);
+    await pool.query(`
+      CREATE TABLE IF NOT EXISTS sync_settings (
+        id INT PRIMARY KEY,
+        auto_sync_enabled BOOLEAN NOT NULL DEFAULT FALSE,
+        interval_seconds INT NOT NULL DEFAULT 300,
+        sync_scope VARCHAR(16) NOT NULL DEFAULT 'all',
+        selected_divisions TEXT NULL
+      )
+    `);
+    await pool.query(`
+      CREATE TABLE IF NOT EXISTS sync_log (
+        id INT AUTO_INCREMENT PRIMARY KEY,
+        timestamp BIGINT NOT NULL,
+        status VARCHAR(16) NOT NULL,
+        duration_ms INT,
+        triggered_by VARCHAR(32),
+        error TEXT,
+        divisions INT,
+        standings_count INT,
+        matches_count INT,
+        scope VARCHAR(16),
+        division_names TEXT,
+        INDEX idx_sync_log_timestamp (timestamp)
+      )
+    `);
   } catch (e) {
-    console.error('localStore: failed to ensure announcements/chat_messages tables exist', e);
+    console.error('localStore: failed to ensure announcements/chat_messages/sync tables exist', e);
   }
 })();
 
