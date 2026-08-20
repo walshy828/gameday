@@ -1,0 +1,1875 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Tournament Video Board</title>
+  <!-- Runtime config (API base, data backend) -->
+  <script src="/config.js"></script>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@100..900&display=swap" rel="stylesheet">
+  <style>
+    /* ==========================================================
+       DESIGN TOKENS — identical to main app (index.html :root)
+    ========================================================== */
+    :root {
+      --mar:    #7B1D2B;
+      --mar-l:  #A6303F;
+      --mar-d:  #4E101B;
+      --gold:   #E0B863;
+      --gold-l: #F3DCA9;
+      --gold-d: #B8893A;
+      --ink:    #1A1A1C;
+      --mute:   #6C6C70;
+      --ok:     #2E9E63;
+      --warn:   #D9503C;
+      --page-wash:
+        radial-gradient(760px 440px at 14% -8%, #55192A 0%, rgba(64,25,33,.62) 34%, transparent 70%),
+        radial-gradient(680px 460px at 100% 10%, #24211F 0%, transparent 62%),
+        linear-gradient(180deg, #141416 0%, #0C0C0D 58%, #0A0A0B 100%);
+    }
+
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    body {
+      font-family: 'Inter', sans-serif;
+      background: var(--page-wash);
+      background-attachment: fixed;
+      background-repeat: no-repeat;
+      color: #F0F0F1;
+      min-height: 100vh;
+      overflow-x: hidden;
+      -webkit-font-smoothing: antialiased;
+    }
+
+    /* ==========================================================
+       HEADER
+    ========================================================== */
+    .sb-header {
+      position: fixed;
+      top: 0; left: 0; right: 0;
+      z-index: 100;
+      height: 72px;
+      display: flex;
+      align-items: center;
+      gap: 14px;
+      padding: 0 22px;
+      background: var(--page-wash);
+      background-attachment: fixed;
+      background-repeat: no-repeat;
+      box-shadow: inset 0 1px 0 rgba(255,255,255,.07), 0 1px 0 rgba(0,0,0,.35);
+    }
+
+    .sb-logo {
+      width: 42px; height: 42px;
+      object-fit: contain;
+      flex-shrink: 0;
+    }
+
+    .sb-title-block { flex-shrink: 0; }
+
+    .sb-title-super {
+      font-size: 9px; font-weight: 600;
+      letter-spacing: .18em; text-transform: uppercase;
+      color: var(--gold);
+    }
+
+    .sb-title-main {
+      font-size: 19px; font-weight: 700;
+      letter-spacing: -.025em; color: #F5F5F6;
+      line-height: 1.1; margin-top: 2px;
+    }
+
+    .sb-vr {
+      width: 1px; height: 34px;
+      background: rgba(255,255,255,.12);
+      flex-shrink: 0;
+    }
+
+    /* Division tabs */
+    .sb-div-switcher {
+      display: flex; align-items: center; gap: 6px;
+    }
+
+    .div-tab {
+      display: inline-flex; align-items: center;
+      padding: 7px 16px;
+      border-radius: 999px;
+      font-size: 12px; font-weight: 700;
+      letter-spacing: .05em; text-transform: uppercase;
+      cursor: pointer; border: 1.5px solid transparent;
+      transition: all .2s; user-select: none;
+      white-space: nowrap;
+    }
+
+    .div-tab.active {
+      background: linear-gradient(135deg, var(--gold) 0%, var(--gold-d) 100%);
+      color: #2A1B08;
+      box-shadow: 0 4px 16px rgba(224,184,99,.35);
+    }
+
+    .div-tab.inactive {
+      background: rgba(255,255,255,.07);
+      color: rgba(255,255,255,.6);
+      border-color: rgba(255,255,255,.12);
+    }
+
+    .div-tab.inactive:hover {
+      background: rgba(255,255,255,.12);
+      color: rgba(255,255,255,.85);
+    }
+
+    /* Single-division badge */
+    .div-single-badge {
+      display: inline-flex; align-items: center; gap: 8px;
+      padding: 5px 14px;
+      border-radius: 999px;
+      background: rgba(224,184,99,.12);
+      border: 1.5px solid rgba(224,184,99,.35);
+      font-size: 12px; font-weight: 700;
+      letter-spacing: .05em; text-transform: uppercase;
+      color: var(--gold-l);
+    }
+
+    .sb-spacer { flex: 1; min-width: 0; }
+
+    /* Rotate pause button */
+    .rotate-pause-btn {
+      width: 30px; height: 30px;
+      border-radius: 50%;
+      border: 1.5px solid rgba(255,255,255,.18);
+      background: rgba(255,255,255,.07);
+      color: rgba(255,255,255,.6);
+      font-size: 12px;
+      cursor: pointer;
+      display: flex; align-items: center; justify-content: center;
+      transition: all .2s; flex-shrink: 0;
+    }
+
+    .rotate-pause-btn:hover { background: rgba(255,255,255,.15); color: #fff; }
+
+    /* Live dot */
+    .live-dot {
+      width: 7px; height: 7px;
+      border-radius: 50%;
+      background: var(--ok);
+      flex-shrink: 0;
+      animation: pulse-dot 2.2s ease-in-out infinite;
+    }
+
+    .live-dot.stale { background: #5A5A5E; animation: none; }
+
+    @keyframes pulse-dot {
+      0%, 100% { opacity: 1; transform: scale(1); }
+      50%       { opacity: .45; transform: scale(.7); }
+    }
+
+    /* Rotate controls group */
+    .sb-rotate-ctrl {
+      display: flex; align-items: center; gap: 8px;
+    }
+
+    .rotate-countdown-label {
+      font-size: 10px; font-weight: 600;
+      color: rgba(255,255,255,.4);
+      letter-spacing: .06em;
+      min-width: 34px;
+      text-align: right;
+    }
+
+    /* Clock */
+    .sb-clock { flex-shrink: 0; text-align: right; }
+
+    .sb-time {
+      font-size: 26px; font-weight: 700;
+      letter-spacing: -.03em;
+      color: var(--gold-l);
+      font-variant-numeric: tabular-nums;
+      line-height: 1;
+    }
+
+    .sb-date {
+      font-size: 9px; font-weight: 500;
+      color: rgba(255,255,255,.38);
+      letter-spacing: .07em; text-transform: uppercase;
+      margin-top: 3px;
+    }
+
+    /* ==========================================================
+       ROTATE PROGRESS BAR
+    ========================================================== */
+    .rotate-bar-track {
+      position: fixed;
+      top: 72px; left: 0; right: 0;
+      height: 3px;
+      background: rgba(255,255,255,.06);
+      z-index: 99;
+      display: none;
+    }
+
+    .rotate-bar-fill {
+      height: 100%;
+      background: linear-gradient(90deg, var(--gold-d), var(--gold), var(--gold-l));
+      transform-origin: left center;
+      transition: transform .9s linear;
+    }
+
+    /* ==========================================================
+       MAIN CONTENT
+    ========================================================== */
+    .sb-main {
+      padding-top: calc(72px + 3px + 18px);
+      padding-bottom: 28px;
+      padding-left: 18px;
+      padding-right: 18px;
+      min-height: 100vh;
+    }
+
+    /* Module grid */
+    .module-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(360px, 1fr));
+      gap: 16px;
+      align-items: start;
+    }
+
+    /* Bracket always spans full width */
+    #module-bracket { grid-column: 1 / -1; }
+
+    /* Division switch animation */
+    @keyframes fadeSlideRight {
+      from { opacity: 0; transform: translateX(24px); }
+      to   { opacity: 1; transform: translateX(0); }
+    }
+
+    @keyframes fadeSlideLeft {
+      from { opacity: 0; transform: translateX(-24px); }
+      to   { opacity: 1; transform: translateX(0); }
+    }
+
+    .anim-right { animation: fadeSlideRight .28s ease-out forwards; }
+    .anim-left  { animation: fadeSlideLeft  .28s ease-out forwards; }
+
+    /* ==========================================================
+       MODULE CARD
+    ========================================================== */
+    .module-card {
+      border-radius: 20px;
+      border: 1px solid rgba(255,255,255,.1);
+      background: rgba(255,255,255,.04);
+      backdrop-filter: blur(14px);
+      -webkit-backdrop-filter: blur(14px);
+      overflow: hidden;
+      transition: box-shadow .2s;
+    }
+
+    .module-card.mod-minimized .module-body { display: none; }
+    .module-card.mod-hidden { display: none; }
+
+    /* Module header */
+    .module-header {
+      display: flex; align-items: center; gap: 9px;
+      padding: 11px 14px;
+      border-bottom: 1px solid rgba(255,255,255,.08);
+      user-select: none;
+    }
+
+    .mod-icon { font-size: 15px; line-height: 1; flex-shrink: 0; }
+
+    .mod-title {
+      flex: 1; font-size: 10px; font-weight: 700;
+      letter-spacing: .12em; text-transform: uppercase;
+      color: rgba(255,255,255,.7);
+    }
+
+    .mod-badge {
+      font-size: 8px; font-weight: 700;
+      letter-spacing: .1em; text-transform: uppercase;
+      padding: 2px 8px; border-radius: 999px;
+      flex-shrink: 0;
+    }
+
+    .mod-actions { display: flex; gap: 4px; flex-shrink: 0; }
+
+    .mod-btn {
+      width: 22px; height: 22px;
+      border-radius: 6px;
+      border: 1px solid rgba(255,255,255,.12);
+      background: rgba(255,255,255,.05);
+      color: rgba(255,255,255,.45);
+      font-size: 11px; line-height: 1;
+      cursor: pointer; display: flex;
+      align-items: center; justify-content: center;
+      transition: all .15s; font-family: inherit;
+    }
+
+    .mod-btn:hover { background: rgba(255,255,255,.14); color: #fff; }
+    .mod-btn.hide-btn:hover { background: rgba(211,80,60,.2); border-color: rgba(211,80,60,.4); color: var(--warn); }
+    .mod-btn.min-btn.active { background: rgba(224,184,99,.15); color: var(--gold); border-color: rgba(224,184,99,.3); }
+
+    /* Module body */
+    .module-body {
+      padding: 14px 16px;
+      max-height: 440px;
+      overflow-y: auto;
+    }
+
+    /* Bracket module — no height cap */
+    #module-bracket .module-body {
+      max-height: none;
+      overflow-y: visible;
+    }
+
+    .module-body::-webkit-scrollbar { width: 4px; }
+    .module-body::-webkit-scrollbar-thumb { background: rgba(255,255,255,.14); border-radius: 2px; }
+    .module-body::-webkit-scrollbar-thumb:hover { background: rgba(255,255,255,.24); }
+
+    /* ==========================================================
+       STANDINGS MODULE
+    ========================================================== */
+    .st-header-row {
+      display: flex; align-items: center; gap: 8px;
+      padding: 0 8px 8px;
+      font-size: 8px; font-weight: 700;
+      letter-spacing: .14em; text-transform: uppercase;
+      color: rgba(255,255,255,.3);
+      border-bottom: 1px solid rgba(255,255,255,.07);
+      margin-bottom: 5px;
+    }
+
+    .st-row {
+      display: flex; align-items: center; gap: 8px;
+      padding: 7px 8px;
+      border-radius: 12px; margin-bottom: 3px;
+      transition: background .15s;
+    }
+
+    .st-row:hover { background: rgba(255,255,255,.05); }
+    .st-row.seeded { background: rgba(123,29,43,.14); }
+    .st-row.seeded:hover { background: rgba(123,29,43,.2); }
+
+    .rank-chip {
+      width: 26px; height: 26px; border-radius: 8px;
+      display: flex; align-items: center; justify-content: center;
+      font-size: 10px; font-weight: 700; flex-shrink: 0;
+    }
+
+    .rank-chip.seeded { background: linear-gradient(140deg, var(--mar-l) 0%, var(--mar) 100%); color: var(--gold-l); }
+    .rank-chip.plain  { background: rgba(255,255,255,.09); color: rgba(255,255,255,.45); }
+
+    .st-team { flex: 1; font-size: 13px; font-weight: 600; color: #F0F0F1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .st-rec  { width: 50px; flex-shrink: 0; text-align: right; font-size: 11px; font-weight: 500; color: rgba(255,255,255,.42); font-variant-numeric: tabular-nums; }
+    .st-pts  { width: 38px; flex-shrink: 0; text-align: right; font-size: 17px; font-weight: 700; color: var(--gold); font-variant-numeric: tabular-nums; letter-spacing: -.025em; }
+
+    /* ==========================================================
+       GAME CARDS (Current + Next Up)
+    ========================================================== */
+    .round-chip {
+      display: inline-block;
+      font-size: 9px; font-weight: 700;
+      letter-spacing: .12em; text-transform: uppercase;
+      padding: 3px 10px; border-radius: 999px;
+      margin-bottom: 10px;
+    }
+
+    .round-chip.live { background: linear-gradient(135deg, var(--gold) 0%, var(--gold-d) 100%); color: #2A1B08; }
+    .round-chip.next { background: rgba(255,255,255,.08); color: rgba(255,255,255,.6); }
+
+    .games-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
+      gap: 10px;
+    }
+
+    .game-card {
+      border-radius: 14px; padding: 12px 14px;
+      border: 1px solid rgba(255,255,255,.1);
+      background: rgba(255,255,255,.055);
+      transition: all .2s;
+    }
+
+    .game-card.on-court {
+      background: rgba(255,255,255,.93);
+      border-color: rgba(224,184,99,.55);
+    }
+
+    .gc-header {
+      display: flex; align-items: center; justify-content: space-between;
+      margin-bottom: 9px;
+    }
+
+    .court-label {
+      font-size: 9px; font-weight: 700;
+      letter-spacing: .1em; text-transform: uppercase;
+    }
+
+    .court-label.dark { color: rgba(255,255,255,.5); }
+    .court-label.light { color: var(--mute); }
+
+    .gc-status {
+      font-size: 8px; font-weight: 700;
+      letter-spacing: .1em; text-transform: uppercase;
+      padding: 2px 7px; border-radius: 999px;
+    }
+
+    .st-on-court { background: rgba(46,158,99,.2); color: var(--ok); }
+    .st-final    { background: rgba(123,29,43,.25); color: var(--mar-l); }
+    .st-upcoming { background: rgba(224,184,99,.12); color: var(--gold); }
+
+    .team-vs { display: flex; flex-direction: column; gap: 3px; }
+
+    .t-slot {
+      font-size: 13px; font-weight: 600;
+      padding: 3px 0;
+      white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+    }
+
+    .t-slot.dark  { color: rgba(255,255,255,.84); }
+    .t-slot.light { color: var(--ink); }
+    .t-slot.winner-dark  { color: #fff; font-weight: 700; }
+    .t-slot.winner-light { color: var(--mar); font-weight: 700; }
+    .t-slot.loser-dark   { color: rgba(255,255,255,.3); }
+    .t-slot.loser-light  { color: rgba(0,0,0,.3); }
+
+    .vs-divider { height: 1px; margin: 2px 0; }
+    .vs-divider.dark  { background: rgba(255,255,255,.1); }
+    .vs-divider.light { background: rgba(0,0,0,.1); }
+
+    .game-result {
+      margin-top: 8px;
+      font-size: 9px; font-weight: 700;
+      letter-spacing: .1em; text-transform: uppercase;
+    }
+
+    .game-result.dark  { color: var(--gold); }
+    .game-result.light { color: var(--mar); }
+
+    /* ==========================================================
+       PLAYOFF BRACKET
+    ========================================================== */
+    .bracket-outer {
+      overflow-x: auto;
+      padding-bottom: 10px;
+    }
+
+    .bracket-outer::-webkit-scrollbar { height: 4px; }
+    .bracket-outer::-webkit-scrollbar-thumb { background: rgba(255,255,255,.14); border-radius: 2px; }
+
+    .bracket-row {
+      display: flex;
+      gap: 0;
+      min-width: max-content;
+      align-items: stretch;
+    }
+
+    .bracket-round-col { display: flex; flex-direction: column; min-width: 230px; }
+
+    .bracket-round-hdr {
+      font-size: 9px; font-weight: 700;
+      letter-spacing: .14em; text-transform: uppercase;
+      color: rgba(255,255,255,.38);
+      text-align: center;
+      padding-bottom: 12px;
+    }
+
+    .bracket-round-hdr .round-key {
+      color: rgba(255,255,255,.2);
+      margin-left: 4px;
+    }
+
+    .bracket-games-col {
+      display: flex;
+      flex-direction: column;
+      gap: 12px;
+      flex: 1;
+      padding: 0 10px;
+      justify-content: space-around;
+    }
+
+    .bracket-match {
+      border-radius: 12px;
+      border: 1px solid rgba(255,255,255,.12);
+      background: rgba(255,255,255,.05);
+      overflow: hidden;
+    }
+
+    .bracket-match.champion {
+      border-color: rgba(224,184,99,.5);
+      background: rgba(224,184,99,.07);
+      box-shadow: 0 0 28px rgba(224,184,99,.12);
+    }
+
+    .bracket-team-row {
+      display: flex; align-items: center; gap: 8px;
+      padding: 9px 12px;
+      border-bottom: 1px solid rgba(255,255,255,.07);
+      font-size: 12px; font-weight: 600;
+      color: rgba(255,255,255,.65);
+      transition: background .15s;
+    }
+
+    .bracket-team-row:last-child { border-bottom: none; }
+
+    .bracket-team-row.winner {
+      color: var(--gold-l);
+      background: rgba(224,184,99,.1);
+      font-weight: 700;
+    }
+
+    .bracket-team-row.placeholder {
+      color: rgba(255,255,255,.28);
+      font-style: italic;
+    }
+
+    .bt-seed {
+      width: 18px; height: 18px; border-radius: 5px;
+      display: flex; align-items: center; justify-content: center;
+      font-size: 9px; font-weight: 700; flex-shrink: 0;
+      background: rgba(255,255,255,.07);
+      color: rgba(255,255,255,.35);
+    }
+
+    .bracket-team-row.winner .bt-seed {
+      background: linear-gradient(140deg, var(--mar-l), var(--mar));
+      color: var(--gold-l);
+    }
+
+    .bt-name { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+    .bt-win-label {
+      font-size: 9px; font-weight: 800;
+      color: var(--gold-d);
+      letter-spacing: .06em;
+      flex-shrink: 0;
+    }
+
+    /* Connector between rounds */
+    .bracket-connector {
+      width: 20px; flex-shrink: 0;
+      display: flex; flex-direction: column;
+      justify-content: center; align-items: center;
+      padding-top: 29px; /* align with header */
+    }
+
+    .bracket-connector-line {
+      width: 2px;
+      background: rgba(255,255,255,.1);
+      flex: 1;
+      border-radius: 1px;
+    }
+
+    /* ==========================================================
+       EMPTY STATE
+    ========================================================== */
+    .empty-state {
+      padding: 28px 16px;
+      text-align: center;
+      font-size: 13px;
+      color: rgba(255,255,255,.3);
+      line-height: 1.6;
+    }
+
+    /* ==========================================================
+       CONTROL PANEL (floating gear)
+    ========================================================== */
+    .ctrl-panel {
+      position: fixed;
+      bottom: 18px; right: 18px;
+      z-index: 200;
+      display: flex; flex-direction: column;
+      align-items: flex-end; gap: 8px;
+    }
+
+    .ctrl-popup {
+      display: none;
+      background: rgba(16,16,18,.94);
+      backdrop-filter: blur(20px);
+      -webkit-backdrop-filter: blur(20px);
+      border: 1px solid rgba(255,255,255,.12);
+      border-radius: 18px;
+      padding: 16px;
+      min-width: 228px;
+      box-shadow: 0 18px 50px rgba(0,0,0,.55);
+      animation: fadeSlideRight .18s ease-out;
+    }
+
+    .ctrl-popup.open { display: block; }
+
+    .ctrl-section-lbl {
+      font-size: 8px; font-weight: 700;
+      letter-spacing: .16em; text-transform: uppercase;
+      color: rgba(255,255,255,.35);
+      margin-bottom: 8px;
+    }
+
+    .ctrl-mod-row {
+      display: flex; align-items: center;
+      justify-content: space-between; gap: 8px;
+      padding: 6px 0;
+      border-bottom: 1px solid rgba(255,255,255,.06);
+      font-size: 12px; font-weight: 500;
+      color: rgba(255,255,255,.65);
+    }
+
+    .ctrl-mod-row:last-of-type { border-bottom: none; }
+
+    .ctrl-show-btn {
+      font-size: 10px; font-weight: 700;
+      padding: 3px 10px; border-radius: 999px;
+      border: 1.5px solid rgba(255,255,255,.18);
+      background: rgba(255,255,255,.06);
+      color: rgba(255,255,255,.65);
+      cursor: pointer; transition: all .15s;
+      white-space: nowrap; font-family: inherit;
+    }
+
+    .ctrl-show-btn:hover {
+      background: rgba(224,184,99,.15);
+      border-color: rgba(224,184,99,.4);
+      color: var(--gold-l);
+    }
+
+    .ctrl-divider { height: 1px; background: rgba(255,255,255,.08); margin: 12px 0; }
+
+    .ctrl-setup-btn {
+      width: 100%; padding: 9px;
+      border-radius: 11px;
+      border: 1.5px solid rgba(224,184,99,.28);
+      background: rgba(224,184,99,.08);
+      color: var(--gold-l);
+      font-size: 11px; font-weight: 700;
+      letter-spacing: .04em; cursor: pointer;
+      transition: all .2s; font-family: inherit;
+    }
+
+    .ctrl-setup-btn:hover { background: rgba(224,184,99,.18); }
+
+    .ctrl-gear {
+      width: 46px; height: 46px; border-radius: 50%;
+      border: 1.5px solid rgba(255,255,255,.18);
+      background: rgba(16,16,18,.88);
+      backdrop-filter: blur(14px);
+      color: rgba(255,255,255,.65);
+      font-size: 18px; cursor: pointer;
+      display: flex; align-items: center; justify-content: center;
+      transition: all .25s;
+      box-shadow: 0 8px 26px rgba(0,0,0,.45);
+    }
+
+    .ctrl-gear:hover {
+      border-color: var(--gold);
+      color: var(--gold);
+      transform: rotate(40deg);
+    }
+
+    /* ==========================================================
+       SETUP OVERLAY
+    ========================================================== */
+    .setup-overlay {
+      position: fixed; inset: 0; z-index: 500;
+      background: rgba(8,8,10,.9);
+      backdrop-filter: blur(18px);
+      -webkit-backdrop-filter: blur(18px);
+      display: flex; align-items: center; justify-content: center;
+    }
+
+    .setup-overlay.hidden { display: none; }
+
+    .setup-modal {
+      background: linear-gradient(160deg, #1C1C1E 0%, #141416 100%);
+      border: 1px solid rgba(255,255,255,.12);
+      border-radius: 28px;
+      padding: 32px;
+      max-width: 540px; width: 92%;
+      box-shadow: 0 36px 90px rgba(0,0,0,.65);
+      max-height: 90vh;
+      overflow-y: auto;
+    }
+
+    .setup-hdr {
+      display: flex; align-items: center; gap: 14px;
+      margin-bottom: 26px;
+    }
+
+    .setup-logo { width: 38px; height: 38px; object-fit: contain; flex-shrink: 0; }
+
+    .setup-title { font-size: 21px; font-weight: 700; letter-spacing: -.025em; color: #F5F5F6; }
+    .setup-sub   { font-size: 12px; color: rgba(255,255,255,.38); margin-top: 2px; }
+
+    .setup-section { margin-bottom: 22px; }
+
+    .setup-lbl {
+      font-size: 9px; font-weight: 700;
+      letter-spacing: .16em; text-transform: uppercase;
+      color: rgba(255,255,255,.38);
+      margin-bottom: 10px;
+    }
+
+    .setup-note {
+      margin-top: 8px; font-size: 11px;
+      color: rgba(255,255,255,.32); line-height: 1.5;
+    }
+
+    /* Division checkboxes */
+    .div-checks { display: flex; flex-direction: column; gap: 7px; }
+
+    .div-check-row {
+      display: flex; align-items: center; gap: 11px;
+      padding: 11px 14px;
+      border-radius: 13px;
+      border: 1.5px solid rgba(255,255,255,.1);
+      background: rgba(255,255,255,.04);
+      cursor: pointer;
+      transition: all .15s;
+      font-size: 14px; font-weight: 600;
+      color: rgba(255,255,255,.65);
+      user-select: none;
+    }
+
+    .div-check-row:hover { background: rgba(255,255,255,.08); border-color: rgba(255,255,255,.2); color: #fff; }
+
+    .div-check-row.selected {
+      background: rgba(224,184,99,.11);
+      border-color: rgba(224,184,99,.42);
+      color: var(--gold-l);
+    }
+
+    .div-check-row.disabled {
+      opacity: .45; cursor: default;
+    }
+
+    .div-check-indicator {
+      width: 20px; height: 20px; border-radius: 6px;
+      border: 1.5px solid rgba(255,255,255,.2);
+      background: rgba(255,255,255,.06);
+      display: flex; align-items: center; justify-content: center;
+      font-size: 11px; flex-shrink: 0;
+      transition: all .15s;
+    }
+
+    .div-check-row.selected .div-check-indicator {
+      background: linear-gradient(140deg, var(--gold) 0%, var(--gold-d) 100%);
+      border-color: transparent; color: #2A1B08;
+    }
+
+    .div-order-badge {
+      width: 20px; height: 20px; border-radius: 50%;
+      background: var(--mar);
+      color: var(--gold-l);
+      font-size: 9px; font-weight: 800;
+      display: flex; align-items: center; justify-content: center;
+      flex-shrink: 0;
+    }
+
+    /* Rotate interval options */
+    .rotate-opts {
+      display: flex; flex-wrap: wrap; gap: 7px;
+    }
+
+    .rot-opt {
+      padding: 7px 15px; border-radius: 999px;
+      border: 1.5px solid rgba(255,255,255,.12);
+      background: rgba(255,255,255,.05);
+      color: rgba(255,255,255,.55);
+      font-size: 12px; font-weight: 600;
+      cursor: pointer; transition: all .15s;
+      font-family: inherit;
+    }
+
+    .rot-opt:hover { border-color: rgba(255,255,255,.25); color: #fff; }
+
+    .rot-opt.sel {
+      background: rgba(224,184,99,.14);
+      border-color: rgba(224,184,99,.42);
+      color: var(--gold-l);
+    }
+
+    .custom-row {
+      display: flex; align-items: center; gap: 8px;
+      margin-top: 9px;
+    }
+
+    .custom-input {
+      width: 76px; padding: 7px 10px;
+      border-radius: 10px;
+      border: 1.5px solid rgba(255,255,255,.15);
+      background: rgba(255,255,255,.07);
+      color: #F0F0F1; font-size: 14px; font-weight: 600;
+      font-family: inherit; outline: none; text-align: center;
+      font-variant-numeric: tabular-nums;
+    }
+
+    .custom-input:focus { border-color: var(--gold); }
+
+    /* Setup footer */
+    .setup-footer { margin-top: 26px; }
+
+    .setup-go-btn {
+      width: 100%; padding: 15px;
+      border-radius: 14px; border: none;
+      background: linear-gradient(135deg, var(--gold) 0%, var(--gold-d) 100%);
+      color: #2A1B08; font-size: 14px; font-weight: 700;
+      font-family: inherit; cursor: pointer;
+      letter-spacing: .03em; transition: all .2s;
+      box-shadow: 0 8px 26px rgba(224,184,99,.3);
+    }
+
+    .setup-go-btn:hover:not(:disabled) {
+      transform: translateY(-1px);
+      box-shadow: 0 12px 32px rgba(224,184,99,.42);
+    }
+
+    .setup-go-btn:disabled { opacity: .45; cursor: not-allowed; transform: none; }
+
+    /* ==========================================================
+       FULLSCREEN OVERRIDES
+    ========================================================== */
+    .module-card:fullscreen,
+    .module-card:-webkit-full-screen {
+      border-radius: 0;
+      background: #09090A;
+      max-height: 100vh;
+    }
+
+    .module-card:fullscreen .module-body,
+    .module-card:-webkit-full-screen .module-body {
+      max-height: calc(100vh - 48px);
+    }
+
+    /* ==========================================================
+       RESPONSIVE
+    ========================================================== */
+    @media (max-width: 840px) {
+      .module-grid { grid-template-columns: 1fr; }
+      .sb-title-super { display: none; }
+      .sb-title-main  { font-size: 15px; }
+    }
+
+    .hidden { display: none !important; }
+  </style>
+</head>
+<body>
+
+<!-- ==============================================================
+     SETUP OVERLAY
+============================================================== -->
+<div class="setup-overlay" id="setup-overlay">
+  <div class="setup-modal">
+    <div class="setup-hdr">
+      <img src="/assets/algonquin-hockey.png" alt="Logo" class="setup-logo">
+      <div>
+        <div class="setup-title">Video Board Setup</div>
+        <div class="setup-sub">Tournament Scoreboard · Wide-Screen Display</div>
+      </div>
+    </div>
+
+    <div class="setup-section">
+      <div class="setup-lbl">Select Divisions (pick 1 or 2)</div>
+      <div class="div-checks" id="setup-div-list">
+        <div class="empty-state" style="padding:16px 0;">Loading divisions…</div>
+      </div>
+      <div class="setup-note" id="setup-div-note">Select at least one division to continue.</div>
+    </div>
+
+    <div class="setup-section" id="rotate-section" style="display:none">
+      <div class="setup-lbl">Auto-rotate between divisions</div>
+      <div class="rotate-opts" id="rotate-opts">
+        <button class="rot-opt sel" data-secs="0">Off</button>
+        <button class="rot-opt" data-secs="15">15 s</button>
+        <button class="rot-opt" data-secs="30">30 s</button>
+        <button class="rot-opt" data-secs="45">45 s</button>
+        <button class="rot-opt" data-secs="60">60 s</button>
+        <button class="rot-opt" data-secs="custom">Custom</button>
+      </div>
+      <div class="custom-row hidden" id="custom-row">
+        <input type="number" class="custom-input" id="custom-secs-input"
+               value="20" min="5" max="600" placeholder="sec">
+        <span style="font-size:12px;color:rgba(255,255,255,.4);">seconds</span>
+      </div>
+    </div>
+
+    <div class="setup-footer">
+      <button class="setup-go-btn" id="setup-go-btn" disabled onclick="commitSetup()">
+        Launch Board →
+      </button>
+    </div>
+  </div>
+</div>
+
+<!-- ==============================================================
+     HEADER
+============================================================== -->
+<header class="sb-header">
+  <img src="/assets/algonquin-hockey.png" alt="Algonquin Hockey" class="sb-logo">
+
+  <div class="sb-title-block">
+    <div class="sb-title-super">Algonquin Hockey Presents</div>
+    <div class="sb-title-main">Dodgeball Tournament</div>
+  </div>
+
+  <div class="sb-vr"></div>
+
+  <!-- Division switcher — populated by JS -->
+  <div class="sb-div-switcher" id="div-switcher"></div>
+
+  <div class="sb-spacer"></div>
+
+  <!-- Rotate controls (shown when 2 divisions + rotate on) -->
+  <div class="sb-rotate-ctrl hidden" id="rotate-controls">
+    <div class="live-dot" id="live-dot"></div>
+    <div class="rotate-countdown-label" id="rotate-cd-label"></div>
+    <button class="rotate-pause-btn" id="rotate-pause-btn"
+            onclick="toggleRotatePause()" title="Pause/resume (Space)">⏸</button>
+  </div>
+
+  <!-- Clock -->
+  <div class="sb-clock">
+    <div class="sb-time" id="sb-time">--:--:--</div>
+    <div class="sb-date" id="sb-date">Loading…</div>
+  </div>
+</header>
+
+<!-- Rotate progress bar -->
+<div class="rotate-bar-track hidden" id="rotate-bar">
+  <div class="rotate-bar-fill" id="rotate-bar-fill" style="transform:scaleX(1)"></div>
+</div>
+
+<!-- ==============================================================
+     MAIN CONTENT
+============================================================== -->
+<main class="sb-main">
+  <div class="module-grid" id="module-grid">
+
+    <!-- STANDINGS -->
+    <div class="module-card" id="module-standings">
+      <div class="module-header">
+        <span class="mod-icon">📊</span>
+        <span class="mod-title">Standings</span>
+        <span class="mod-badge" id="badge-standings"
+              style="background:rgba(123,29,43,.3);color:var(--mar-l)"></span>
+        <div class="mod-actions">
+          <button class="mod-btn min-btn" onclick="toggleMin('standings')" title="Minimize/restore">—</button>
+          <button class="mod-btn" onclick="goFullscreen('module-standings')" title="Fullscreen">⛶</button>
+          <button class="mod-btn hide-btn" onclick="hideModule('standings')" title="Hide">✕</button>
+        </div>
+      </div>
+      <div class="module-body" id="body-standings">
+        <div class="empty-state">Loading standings…</div>
+      </div>
+    </div>
+
+    <!-- CURRENT GAMES -->
+    <div class="module-card" id="module-current">
+      <div class="module-header">
+        <span class="mod-icon">🏟️</span>
+        <span class="mod-title">Current Games</span>
+        <span class="mod-badge" id="badge-current"
+              style="background:rgba(46,158,99,.2);color:var(--ok)"></span>
+        <div class="mod-actions">
+          <button class="mod-btn min-btn" onclick="toggleMin('current')" title="Minimize/restore">—</button>
+          <button class="mod-btn" onclick="goFullscreen('module-current')" title="Fullscreen">⛶</button>
+          <button class="mod-btn hide-btn" onclick="hideModule('current')" title="Hide">✕</button>
+        </div>
+      </div>
+      <div class="module-body" id="body-current">
+        <div class="empty-state">Loading…</div>
+      </div>
+    </div>
+
+    <!-- NEXT UP -->
+    <div class="module-card" id="module-next">
+      <div class="module-header">
+        <span class="mod-icon">⏭️</span>
+        <span class="mod-title">Next Up</span>
+        <span class="mod-badge" id="badge-next"
+              style="background:rgba(224,184,99,.15);color:var(--gold)"></span>
+        <div class="mod-actions">
+          <button class="mod-btn min-btn" onclick="toggleMin('next')" title="Minimize/restore">—</button>
+          <button class="mod-btn" onclick="goFullscreen('module-next')" title="Fullscreen">⛶</button>
+          <button class="mod-btn hide-btn" onclick="hideModule('next')" title="Hide">✕</button>
+        </div>
+      </div>
+      <div class="module-body" id="body-next">
+        <div class="empty-state">Loading…</div>
+      </div>
+    </div>
+
+    <!-- PLAYOFF BRACKET (hidden by default) -->
+    <div class="module-card mod-hidden" id="module-bracket">
+      <div class="module-header">
+        <span class="mod-icon">🏆</span>
+        <span class="mod-title">Playoff Bracket</span>
+        <span class="mod-badge" id="badge-bracket"
+              style="background:rgba(224,184,99,.15);color:var(--gold)"></span>
+        <div class="mod-actions">
+          <button class="mod-btn min-btn" onclick="toggleMin('bracket')" title="Minimize/restore">—</button>
+          <button class="mod-btn" onclick="goFullscreen('module-bracket')" title="Fullscreen">⛶</button>
+          <button class="mod-btn hide-btn" onclick="hideModule('bracket')" title="Hide">✕</button>
+        </div>
+      </div>
+      <div class="module-body" id="body-bracket">
+        <div class="empty-state">Bracket appears here once playoffs begin.</div>
+      </div>
+    </div>
+
+  </div>
+</main>
+
+<!-- ==============================================================
+     CONTROL PANEL (floating gear)
+============================================================== -->
+<div class="ctrl-panel">
+  <div class="ctrl-popup" id="ctrl-popup">
+    <div class="ctrl-section-lbl">Hidden Modules</div>
+    <div id="ctrl-hidden-list">
+      <div style="font-size:11px;color:rgba(255,255,255,.3);padding:4px 0">All modules visible</div>
+    </div>
+    <div class="ctrl-divider"></div>
+    <button class="ctrl-setup-btn" onclick="openSetupFromCtrl()">⚙ Change Setup</button>
+  </div>
+  <button class="ctrl-gear" id="ctrl-gear-btn" onclick="toggleCtrlPanel()" title="Settings (gear)">⚙</button>
+</div>
+
+<!-- ==============================================================
+     JAVASCRIPT
+============================================================== -->
+<script>
+'use strict';
+
+// ================================================================
+// SB — Scoreboard global state
+// ================================================================
+const SB = {
+  divisions:         [],   // up to 2 division names
+  activeIndex:       0,
+  cache:             {},   // { divName: { standings:[], schedule:[] } }
+  pollTimers:        {},   // { divName: intervalId }
+  moduleStates:      {},   // { divName: { modId: 'visible'|'minimized'|'hidden' } }
+  rotateIntervalSecs: 0,
+  rotatePaused:      false,
+  userPaused:        false, // explicitly paused by user (vs hover-paused)
+  rotateCountdown:   0,
+  rotateTimer:       null,
+  lastDirection:     1,    // 1 = forward, -1 = backward
+};
+
+const MODULES = ['standings', 'current', 'next', 'bracket'];
+const MODULE_LABELS = {
+  standings: '📊 Standings',
+  current:   '🏟️ Current Games',
+  next:      '⏭️ Next Up',
+  bracket:   '🏆 Playoff Bracket',
+};
+const DEFAULT_MODULE_STATES = {
+  standings: 'visible',
+  current:   'visible',
+  next:      'visible',
+  bracket:   'hidden',
+};
+
+// ================================================================
+// CLOCK
+// ================================================================
+function startClock() {
+  const DAYS   = ['Sunday','Monday','Tuesday','Wednesday','Thursday','Friday','Saturday'];
+  const MONTHS = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+
+  function tick() {
+    const now = new Date();
+    const h = String(now.getHours()).padStart(2,'0');
+    const m = String(now.getMinutes()).padStart(2,'0');
+    const s = String(now.getSeconds()).padStart(2,'0');
+    document.getElementById('sb-time').textContent = `${h}:${m}:${s}`;
+    document.getElementById('sb-date').textContent =
+      `${DAYS[now.getDay()]} · ${MONTHS[now.getMonth()]} ${now.getDate()}, ${now.getFullYear()}`;
+  }
+  tick();
+  setInterval(tick, 1000);
+}
+
+// ================================================================
+// HTML ESCAPE
+// ================================================================
+function esc(str) {
+  const d = document.createElement('div');
+  d.textContent = str ?? '';
+  return d.innerHTML;
+}
+
+// ================================================================
+// API
+// ================================================================
+const API = window.location.origin;
+
+async function apiFetchDivisions() {
+  const r = await fetch(`${API}/api/divisions`);
+  if (!r.ok) throw new Error('Failed to load divisions');
+  return r.json();
+}
+
+async function apiFetchData(divName) {
+  const r = await fetch(`${API}/api/allData?sheetName=${encodeURIComponent(divName)}`);
+  if (!r.ok) throw new Error(`Failed to load data for ${divName}`);
+  return r.json();
+}
+
+// ================================================================
+// DATA POLLING
+// ================================================================
+async function fetchAndCache(divName) {
+  const data = await apiFetchData(divName);
+  SB.cache[divName] = { standings: data.standings || [], schedule: data.schedule || [] };
+  if (SB.divisions[SB.activeIndex] === divName) {
+    renderAll(divName, false);
+    setLiveDot(true);
+  }
+}
+
+function startPolling(divName) {
+  if (SB.pollTimers[divName]) clearInterval(SB.pollTimers[divName]);
+  fetchAndCache(divName).catch(err => { console.error('[poll]', err); setLiveDot(false); });
+  SB.pollTimers[divName] = setInterval(() => {
+    fetchAndCache(divName).catch(err => {
+      console.error('[poll]', err);
+      if (SB.divisions[SB.activeIndex] === divName) setLiveDot(false);
+    });
+  }, 30_000);
+}
+
+function stopAllPolling() {
+  Object.values(SB.pollTimers).forEach(id => clearInterval(id));
+  SB.pollTimers = {};
+}
+
+function setLiveDot(live) {
+  document.getElementById('live-dot')?.classList.toggle('stale', !live);
+}
+
+// ================================================================
+// MODULE STATE
+// ================================================================
+function getState(divName, modId) {
+  if (!SB.moduleStates[divName]) SB.moduleStates[divName] = { ...DEFAULT_MODULE_STATES };
+  return SB.moduleStates[divName][modId] || 'visible';
+}
+
+function setState(modId, state) {
+  const div = SB.divisions[SB.activeIndex];
+  if (!SB.moduleStates[div]) SB.moduleStates[div] = { ...DEFAULT_MODULE_STATES };
+  SB.moduleStates[div][modId] = state;
+  saveModuleStates();
+  applyModuleStates(div);
+  refreshCtrlList();
+}
+
+function applyModuleStates(divName) {
+  MODULES.forEach(id => {
+    const card = document.getElementById(`module-${id}`);
+    if (!card) return;
+    const s = getState(divName, id);
+    card.classList.toggle('mod-minimized', s === 'minimized');
+    card.classList.toggle('mod-hidden',    s === 'hidden');
+    // Toggle min button appearance
+    const minBtn = card.querySelector('.min-btn');
+    if (minBtn) minBtn.classList.toggle('active', s === 'minimized');
+  });
+}
+
+function toggleMin(modId) {
+  const cur = getState(SB.divisions[SB.activeIndex], modId);
+  setState(modId, cur === 'minimized' ? 'visible' : 'minimized');
+}
+
+function hideModule(modId) {
+  setState(modId, 'hidden');
+}
+
+function showModule(modId) {
+  setState(modId, 'visible');
+}
+
+function saveModuleStates() {
+  try { localStorage.setItem('sb_modStates', JSON.stringify(SB.moduleStates)); } catch(e) {}
+}
+
+function loadModuleStates() {
+  try {
+    const s = localStorage.getItem('sb_modStates');
+    if (s) SB.moduleStates = JSON.parse(s);
+  } catch(e) {}
+}
+
+// ================================================================
+// CONTROL PANEL
+// ================================================================
+let ctrlOpen = false;
+
+function toggleCtrlPanel() {
+  ctrlOpen = !ctrlOpen;
+  document.getElementById('ctrl-popup').classList.toggle('open', ctrlOpen);
+}
+
+document.addEventListener('click', e => {
+  if (!ctrlOpen) return;
+  const popup = document.getElementById('ctrl-popup');
+  const gear  = document.getElementById('ctrl-gear-btn');
+  if (!popup.contains(e.target) && !gear.contains(e.target)) {
+    ctrlOpen = false;
+    popup.classList.remove('open');
+  }
+});
+
+function refreshCtrlList() {
+  const div = SB.divisions[SB.activeIndex];
+  const hiddenMods = MODULES.filter(m => getState(div, m) === 'hidden');
+  const list = document.getElementById('ctrl-hidden-list');
+  if (hiddenMods.length === 0) {
+    list.innerHTML = '<div style="font-size:11px;color:rgba(255,255,255,.3);padding:4px 0">All modules visible</div>';
+    return;
+  }
+  list.innerHTML = hiddenMods.map(m => `
+    <div class="ctrl-mod-row">
+      <span>${esc(MODULE_LABELS[m])}</span>
+      <button class="ctrl-show-btn" onclick="showModule('${m}')">Show</button>
+    </div>
+  `).join('');
+}
+
+// ================================================================
+// DIVISION SWITCHER
+// ================================================================
+function renderDivSwitcher() {
+  const el = document.getElementById('div-switcher');
+  if (SB.divisions.length === 1) {
+    el.innerHTML = `<div class="div-single-badge">${esc(SB.divisions[0])}</div>`;
+    return;
+  }
+  el.innerHTML = SB.divisions.map((d, i) => `
+    <button class="div-tab ${i === SB.activeIndex ? 'active' : 'inactive'}"
+            onclick="switchDiv(${i})">
+      ${esc(d)}
+    </button>
+  `).join('');
+}
+
+function switchDiv(index, animate = true) {
+  if (index === SB.activeIndex) return;
+  SB.lastDirection = index > SB.activeIndex ? 1 : -1;
+  SB.activeIndex = index;
+  renderDivSwitcher();
+  renderAll(SB.divisions[index], animate);
+  resetRotateCountdown();
+}
+
+// ================================================================
+// AUTO-ROTATE
+// ================================================================
+function startRotate() {
+  stopRotate();
+  if (SB.rotateIntervalSecs <= 0 || SB.divisions.length < 2) return;
+
+  SB.rotateCountdown = SB.rotateIntervalSecs;
+  SB.rotatePaused   = false;
+  SB.userPaused     = false;
+  updateRotateUI();
+
+  SB.rotateTimer = setInterval(() => {
+    if (SB.rotatePaused) return;
+    SB.rotateCountdown = Math.max(0, SB.rotateCountdown - 1);
+    updateRotateUI();
+    if (SB.rotateCountdown === 0) {
+      switchDiv((SB.activeIndex + 1) % SB.divisions.length);
+    }
+  }, 1000);
+
+  document.getElementById('rotate-controls').classList.remove('hidden');
+  document.getElementById('rotate-bar').classList.remove('hidden');
+  updateProgressBar();
+}
+
+function stopRotate() {
+  if (SB.rotateTimer) { clearInterval(SB.rotateTimer); SB.rotateTimer = null; }
+}
+
+function resetRotateCountdown() {
+  SB.rotateCountdown = SB.rotateIntervalSecs;
+  updateRotateUI();
+  updateProgressBar();
+}
+
+function updateRotateUI() {
+  const lbl = document.getElementById('rotate-cd-label');
+  if (lbl && SB.rotateIntervalSecs > 0) {
+    lbl.textContent = SB.rotatePaused ? '— s' : `${SB.rotateCountdown}s`;
+  }
+}
+
+function updateProgressBar() {
+  const fill = document.getElementById('rotate-bar-fill');
+  if (!fill || SB.rotateIntervalSecs <= 0) return;
+  const pct = SB.rotateIntervalSecs > 0 ? SB.rotateCountdown / SB.rotateIntervalSecs : 1;
+  fill.style.transform = `scaleX(${pct.toFixed(4)})`;
+}
+
+function toggleRotatePause() {
+  SB.userPaused = !SB.userPaused;
+  SB.rotatePaused = SB.userPaused;
+  const btn = document.getElementById('rotate-pause-btn');
+  btn.textContent = SB.userPaused ? '▶' : '⏸';
+  btn.title = SB.userPaused ? 'Resume (Space)' : 'Pause (Space)';
+}
+
+// Hover on progress bar — only pause if user hasn't explicitly paused
+const rotateBar = document.getElementById('rotate-bar');
+rotateBar.addEventListener('mouseenter', () => {
+  if (!SB.userPaused && SB.rotateIntervalSecs > 0) SB.rotatePaused = true;
+});
+rotateBar.addEventListener('mouseleave', () => {
+  if (!SB.userPaused && SB.rotateIntervalSecs > 0) SB.rotatePaused = false;
+});
+
+// ================================================================
+// RENDERING HELPERS
+// ================================================================
+function isReported(g) {
+  const w = (g.winner || '').trim();
+  return w !== '' && w !== 'TBA' && w !== '—';
+}
+
+function isPlayoff(g) {
+  return /^P\d/i.test((g.roundTime || '').trim());
+}
+
+function getLiveRound(schedule) {
+  const nonPlayoff = schedule.filter(g => !isPlayoff(g) && g.roundTime);
+  const rts = [...new Set(nonPlayoff.map(g => g.roundTime))];
+  return rts.find(rt => nonPlayoff.some(g => g.roundTime === rt && !isReported(g))) || null;
+}
+
+function getNextRound(schedule, liveRound) {
+  if (!liveRound) return null;
+  const nonPlayoff = schedule.filter(g => !isPlayoff(g) && g.roundTime);
+  const rts = [...new Set(nonPlayoff.map(g => g.roundTime))];
+  const idx = rts.indexOf(liveRound);
+  return idx >= 0 && idx < rts.length - 1 ? rts[idx + 1] : null;
+}
+
+// ================================================================
+// RENDER ALL
+// ================================================================
+function renderAll(divName, animate = false) {
+  const cached = SB.cache[divName];
+  if (!cached) return;
+
+  const { standings = [], schedule = [] } = cached;
+
+  // Slide animation on the grid
+  if (animate) {
+    const grid = document.getElementById('module-grid');
+    const cls = SB.lastDirection >= 0 ? 'anim-right' : 'anim-left';
+    grid.classList.remove('anim-right', 'anim-left');
+    void grid.offsetWidth; // reflow
+    grid.classList.add(cls);
+  }
+
+  applyModuleStates(divName);
+  refreshCtrlList();
+
+  renderStandings(standings);
+
+  const liveRound = getLiveRound(schedule);
+  const nextRound = getNextRound(schedule, liveRound);
+
+  renderCurrentGames(schedule, liveRound);
+  renderNextUp(schedule, nextRound);
+  renderBracket(schedule);
+}
+
+// ================================================================
+// STANDINGS
+// ================================================================
+function renderStandings(data) {
+  const body  = document.getElementById('body-standings');
+  const badge = document.getElementById('badge-standings');
+  if (!body) return;
+
+  const rows = (data || []).filter(item => item.team && item.team.trim());
+
+  if (rows.length === 0) {
+    body.innerHTML = '<div class="empty-state">No standings data available.</div>';
+    badge.textContent = '';
+    return;
+  }
+
+  badge.textContent = `${rows.length} TEAMS`;
+
+  const hdr = `
+    <div class="st-header-row">
+      <span style="width:26px;flex-shrink:0">#</span>
+      <span style="flex:1">Team</span>
+      <span class="st-rec">W-L-T</span>
+      <span class="st-pts">Pts</span>
+    </div>
+  `;
+
+  const html = rows.map((item, i) => {
+    const seeded = i < 4;
+    return `
+      <div class="st-row ${seeded ? 'seeded' : ''}">
+        <div class="rank-chip ${seeded ? 'seeded' : 'plain'}">${esc(item.rank || i + 1)}</div>
+        <div class="st-team">${esc(item.team)}</div>
+        <div class="st-rec">${esc(item.record || '0-0')}</div>
+        <div class="st-pts">${esc(item.points ?? 0)}</div>
+      </div>
+    `;
+  }).join('');
+
+  body.innerHTML = hdr + html;
+}
+
+// ================================================================
+// CURRENT GAMES
+// ================================================================
+function renderCurrentGames(schedule, liveRound) {
+  const body  = document.getElementById('body-current');
+  const badge = document.getElementById('badge-current');
+  if (!body) return;
+
+  if (!liveRound) {
+    badge.textContent = '';
+    body.innerHTML = '<div class="empty-state">No round currently in progress.</div>';
+    return;
+  }
+
+  const games = schedule.filter(g => g.roundTime === liveRound);
+  badge.textContent = `${games.length} ON COURT`;
+
+  body.innerHTML = `
+    <div style="margin-bottom:10px">
+      <span class="round-chip live">Round ${esc(liveRound)}</span>
+    </div>
+    <div class="games-grid">${games.map(g => gameCardHTML(g, 'live')).join('')}</div>
+  `;
+}
+
+// ================================================================
+// NEXT UP
+// ================================================================
+function renderNextUp(schedule, nextRound) {
+  const body  = document.getElementById('body-next');
+  const badge = document.getElementById('badge-next');
+  if (!body) return;
+
+  if (!nextRound) {
+    badge.textContent = '';
+    body.innerHTML = '<div class="empty-state">No upcoming rounds scheduled.</div>';
+    return;
+  }
+
+  const games = schedule.filter(g => g.roundTime === nextRound);
+  badge.textContent = `${games.length} GAME${games.length !== 1 ? 'S' : ''}`;
+
+  body.innerHTML = `
+    <div style="margin-bottom:10px">
+      <span class="round-chip next">Next: ${esc(nextRound)}</span>
+    </div>
+    <div class="games-grid">${games.map(g => gameCardHTML(g, 'next')).join('')}</div>
+  `;
+}
+
+// ================================================================
+// GAME CARD HTML BUILDER
+// ================================================================
+function gameCardHTML(game, ctx) {
+  const reported = isReported(game);
+  const winner   = reported ? (game.winner || '').trim() : null;
+  const tie      = reported && winner === 'tie';
+  const aWon     = reported && winner === game.team1;
+  const bWon     = reported && winner === game.team2;
+
+  const onCourt  = ctx === 'live' && !reported;
+  const cardCls  = `game-card${onCourt ? ' on-court' : ''}`;
+  const dark     = !onCourt;
+
+  const t1Base = dark ? 't-slot dark' : 't-slot light';
+  const t2Base = dark ? 't-slot dark' : 't-slot light';
+
+  let t1Cls = t1Base;
+  let t2Cls = t2Base;
+  if (reported && !tie) {
+    if (aWon) t1Cls += dark ? ' winner-dark' : ' winner-light';
+    else      t1Cls += dark ? ' loser-dark'  : ' loser-light';
+    if (bWon) t2Cls += dark ? ' winner-dark' : ' winner-light';
+    else      t2Cls += dark ? ' loser-dark'  : ' loser-light';
+  }
+
+  let statusLabel = 'UPCOMING';
+  let statusCls   = 'st-upcoming';
+  if (onCourt)        { statusLabel = 'ON COURT'; statusCls = 'st-on-court'; }
+  else if (reported)  { statusLabel = tie ? 'TIE' : 'FINAL'; statusCls = 'st-final'; }
+
+  let resultHTML = '';
+  if (reported) {
+    const resCls = `game-result ${dark ? 'dark' : 'light'}`;
+    if (tie)   resultHTML = `<div class="${resCls}">TIE</div>`;
+    else if (winner) resultHTML = `<div class="${resCls}">WIN · ${esc(winner)} · ${esc(game.playersRemaining ?? 0)} left</div>`;
+  }
+
+  return `
+    <div class="${cardCls}">
+      <div class="gc-header">
+        <span class="court-label ${dark ? 'dark' : 'light'}">COURT ${esc(game.court || '?')}</span>
+        <span class="gc-status ${statusCls}">${statusLabel}</span>
+      </div>
+      <div class="team-vs">
+        <div class="${t1Cls}">${esc(game.team1 || 'TBD')}</div>
+        <div class="vs-divider ${dark ? 'dark' : 'light'}"></div>
+        <div class="${t2Cls}">${esc(game.team2 || 'TBD')}</div>
+      </div>
+      ${resultHTML}
+    </div>
+  `;
+}
+
+// ================================================================
+// PLAYOFF BRACKET
+// ================================================================
+function renderBracket(schedule) {
+  const body  = document.getElementById('body-bracket');
+  const badge = document.getElementById('badge-bracket');
+  if (!body) return;
+
+  const pGames = schedule.filter(isPlayoff);
+
+  if (pGames.length === 0) {
+    badge.textContent = '';
+    body.innerHTML = '<div class="empty-state">Bracket will appear here once playoffs begin.</div>';
+    return;
+  }
+
+  // Group by roundTime, sort P1 < P2 < P3...
+  const roundMap = new Map();
+  pGames.forEach(g => {
+    const key = (g.roundTime || '').trim().toUpperCase();
+    if (!roundMap.has(key)) roundMap.set(key, []);
+    roundMap.get(key).push(g);
+  });
+
+  const rounds = [...roundMap.keys()].sort((a, b) => {
+    const na = parseInt(a.replace(/\D/g,'')) || 0;
+    const nb = parseInt(b.replace(/\D/g,'')) || 0;
+    return na - nb;
+  });
+
+  badge.textContent = `${rounds.length} ROUND${rounds.length !== 1 ? 'S' : ''}`;
+
+  function roundLabel(key, all) {
+    const fromEnd = all.length - 1 - all.indexOf(key);
+    if (fromEnd === 0) return 'Championship';
+    if (fromEnd === 1) return 'Semifinals';
+    if (fromEnd === 2) return 'Quarterfinals';
+    return `Round ${all.indexOf(key) + 1}`;
+  }
+
+  const cols = rounds.map((rnd, ri) => {
+    const games = roundMap.get(rnd);
+    const isLast = ri === rounds.length - 1;
+    const gamesHTML = games.map(g => bracketMatchHTML(g, isLast)).join('');
+
+    return `
+      <div class="bracket-round-col">
+        <div class="bracket-round-hdr">
+          ${esc(roundLabel(rnd, rounds))}
+          <span class="round-key">(${esc(rnd)})</span>
+        </div>
+        <div class="bracket-games-col">${gamesHTML}</div>
+      </div>
+      ${ri < rounds.length - 1 ? '<div class="bracket-connector"><div class="bracket-connector-line"></div></div>' : ''}
+    `;
+  }).join('');
+
+  body.innerHTML = `
+    <div class="bracket-outer">
+      <div class="bracket-row">${cols}</div>
+    </div>
+  `;
+}
+
+function bracketMatchHTML(game, isChampion) {
+  const reported  = isReported(game);
+  const winner    = reported ? (game.winner || '').trim() : null;
+
+  function teamRowHTML(teamName, isWinner) {
+    const isPlaceholder = !teamName || teamName.startsWith('Winner') || teamName === 'TBD' || teamName === '—';
+    let rowCls = 'bracket-team-row';
+    if (isPlaceholder) rowCls += ' placeholder';
+    else if (isWinner) rowCls += ' winner';
+
+    const seed = isPlaceholder ? '?' : '—';
+    const winLabel = isWinner ? '<span class="bt-win-label">W</span>' : '';
+
+    return `
+      <div class="${rowCls}">
+        <div class="bt-seed">${seed}</div>
+        <div class="bt-name">${esc(teamName || 'TBD')}</div>
+        ${winLabel}
+      </div>
+    `;
+  }
+
+  return `
+    <div class="bracket-match ${isChampion ? 'champion' : ''}">
+      ${teamRowHTML(game.team1, reported && winner === game.team1)}
+      ${teamRowHTML(game.team2, reported && winner === game.team2)}
+    </div>
+  `;
+}
+
+// ================================================================
+// FULLSCREEN
+// ================================================================
+function goFullscreen(cardId) {
+  const el = document.getElementById(cardId);
+  if (!el) return;
+  if (!document.fullscreenElement) {
+    el.requestFullscreen().catch(console.error);
+  } else {
+    document.exitFullscreen();
+  }
+}
+
+// ================================================================
+// SETUP OVERLAY
+// ================================================================
+let setupAvailableDivs = [];
+let setupSelected = [];
+let setupRotateSecs = 0;
+
+async function initSetupOverlay() {
+  try {
+    setupAvailableDivs = await apiFetchDivisions();
+    renderSetupDivs();
+  } catch(e) {
+    document.getElementById('setup-div-list').innerHTML =
+      '<div class="empty-state" style="padding:12px 0;color:var(--warn)">Failed to load divisions.</div>';
+  }
+}
+
+function renderSetupDivs() {
+  const container = document.getElementById('setup-div-list');
+  container.innerHTML = setupAvailableDivs.map(name => {
+    const selIdx = setupSelected.indexOf(name);
+    const isSel  = selIdx !== -1;
+    // If 2 are already selected and this isn't one of them, disable
+    const isDisabled = !isSel && setupSelected.length >= 2;
+    return `
+      <div class="div-check-row ${isSel ? 'selected' : ''} ${isDisabled ? 'disabled' : ''}"
+           onclick="${isDisabled ? '' : `toggleSetupDiv('${name.replace(/'/g,"\\'")}')` }">
+        <div class="div-check-indicator">${isSel ? '✓' : ''}</div>
+        ${isSel ? `<div class="div-order-badge">${selIdx + 1}</div>` : '<div style="width:20px"></div>'}
+        <span>${esc(name)}</span>
+      </div>
+    `;
+  }).join('');
+}
+
+function toggleSetupDiv(name) {
+  const idx = setupSelected.indexOf(name);
+  if (idx !== -1) {
+    setupSelected.splice(idx, 1);
+  } else if (setupSelected.length < 2) {
+    setupSelected.push(name);
+  }
+  renderSetupDivs();
+  updateSetupState();
+}
+
+function updateSetupState() {
+  const note    = document.getElementById('setup-div-note');
+  const goBtn   = document.getElementById('setup-go-btn');
+  const rotSec  = document.getElementById('rotate-section');
+
+  if (setupSelected.length === 0) {
+    note.textContent = 'Select at least one division to continue.';
+    goBtn.disabled = true;
+    rotSec.style.display = 'none';
+  } else if (setupSelected.length === 1) {
+    note.textContent = `Selected: ${setupSelected[0]}. Optionally pick a second division to enable switching.`;
+    goBtn.disabled = false;
+    rotSec.style.display = 'none';
+  } else {
+    note.textContent = `Board will rotate between ${setupSelected[0]} and ${setupSelected[1]}.`;
+    goBtn.disabled = false;
+    rotSec.style.display = 'block';
+  }
+}
+
+// Wire rotate option buttons
+document.querySelectorAll('.rot-opt').forEach(btn => {
+  btn.addEventListener('click', () => {
+    document.querySelectorAll('.rot-opt').forEach(b => b.classList.remove('sel'));
+    btn.classList.add('sel');
+    const val = btn.dataset.secs;
+    if (val === 'custom') {
+      setupRotateSecs = -1;
+      document.getElementById('custom-row').classList.remove('hidden');
+    } else {
+      setupRotateSecs = parseInt(val) || 0;
+      document.getElementById('custom-row').classList.add('hidden');
+    }
+  });
+});
+
+function commitSetup() {
+  if (setupSelected.length === 0) return;
+
+  let secs = setupRotateSecs;
+  if (secs === -1) secs = parseInt(document.getElementById('custom-secs-input').value) || 30;
+
+  SB.divisions         = [...setupSelected];
+  SB.activeIndex       = 0;
+  SB.rotateIntervalSecs = SB.divisions.length < 2 ? 0 : Math.max(0, secs);
+
+  try {
+    localStorage.setItem('sb_cfg', JSON.stringify({
+      divisions: SB.divisions,
+      rotateIntervalSecs: SB.rotateIntervalSecs,
+    }));
+  } catch(e) {}
+
+  document.getElementById('setup-overlay').classList.add('hidden');
+  launch();
+}
+
+function openSetupFromCtrl() {
+  // Pre-fill current config
+  setupSelected   = [...SB.divisions];
+  setupRotateSecs = SB.rotateIntervalSecs;
+  renderSetupDivs();
+  updateSetupState();
+
+  // Reflect rotate selection
+  document.querySelectorAll('.rot-opt').forEach(b => b.classList.remove('sel'));
+  const match = [...document.querySelectorAll('.rot-opt')]
+    .find(b => parseInt(b.dataset.secs) === setupRotateSecs);
+  (match || document.querySelector('.rot-opt')).classList.add('sel');
+
+  ctrlOpen = false;
+  document.getElementById('ctrl-popup').classList.remove('open');
+  document.getElementById('setup-overlay').classList.remove('hidden');
+}
+
+// ================================================================
+// LAUNCH
+// ================================================================
+function launch() {
+  stopAllPolling();
+  stopRotate();
+  loadModuleStates();
+
+  SB.activeIndex    = 0;
+  SB.rotatePaused   = false;
+  SB.userPaused     = false;
+
+  renderDivSwitcher();
+
+  // Show/hide rotate UI
+  const showRotate = SB.divisions.length >= 2 && SB.rotateIntervalSecs > 0;
+  document.getElementById('rotate-controls').classList.toggle('hidden', !showRotate);
+  document.getElementById('rotate-bar').classList.toggle('hidden', !showRotate);
+
+  // Reset pause button
+  const pauseBtn = document.getElementById('rotate-pause-btn');
+  pauseBtn.textContent = '⏸';
+  pauseBtn.title = 'Pause (Space)';
+
+  // Start polling every division
+  SB.divisions.forEach(div => startPolling(div));
+
+  // Start auto-rotate
+  if (showRotate) startRotate();
+
+  applyModuleStates(SB.divisions[0]);
+  refreshCtrlList();
+}
+
+// ================================================================
+// URL PARAMS
+// ================================================================
+function parseURLConfig() {
+  const p = new URLSearchParams(window.location.search);
+  const d1 = p.get('d1');
+  if (!d1) return null;
+  const d2     = p.get('d2');
+  const rotate = p.get('rotate');
+  return {
+    divisions: [d1, d2].filter(Boolean),
+    rotateIntervalSecs: d2 && rotate ? (Math.max(0, parseInt(rotate)) || 0) : 0,
+  };
+}
+
+// ================================================================
+// KEYBOARD SHORTCUTS
+// ================================================================
+document.addEventListener('keydown', e => {
+  if (document.activeElement?.tagName === 'INPUT') return;
+  if (document.getElementById('setup-overlay').classList.contains('hidden') === false) return;
+
+  switch (e.key) {
+    case 'r': case 'R':
+      SB.divisions.forEach(d => fetchAndCache(d).catch(console.error));
+      break;
+    case 'Tab':
+      e.preventDefault();
+      if (SB.divisions.length >= 2) switchDiv((SB.activeIndex + 1) % SB.divisions.length);
+      break;
+    case ' ':
+      e.preventDefault();
+      if (SB.rotateIntervalSecs > 0) toggleRotatePause();
+      break;
+  }
+});
+
+// ================================================================
+// VISIBILITY CHANGE — refresh on tab focus
+// ================================================================
+document.addEventListener('visibilitychange', () => {
+  if (!document.hidden) SB.divisions.forEach(d => fetchAndCache(d).catch(console.error));
+});
+
+// ================================================================
+// BOOT
+// ================================================================
+document.addEventListener('DOMContentLoaded', async () => {
+  startClock();
+
+  // 1. URL params override everything
+  const urlCfg = parseURLConfig();
+  if (urlCfg) {
+    SB.divisions          = urlCfg.divisions;
+    SB.rotateIntervalSecs = urlCfg.rotateIntervalSecs;
+    document.getElementById('setup-overlay').classList.add('hidden');
+    launch();
+    return;
+  }
+
+  // 2. Saved localStorage config
+  try {
+    const raw = localStorage.getItem('sb_cfg');
+    if (raw) {
+      const cfg = JSON.parse(raw);
+      if (Array.isArray(cfg.divisions) && cfg.divisions.length > 0) {
+        SB.divisions          = cfg.divisions;
+        SB.rotateIntervalSecs = cfg.rotateIntervalSecs || 0;
+        document.getElementById('setup-overlay').classList.add('hidden');
+        launch();
+        return;
+      }
+    }
+  } catch(e) {}
+
+  // 3. Show setup overlay
+  await initSetupOverlay();
+});
+</script>
+</body>
+</html>
