@@ -1733,11 +1733,11 @@ function renderNextUp(schedule) {
     groups[rt].push(g);
   });
 
-  // Sort rounds descending by time
+  // Sort rounds ascending by time
   const sortedRounds = Object.keys(groups).sort((a, b) => {
     const na = parseInt(a.replace(/\D/g, '')) || 0;
     const nb = parseInt(b.replace(/\D/g, '')) || 0;
-    return nb - na;
+    return na - nb;
   });
 
   body.innerHTML = sortedRounds.map(rt => {
@@ -1773,38 +1773,33 @@ function gameCardHTML(game, ctx) {
 
   const onCourt  = ctx === 'live' && !reported;
   const cardCls  = `game-card${onCourt ? ' on-court' : ''}`;
-  const dark     = true; // Always dark theme on scoreboard dashboard
 
-  const t1Base = 't-slot dark';
-  const t2Base = 't-slot dark';
-
-  let t1Cls = t1Base;
-  let t2Cls = t2Base;
-  if (reported && !tie) {
-    if (aWon) t1Cls += ' winner-dark';
-    else      t1Cls += ' loser-dark';
-    if (bWon) t2Cls += ' winner-dark';
-    else      t2Cls += ' loser-dark';
+  let resultText = '';
+  if (reported) {
+    if (tie) resultText = 'TIE';
+    else if (winner) resultText = `WIN: ${esc(winner)} (${esc(game.playersRemaining ?? 0)} left)`;
   }
 
-  let resultHTML = '';
-  if (reported) {
-    const resCls = 'game-result dark';
-    if (tie)   resultHTML = `<div class="${resCls}">TIE</div>`;
-    else if (winner) resultHTML = `<div class="${resCls}">WIN · ${esc(winner)} · ${esc(game.playersRemaining ?? 0)} left</div>`;
+  let t1Style = '';
+  let t2Style = '';
+  if (reported && !tie) {
+    if (aWon) t1Style = 'color: var(--gold-l); font-weight: 700;';
+    else      t1Style = 'color: rgba(255,255,255,0.3);';
+    if (bWon) t2Style = 'color: var(--gold-l); font-weight: 700;';
+    else      t2Style = 'color: rgba(255,255,255,0.3);';
   }
 
   return `
-    <div class="${cardCls}">
-      <div class="gc-header" style="justify-content: flex-end; margin-bottom: 6px;">
-        <span class="gc-court-badge">COURT ${esc(game.court || '?')}</span>
+    <div class="${cardCls}" style="padding: 8px 12px; margin-bottom: 6px;">
+      <div style="display: flex; align-items: center; justify-content: space-between; gap: 8px; width: 100%;">
+        <div style="display: flex; align-items: center; gap: 8px; flex: 1; min-width: 0; font-size: 13px; font-weight: 600;">
+          <span style="overflow: hidden; text-overflow: ellipsis; white-space: nowrap; ${t1Style}">${esc(game.team1 || 'TBD')}</span>
+          <span style="font-size: 9px; color: rgba(255,255,255,0.3); font-weight: 500;">VS</span>
+          <span style="overflow: hidden; text-overflow: ellipsis; white-space: nowrap; ${t2Style}">${esc(game.team2 || 'TBD')}</span>
+        </div>
+        <span class="gc-court-badge" style="flex-shrink: 0; padding: 2px 8px; font-size: 9px;">CRT ${esc(game.court || '?')}</span>
       </div>
-      <div class="team-vs">
-        <div class="${t1Cls}">${esc(game.team1 || 'TBD')}</div>
-        <div class="vs-divider dark"></div>
-        <div class="${t2Cls}">${esc(game.team2 || 'TBD')}</div>
-      </div>
-      ${resultHTML}
+      ${resultText ? `<div style="margin-top: 4px; font-size: 9px; font-weight: 700; color: var(--gold);">${resultText}</div>` : ''}
     </div>
   `;
 }
