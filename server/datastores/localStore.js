@@ -9,28 +9,77 @@ export const backend = 'local';
 
 const MAX_SYNC_LOG_ENTRIES = 25;
 
-// Self-heals databases provisioned before these features
-// existed — schema.sql only runs via docker-entrypoint-initdb.d on a fresh
-// volume, so already-deployed MariaDB instances need these created here.
+// Self-heals and auto-provisions database tables if they do not exist.
+// This ensures any existing database or a freshly spawned local/Docker database
+// gets correctly set up with the full schema at server startup.
 (async function ensureFeatureTables() {
   try {
     await pool.query(`
-      CREATE TABLE IF NOT EXISTS announcements (
-        id BIGINT PRIMARY KEY,
-        text TEXT NOT NULL,
-        ts BIGINT NOT NULL,
-        is_on BOOLEAN NOT NULL DEFAULT TRUE,
-        INDEX idx_announcements_ts (ts)
+      CREATE TABLE IF NOT EXISTS divisions (
+        id INT AUTO_INCREMENT PRIMARY KEY,
+        name VARCHAR(191) NOT NULL UNIQUE,
+        sort_order INT NOT NULL DEFAULT 0
       )
     `);
     await pool.query(`
-      CREATE TABLE IF NOT EXISTS chat_messages (
-        id BIGINT PRIMARY KEY,
-        who VARCHAR(191) NOT NULL,
-        is_mgr BOOLEAN NOT NULL DEFAULT FALSE,
-        text TEXT NOT NULL,
-        ts BIGINT NOT NULL,
-        INDEX idx_chat_ts (ts)
+      CREATE TABLE IF NOT EXISTS standings (
+        id INT AUTO_INCREMENT PRIMARY KEY,
+        division VARCHAR(191) NOT NULL,
+        rnk VARCHAR(16),
+        team VARCHAR(191) NOT NULL,
+        record VARCHAR(64),
+        points VARCHAR(64),
+        sort_order INT NOT NULL DEFAULT 0,
+        INDEX idx_standings_division (division)
+      )
+    `);
+    await pool.query(`
+      CREATE TABLE IF NOT EXISTS schedule (
+        id INT AUTO_INCREMENT PRIMARY KEY,
+        division VARCHAR(191) NOT NULL,
+        match_index INT NOT NULL,
+        round_time VARCHAR(64),
+        court VARCHAR(64),
+        match_number VARCHAR(64),
+        team1 VARCHAR(191),
+        team2 VARCHAR(191),
+        is_bye BOOLEAN NOT NULL DEFAULT FALSE,
+        winner VARCHAR(191),
+        players_remaining VARCHAR(64),
+        row_index INT NULL,
+        adminName VARCHAR(191),
+        adminWinner VARCHAR(191),
+        adminPlayersRemaining VARCHAR(64),
+        notes TEXT,
+        lastUpdated DATETIME NULL,
+        UNIQUE KEY uq_schedule_div_idx (division, match_index),
+        INDEX idx_schedule_division (division)
+      )
+    `);
+    await pool.query(`
+      CREATE TABLE IF NOT EXISTS match_history (
+        id INT AUTO_INCREMENT PRIMARY KEY,
+        division VARCHAR(191) NOT NULL,
+        match_index INT NOT NULL,
+        name VARCHAR(191),
+        winner VARCHAR(191),
+        players_remaining VARCHAR(64),
+        notes TEXT,
+        created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+        INDEX idx_history_div_idx (division, match_index)
+      )
+    `);
+    await pool.query(`
+      CREATE TABLE IF NOT EXISTS timer_state (
+        division VARCHAR(191) PRIMARY KEY,
+        duration INT NOT NULL DEFAULT 300,
+        lastSetDuration INT NOT NULL DEFAULT 300,
+        running BOOLEAN NOT NULL DEFAULT FALSE,
+        startTime BIGINT NULL,
+        currentRound VARCHAR(64) NULL,
+        afterRoundDuration INT NOT NULL DEFAULT 60,
+        startAfterRoundRunning BOOLEAN NOT NULL DEFAULT FALSE,
+        showClock BOOLEAN NOT NULL DEFAULT TRUE
       )
     `);
     await pool.query(`
@@ -58,8 +107,39 @@ const MAX_SYNC_LOG_ENTRIES = 25;
         INDEX idx_sync_log_timestamp (timestamp)
       )
     `);
+    await pool.query(`
+      CREATE TABLE IF NOT EXISTS announcements (
+        id BIGINT PRIMARY KEY,
+        text TEXT NOT NULL,
+        ts BIGINT NOT NULL,
+        is_on BOOLEAN NOT NULL DEFAULT TRUE,
+        INDEX idx_announcements_ts (ts)
+      )
+    `);
+    await pool.query(`
+      CREATE TABLE IF NOT EXISTS chat_messages (
+        id BIGINT PRIMARY KEY,
+        who VARCHAR(191) NOT NULL,
+        is_mgr BOOLEAN NOT NULL DEFAULT FALSE,
+        text TEXT NOT NULL,
+        ts BIGINT NOT NULL,
+        INDEX idx_chat_ts (ts)
+      )
+    `);
+    await pool.query(`
+      CREATE TABLE IF NOT EXISTS gameday_submissions (
+        id INT AUTO_INCREMENT PRIMARY KEY,
+        name VARCHAR(191),
+        winner VARCHAR(191),
+        playersremaining VARCHAR(64),
+        notes TEXT,
+        Date DATETIME,
+        division VARCHAR(191),
+        rowindex INT
+      )
+    `);
   } catch (e) {
-    console.error('localStore: failed to ensure announcements/chat_messages/sync tables exist', e);
+    console.error('localStore: failed to ensure all schema tables exist', e);
   }
 })();
 
