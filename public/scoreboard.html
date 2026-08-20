@@ -6,6 +6,10 @@
   <title>Tournament Video Board</title>
   <!-- Runtime config (API base, data backend) -->
   <script src="/config.js"></script>
+  <!-- Realtime updates: Socket.IO (local mode) & Firebase (cloud mode) compat SDKs -->
+  <script src="https://cdn.socket.io/4.7.5/socket.io.min.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/10.7.1/firebase-app-compat.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/10.7.1/firebase-database-compat.js"></script>
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@100..900&display=swap" rel="stylesheet">
   <style>
     /* ==========================================================
@@ -224,16 +228,38 @@
       min-height: 100vh;
     }
 
-    /* Module grid */
+    /* Module grid: Standings, current, next up on left; bracket on right on desktop */
     .module-grid {
       display: grid;
-      grid-template-columns: repeat(auto-fit, minmax(360px, 1fr));
+      grid-template-columns: 1fr;
       gap: 16px;
       align-items: start;
     }
 
-    /* Bracket always spans full width */
-    #module-bracket { grid-column: 1 / -1; }
+    @media (min-width: 1024px) {
+      .module-grid {
+        grid-template-columns: 460px 1fr;
+        grid-template-rows: auto auto 1fr;
+      }
+      #module-standings {
+        grid-column: 1;
+        grid-row: 1;
+      }
+      #module-current {
+        grid-column: 1;
+        grid-row: 2;
+      }
+      #module-next {
+        grid-column: 1;
+        grid-row: 3;
+        align-self: stretch;
+      }
+      #module-bracket {
+        grid-column: 2;
+        grid-row: 1 / span 3;
+        align-self: stretch;
+      }
+    }
 
     /* Division switch animation */
     @keyframes fadeSlideRight {
@@ -306,17 +332,63 @@
     .mod-btn.hide-btn:hover { background: rgba(211,80,60,.2); border-color: rgba(211,80,60,.4); color: var(--warn); }
     .mod-btn.min-btn.active { background: rgba(224,184,99,.15); color: var(--gold); border-color: rgba(224,184,99,.3); }
 
-    /* Module body */
+    .module-card.expanded {
+      position: fixed;
+      top: 50%;
+      left: 50%;
+      transform: translate(-50%, -50%);
+      width: 94vw;
+      height: 88vh;
+      max-width: 1400px;
+      max-height: 950px;
+      z-index: 1001;
+      margin: 0;
+      box-shadow: 0 35px 80px rgba(0,0,0,0.8);
+      background: rgba(18, 18, 20, 0.98);
+      border-color: rgba(224, 184, 99, 0.35);
+    }
+
+    .module-card.expanded .module-body {
+      max-height: calc(88vh - 70px) !important;
+      overflow: auto !important;
+    }
+
+    /* Module backdrop / overlay style */
+    .module-backdrop {
+      position: fixed;
+      inset: 0;
+      background: rgba(6, 6, 8, 0.75);
+      backdrop-filter: blur(14px);
+      -webkit-backdrop-filter: blur(14px);
+      z-index: 1000;
+      transition: opacity 0.25s ease;
+    }
+
+    /* Module body scrollbars & sizes */
     .module-body {
       padding: 14px 16px;
-      max-height: 440px;
+      max-height: 480px;
       overflow-y: auto;
     }
 
-    /* Bracket module — no height cap */
+    #module-standings .module-body {
+      max-height: 800px;
+    }
+
+    #module-next .module-body {
+      max-height: 520px;
+    }
+
+    /* Bracket module stretches nicely */
+    #module-bracket {
+      display: flex;
+      flex-direction: column;
+    }
+
     #module-bracket .module-body {
+      flex: 1;
       max-height: none;
-      overflow-y: visible;
+      overflow: auto;
     }
 
     .module-body::-webkit-scrollbar { width: 4px; }
@@ -361,30 +433,58 @@
     .st-pts  { width: 38px; flex-shrink: 0; text-align: right; font-size: 17px; font-weight: 700; color: var(--gold); font-variant-numeric: tabular-nums; letter-spacing: -.025em; }
 
     /* ==========================================================
-       GAME CARDS (Current + Next Up)
+       NEXT UP REMAINING GAMES LIST
     ========================================================== */
-    .round-chip {
-      display: inline-block;
-      font-size: 9px; font-weight: 700;
-      letter-spacing: .12em; text-transform: uppercase;
-      padding: 3px 10px; border-radius: 999px;
-      margin-bottom: 10px;
+    .next-games-list {
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
     }
 
-    .round-chip.live { background: linear-gradient(135deg, var(--gold) 0%, var(--gold-d) 100%); color: #2A1B08; }
-    .round-chip.next { background: rgba(255,255,255,.08); color: rgba(255,255,255,.6); }
-
-    .games-grid {
-      display: grid;
-      grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
-      gap: 10px;
+    .next-game-row {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 10px 14px;
+      border-radius: 12px;
+      background: rgba(255, 255, 255, 0.05);
+      border: 1px solid rgba(255, 255, 255, 0.08);
+      font-size: 13px;
     }
 
-    .game-card {
-      border-radius: 14px; padding: 12px 14px;
-      border: 1px solid rgba(255,255,255,.1);
-      background: rgba(255,255,255,.055);
-      transition: all .2s;
+    .ngr-left {
+      display: flex;
+      flex-direction: column;
+      gap: 2px;
+      font-size: 9px;
+      font-weight: 700;
+      letter-spacing: .08em;
+      text-transform: uppercase;
+      color: var(--gold-l);
+    }
+
+    .ngr-teams {
+      flex: 1;
+      text-align: right;
+      font-weight: 600;
+      display: flex;
+      justify-content: flex-end;
+      align-items: center;
+      gap: 12px;
+    }
+
+    .ngr-team {
+      max-width: 130px;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+
+    .ngr-vs {
+      font-size: 9px;
+      color: rgba(255, 255, 255, 0.3);
+      font-weight: 500;
+      text-transform: uppercase;
     }
 
     .game-card.on-court {
@@ -983,9 +1083,7 @@
         <span class="mod-badge" id="badge-standings"
               style="background:rgba(123,29,43,.3);color:var(--mar-l)"></span>
         <div class="mod-actions">
-          <button class="mod-btn min-btn" onclick="toggleMin('standings')" title="Minimize/restore">—</button>
-          <button class="mod-btn" onclick="goFullscreen('module-standings')" title="Fullscreen">⛶</button>
-          <button class="mod-btn hide-btn" onclick="hideModule('standings')" title="Hide">✕</button>
+          <button class="mod-btn expand-btn" onclick="toggleExpand('module-standings')" title="Expand popup">⛶</button>
         </div>
       </div>
       <div class="module-body" id="body-standings">
@@ -1001,9 +1099,7 @@
         <span class="mod-badge" id="badge-current"
               style="background:rgba(46,158,99,.2);color:var(--ok)"></span>
         <div class="mod-actions">
-          <button class="mod-btn min-btn" onclick="toggleMin('current')" title="Minimize/restore">—</button>
-          <button class="mod-btn" onclick="goFullscreen('module-current')" title="Fullscreen">⛶</button>
-          <button class="mod-btn hide-btn" onclick="hideModule('current')" title="Hide">✕</button>
+          <button class="mod-btn expand-btn" onclick="toggleExpand('module-current')" title="Expand popup">⛶</button>
         </div>
       </div>
       <div class="module-body" id="body-current">
@@ -1019,9 +1115,7 @@
         <span class="mod-badge" id="badge-next"
               style="background:rgba(224,184,99,.15);color:var(--gold)"></span>
         <div class="mod-actions">
-          <button class="mod-btn min-btn" onclick="toggleMin('next')" title="Minimize/restore">—</button>
-          <button class="mod-btn" onclick="goFullscreen('module-next')" title="Fullscreen">⛶</button>
-          <button class="mod-btn hide-btn" onclick="hideModule('next')" title="Hide">✕</button>
+          <button class="mod-btn expand-btn" onclick="toggleExpand('module-next')" title="Expand popup">⛶</button>
         </div>
       </div>
       <div class="module-body" id="body-next">
@@ -1029,17 +1123,15 @@
       </div>
     </div>
 
-    <!-- PLAYOFF BRACKET (hidden by default) -->
-    <div class="module-card mod-hidden" id="module-bracket">
+    <!-- PLAYOFF BRACKET -->
+    <div class="module-card" id="module-bracket">
       <div class="module-header">
         <span class="mod-icon">🏆</span>
         <span class="mod-title">Playoff Bracket</span>
         <span class="mod-badge" id="badge-bracket"
               style="background:rgba(224,184,99,.15);color:var(--gold)"></span>
         <div class="mod-actions">
-          <button class="mod-btn min-btn" onclick="toggleMin('bracket')" title="Minimize/restore">—</button>
-          <button class="mod-btn" onclick="goFullscreen('module-bracket')" title="Fullscreen">⛶</button>
-          <button class="mod-btn hide-btn" onclick="hideModule('bracket')" title="Hide">✕</button>
+          <button class="mod-btn expand-btn" onclick="toggleExpand('module-bracket')" title="Expand popup">⛶</button>
         </div>
       </div>
       <div class="module-body" id="body-bracket">
@@ -1055,15 +1147,13 @@
 ============================================================== -->
 <div class="ctrl-panel">
   <div class="ctrl-popup" id="ctrl-popup">
-    <div class="ctrl-section-lbl">Hidden Modules</div>
-    <div id="ctrl-hidden-list">
-      <div style="font-size:11px;color:rgba(255,255,255,.3);padding:4px 0">All modules visible</div>
-    </div>
-    <div class="ctrl-divider"></div>
-    <button class="ctrl-setup-btn" onclick="openSetupFromCtrl()">⚙ Change Setup</button>
+    <button class="ctrl-setup-btn" onclick="openSetupFromCtrl()" style="margin-top:0">⚙ Change Setup</button>
   </div>
   <button class="ctrl-gear" id="ctrl-gear-btn" onclick="toggleCtrlPanel()" title="Settings (gear)">⚙</button>
 </div>
+
+<!-- Backdrop overlay for expanding modules -->
+<div id="module-backdrop" class="module-backdrop hidden" onclick="closeExpandedModule()"></div>
 
 <!-- ==============================================================
      JAVASCRIPT
@@ -1099,7 +1189,7 @@ const DEFAULT_MODULE_STATES = {
   standings: 'visible',
   current:   'visible',
   next:      'visible',
-  bracket:   'hidden',
+  bracket:   'visible',
 };
 
 // ================================================================
@@ -1181,57 +1271,38 @@ function setLiveDot(live) {
 }
 
 // ================================================================
-// MODULE STATE
+// MODULE STATE (EXPAND / COLLAPSE TO MIDDLE BACKDROP OVERLAY)
 // ================================================================
-function getState(divName, modId) {
-  if (!SB.moduleStates[divName]) SB.moduleStates[divName] = { ...DEFAULT_MODULE_STATES };
-  return SB.moduleStates[divName][modId] || 'visible';
-}
+function toggleExpand(cardId) {
+  const card = document.getElementById(cardId);
+  if (!card) return;
+  const isExpanded = card.classList.contains('expanded');
 
-function setState(modId, state) {
-  const div = SB.divisions[SB.activeIndex];
-  if (!SB.moduleStates[div]) SB.moduleStates[div] = { ...DEFAULT_MODULE_STATES };
-  SB.moduleStates[div][modId] = state;
-  saveModuleStates();
-  applyModuleStates(div);
-  refreshCtrlList();
-}
-
-function applyModuleStates(divName) {
-  MODULES.forEach(id => {
-    const card = document.getElementById(`module-${id}`);
-    if (!card) return;
-    const s = getState(divName, id);
-    card.classList.toggle('mod-minimized', s === 'minimized');
-    card.classList.toggle('mod-hidden',    s === 'hidden');
-    // Toggle min button appearance
-    const minBtn = card.querySelector('.min-btn');
-    if (minBtn) minBtn.classList.toggle('active', s === 'minimized');
+  // Close any already expanded cards
+  document.querySelectorAll('.module-card').forEach(c => {
+    c.classList.remove('expanded');
+    const btn = c.querySelector('.expand-btn');
+    if (btn) btn.textContent = '⛶';
   });
+
+  const backdrop = document.getElementById('module-backdrop');
+  if (isExpanded) {
+    backdrop.classList.add('hidden');
+  } else {
+    card.classList.add('expanded');
+    backdrop.classList.remove('hidden');
+    const btn = card.querySelector('.expand-btn');
+    if (btn) btn.textContent = '✕';
+  }
 }
 
-function toggleMin(modId) {
-  const cur = getState(SB.divisions[SB.activeIndex], modId);
-  setState(modId, cur === 'minimized' ? 'visible' : 'minimized');
-}
-
-function hideModule(modId) {
-  setState(modId, 'hidden');
-}
-
-function showModule(modId) {
-  setState(modId, 'visible');
-}
-
-function saveModuleStates() {
-  try { localStorage.setItem('sb_modStates', JSON.stringify(SB.moduleStates)); } catch(e) {}
-}
-
-function loadModuleStates() {
-  try {
-    const s = localStorage.getItem('sb_modStates');
-    if (s) SB.moduleStates = JSON.parse(s);
-  } catch(e) {}
+function closeExpandedModule() {
+  document.querySelectorAll('.module-card').forEach(c => {
+    c.classList.remove('expanded');
+    const btn = c.querySelector('.expand-btn');
+    if (btn) btn.textContent = '⛶';
+  });
+  document.getElementById('module-backdrop').classList.add('hidden');
 }
 
 // ================================================================
@@ -1255,19 +1326,7 @@ document.addEventListener('click', e => {
 });
 
 function refreshCtrlList() {
-  const div = SB.divisions[SB.activeIndex];
-  const hiddenMods = MODULES.filter(m => getState(div, m) === 'hidden');
-  const list = document.getElementById('ctrl-hidden-list');
-  if (hiddenMods.length === 0) {
-    list.innerHTML = '<div style="font-size:11px;color:rgba(255,255,255,.3);padding:4px 0">All modules visible</div>';
-    return;
-  }
-  list.innerHTML = hiddenMods.map(m => `
-    <div class="ctrl-mod-row">
-      <span>${esc(MODULE_LABELS[m])}</span>
-      <button class="ctrl-show-btn" onclick="showModule('${m}')">Show</button>
-    </div>
-  `).join('');
+  // Minimize/hide lists are disabled as all modules now remain visible
 }
 
 // ================================================================
@@ -1407,16 +1466,12 @@ function renderAll(divName, animate = false) {
     grid.classList.add(cls);
   }
 
-  applyModuleStates(divName);
-  refreshCtrlList();
-
   renderStandings(standings);
 
   const liveRound = getLiveRound(schedule);
-  const nextRound = getNextRound(schedule, liveRound);
 
   renderCurrentGames(schedule, liveRound);
-  renderNextUp(schedule, nextRound);
+  renderNextUp(schedule);
   renderBracket(schedule);
 }
 
@@ -1448,10 +1503,9 @@ function renderStandings(data) {
   `;
 
   const html = rows.map((item, i) => {
-    const seeded = i < 4;
     return `
-      <div class="st-row ${seeded ? 'seeded' : ''}">
-        <div class="rank-chip ${seeded ? 'seeded' : 'plain'}">${esc(item.rank || i + 1)}</div>
+      <div class="st-row">
+        <div class="rank-chip plain">${esc(item.rank || i + 1)}</div>
         <div class="st-team">${esc(item.team)}</div>
         <div class="st-rec">${esc(item.record || '0-0')}</div>
         <div class="st-pts">${esc(item.points ?? 0)}</div>
@@ -1490,25 +1544,45 @@ function renderCurrentGames(schedule, liveRound) {
 // ================================================================
 // NEXT UP
 // ================================================================
-function renderNextUp(schedule, nextRound) {
+function renderNextUp(schedule) {
   const body  = document.getElementById('body-next');
   const badge = document.getElementById('badge-next');
   if (!body) return;
 
-  if (!nextRound) {
+  const remaining = schedule.filter(g => !isReported(g) && !isPlayoff(g));
+  remaining.sort((a, b) => {
+    const na = parseInt((a.roundTime || '').replace(/\D/g, '')) || 999;
+    const nb = parseInt((b.roundTime || '').replace(/\D/g, '')) || 999;
+    if (na !== nb) return na - nb;
+    const ca = parseInt(a.court) || 0;
+    const cb = parseInt(b.court) || 0;
+    return ca - cb;
+  });
+
+  if (remaining.length === 0) {
     badge.textContent = '';
-    body.innerHTML = '<div class="empty-state">No upcoming rounds scheduled.</div>';
+    body.innerHTML = '<div class="empty-state">No remaining games.</div>';
     return;
   }
 
-  const games = schedule.filter(g => g.roundTime === nextRound);
-  badge.textContent = `${games.length} GAME${games.length !== 1 ? 'S' : ''}`;
+  badge.textContent = `${remaining.length} REMAINING`;
 
   body.innerHTML = `
-    <div style="margin-bottom:10px">
-      <span class="round-chip next">Next: ${esc(nextRound)}</span>
+    <div class="next-games-list">
+      ${remaining.map(g => `
+        <div class="next-game-row">
+          <div class="ngr-left">
+            <span class="ngr-round">Rnd ${esc(g.roundTime)}</span>
+            <span class="ngr-court">Court ${esc(g.court || '?')}</span>
+          </div>
+          <div class="ngr-teams">
+            <span class="ngr-team">${esc(g.team1 || 'TBD')}</span>
+            <span class="ngr-vs">vs</span>
+            <span class="ngr-team">${esc(g.team2 || 'TBD')}</span>
+          </div>
+        </div>
+      `).join('')}
     </div>
-    <div class="games-grid">${games.map(g => gameCardHTML(g, 'next')).join('')}</div>
   `;
 }
 
@@ -1862,12 +1936,21 @@ function openSetupFromCtrl() {
 }
 
 // ================================================================
-// LAUNCH
+// LAUNCH & REALTIME PUBSUB
 // ================================================================
+const FB_CONFIG = {
+  authDomain: "dodgeballgameday.firebaseapp.com",
+  databaseURL: "https://dodgeballgameday-default-rtdb.firebaseio.com",
+  projectId: "dodgeballgameday",
+  storageBucket: "dodgeballgameday.firebasestorage.app",
+};
+
+// Store active database references so they can be offloaded on configuration changes
+const activeFbRefs = [];
+
 function launch() {
   stopAllPolling();
   stopRotate();
-  loadModuleStates();
 
   SB.activeIndex    = 0;
   SB.rotatePaused   = false;
@@ -1885,14 +1968,84 @@ function launch() {
   pauseBtn.textContent = '⏸';
   pauseBtn.title = 'Pause (Space)';
 
-  // Start polling every division
-  SB.divisions.forEach(div => startPolling(div));
+  // Detach previous Firebase listeners if any
+  while(activeFbRefs.length) {
+    const ref = activeFbRefs.pop();
+    ref.off('value');
+  }
+
+  // ── Setup Realtime Data Synchronization ──
+  if (window.__DATA_BACKEND__ !== 'local') {
+    // Cloud mode: Direct Firebase Realtime Database subscriptions
+    if (typeof firebase !== 'undefined') {
+      if (!firebase.apps.length) firebase.initializeApp(FB_CONFIG);
+      const db = firebase.database();
+
+      SB.divisions.forEach(divName => {
+        const ref = db.ref(`dodgeball-tournament/divisions/${divName}`);
+        activeFbRefs.push(ref);
+
+        ref.on('value', (snap) => {
+          const val = snap.val() || {};
+          let schedule = [];
+          if (val.schedule) {
+            schedule = Array.isArray(val.schedule)
+              ? val.schedule
+              : Object.keys(val.schedule).map(k => ({ ...val.schedule[k], firebaseIndex: k }));
+          }
+          let standings = [];
+          if (val.standings) {
+            standings = Array.isArray(val.standings)
+              ? val.standings
+              : Object.keys(val.standings).map(k => val.standings[k]);
+          }
+
+          console.log('[Firebase Sync]', divName, standings.length, schedule.length);
+          SB.cache[divName] = { standings, schedule };
+
+          if (SB.divisions[SB.activeIndex] === divName) {
+            renderAll(divName, false);
+            setLiveDot(true);
+          }
+        });
+      });
+    } else {
+      console.warn('Firebase library not loaded, falling back to REST polling.');
+      SB.divisions.forEach(div => startPolling(div));
+    }
+  } else {
+    // Local mode: Websocket subscription via Socket.IO room broadcast
+    if (typeof io !== 'undefined') {
+      if (!SB.socket) {
+        SB.socket = io();
+        SB.socket.on('divisionUpdate', (payload) => {
+          const divName = payload.division;
+          if (SB.divisions.includes(divName)) {
+            console.log('[Websocket Sync]', divName, payload);
+            SB.cache[divName] = {
+              standings: payload.standings || [],
+              schedule: payload.schedule || []
+            };
+            if (SB.divisions[SB.activeIndex] === divName) {
+              renderAll(divName, false);
+              setLiveDot(true);
+            }
+          }
+        });
+      }
+      SB.divisions.forEach(div => {
+        SB.socket.emit('joinDivision', div);
+        // Load initial state via HTTP REST so it renders instantly
+        fetchAndCache(div).catch(console.error);
+      });
+    } else {
+      console.warn('Socket.IO not loaded, falling back to REST polling.');
+      SB.divisions.forEach(div => startPolling(div));
+    }
+  }
 
   // Start auto-rotate
   if (showRotate) startRotate();
-
-  applyModuleStates(SB.divisions[0]);
-  refreshCtrlList();
 }
 
 // ================================================================
