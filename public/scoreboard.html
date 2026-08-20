@@ -236,27 +236,33 @@
       align-items: start;
     }
 
-    @media (min-width: 1024px) {
+    @media (min-width: 1200px) {
       .module-grid {
-        grid-template-columns: 460px 1fr;
-        grid-template-rows: auto auto 1fr;
-      }
-      #module-standings {
-        grid-column: 1;
-        grid-row: 1;
+        grid-template-columns: 360px 360px 360px 1fr;
+        grid-template-rows: auto 1fr;
       }
       #module-current {
         grid-column: 1;
+        grid-row: 1;
+      }
+      #module-announcements {
+        grid-column: 1;
         grid-row: 2;
+        align-self: stretch;
       }
       #module-next {
-        grid-column: 1;
-        grid-row: 3;
+        grid-column: 2;
+        grid-row: 1 / span 2;
+        align-self: stretch;
+      }
+      #module-standings {
+        grid-column: 3;
+        grid-row: 1 / span 2;
         align-self: stretch;
       }
       #module-bracket {
-        grid-column: 2;
-        grid-row: 1 / span 3;
+        grid-column: 4;
+        grid-row: 1 / span 2;
         align-self: stretch;
       }
     }
@@ -376,7 +382,49 @@
     }
 
     #module-next .module-body {
-      max-height: 520px;
+      max-height: 800px;
+    }
+
+    #module-current .module-body {
+      max-height: 380px;
+    }
+
+    #module-announcements .module-body {
+      max-height: 480px;
+    }
+
+    /* Announcement card details */
+    .ann-list {
+      display: flex;
+      flex-direction: column;
+      gap: 10px;
+    }
+
+    .ann-row {
+      padding: 12px 14px;
+      border-radius: 12px;
+      background: rgba(255, 255, 255, 0.05);
+      border: 1px solid rgba(255, 255, 255, 0.08);
+      font-size: 13px;
+      line-height: 1.4;
+    }
+
+    .ann-row.newest {
+      background: linear-gradient(135deg, rgba(224, 184, 99, 0.16) 0%, rgba(166, 48, 63, 0.14) 100%);
+      border-color: rgba(224, 184, 99, 0.3);
+    }
+
+    .ann-time {
+      font-size: 9px;
+      font-weight: 700;
+      letter-spacing: .08em;
+      text-transform: uppercase;
+      color: var(--gold);
+      margin-bottom: 4px;
+    }
+
+    .ann-text {
+      color: rgba(255, 255, 255, 0.85);
     }
 
     /* Bracket module stretches nicely */
@@ -1107,6 +1155,22 @@
       </div>
     </div>
 
+    <!-- ANNOUNCEMENTS -->
+    <div class="module-card" id="module-announcements">
+      <div class="module-header">
+        <span class="mod-icon">📢</span>
+        <span class="mod-title">Announcements</span>
+        <span class="mod-badge" id="badge-announcements"
+              style="background:rgba(224,184,99,.15);color:var(--gold)"></span>
+        <div class="mod-actions">
+          <button class="mod-btn expand-btn" onclick="toggleExpand('module-announcements')" title="Expand popup">⛶</button>
+        </div>
+      </div>
+      <div class="module-body" id="body-announcements">
+        <div class="empty-state">No announcements.</div>
+      </div>
+    </div>
+
     <!-- NEXT UP -->
     <div class="module-card" id="module-next">
       <div class="module-header">
@@ -1178,18 +1242,20 @@ const SB = {
   lastDirection:     1,    // 1 = forward, -1 = backward
 };
 
-const MODULES = ['standings', 'current', 'next', 'bracket'];
+const MODULES = ['standings', 'current', 'next', 'bracket', 'announcements'];
 const MODULE_LABELS = {
   standings: '📊 Standings',
   current:   '🏟️ Current Games',
   next:      '⏭️ Next Up',
   bracket:   '🏆 Playoff Bracket',
+  announcements: '📢 Announcements',
 };
 const DEFAULT_MODULE_STATES = {
   standings: 'visible',
   current:   'visible',
   next:      'visible',
   bracket:   'visible',
+  announcements: 'visible',
 };
 
 // ================================================================
@@ -1473,6 +1539,7 @@ function renderAll(divName, animate = false) {
   renderCurrentGames(schedule, liveRound);
   renderNextUp(schedule);
   renderBracket(schedule);
+  renderAnnouncements();
 }
 
 // ================================================================
@@ -1936,6 +2003,49 @@ function openSetupFromCtrl() {
 }
 
 // ================================================================
+// ANNOUNCEMENTS DATA ENGINE
+// ================================================================
+async function fetchAnnouncements() {
+  try {
+    const r = await fetch(`${API}/api/announcements`);
+    if (r.ok) {
+      SB.announcements = await r.json();
+      renderAnnouncements();
+    }
+  } catch(e) {
+    console.error('Failed to fetch announcements REST', e);
+  }
+}
+
+function renderAnnouncements() {
+  const body = document.getElementById('body-announcements');
+  const badge = document.getElementById('badge-announcements');
+  if (!body) return;
+
+  const active = (SB.announcements || [])
+    .filter(a => a.on)
+    .sort((a, b) => (b.ts || 0) - (a.ts || 0));
+
+  badge.textContent = active.length ? `${active.length} ACTIVE` : '';
+
+  if (active.length === 0) {
+    body.innerHTML = '<div class="empty-state">No announcements.</div>';
+    return;
+  }
+
+  body.innerHTML = `
+    <div class="ann-list">
+      ${active.map((a, i) => `
+        <div class="ann-row ${i === 0 ? 'newest' : ''}">
+          <div class="ann-time">${new Date(a.ts).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' })}</div>
+          <div class="ann-text">${esc(a.text)}</div>
+        </div>
+      `).join('')}
+    </div>
+  `;
+}
+
+// ================================================================
 // LAUNCH & REALTIME PUBSUB
 // ================================================================
 const FB_CONFIG = {
@@ -1974,6 +2084,9 @@ function launch() {
     ref.off('value');
   }
 
+  // Load initial announcements list
+  fetchAnnouncements().catch(console.error);
+
   // ── Setup Realtime Data Synchronization ──
   if (window.__DATA_BACKEND__ !== 'local') {
     // Cloud mode: Direct Firebase Realtime Database subscriptions
@@ -1981,6 +2094,7 @@ function launch() {
       if (!firebase.apps.length) firebase.initializeApp(FB_CONFIG);
       const db = firebase.database();
 
+      // Subscribe to division updates
       SB.divisions.forEach(divName => {
         const ref = db.ref(`dodgeball-tournament/divisions/${divName}`);
         activeFbRefs.push(ref);
@@ -2009,6 +2123,17 @@ function launch() {
           }
         });
       });
+
+      // Subscribe to announcements update
+      const annRef = db.ref('dodgeball-tournament/announcements');
+      activeFbRefs.push(annRef);
+      annRef.on('value', (snap) => {
+        const val = snap.val() || {};
+        console.log('[Firebase Sync Announcements]', val);
+        SB.announcements = Object.values(val);
+        renderAnnouncements();
+      });
+
     } else {
       console.warn('Firebase library not loaded, falling back to REST polling.');
       SB.divisions.forEach(div => startPolling(div));
@@ -2031,6 +2156,12 @@ function launch() {
               setLiveDot(true);
             }
           }
+        });
+
+        SB.socket.on('announcementUpdate', (list) => {
+          console.log('[Websocket Sync Announcements]', list);
+          SB.announcements = list || [];
+          renderAnnouncements();
         });
       }
       SB.divisions.forEach(div => {
