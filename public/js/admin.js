@@ -414,9 +414,20 @@ async function loginAdmin() {
 
             hideAdminLoginModal();
             updateAdminUI();
-            switchView('admin-entry'); // Go straight to admin view after login
-            showStatus(`Signed in as ${reporterName}.`, false);
-            setTimeout(() => showStatus(null), 3000);
+            
+            if (App.state.isSuperAdmin && (!App.data.allDivisionNames || !App.data.allDivisionNames.length)) {
+                // Bypass gate and redirect to settings
+                App.state.screen = 'app';
+                document.getElementById('gate-screen')?.classList.add('hidden');
+                document.getElementById('app-screen')?.classList.remove('hidden');
+                document.getElementById('bottom-tab-bar')?.classList.remove('hidden');
+                switchView('settings');
+                showStatus('Please configure and run Google Sheets sync to populate divisions.', false);
+            } else {
+                switchView('admin-entry'); // Go straight to admin view after login
+                showStatus(`Signed in as ${reporterName}.`, false);
+                setTimeout(() => showStatus(null), 3000);
+            }
             
         } else {
             App.state.isAdmin = false;

@@ -34,7 +34,17 @@ async function fetchDivisionNames() {
 
     } catch (error) {
     console.error("Error fetching division names:", error);
-    showStatus('Failed to load divisions: ' + error.message, true);
+    if (App.state.isSuperAdmin) {
+        // If superadmin, bypass the gate and go directly to settings to fix the setup
+        App.state.screen = 'app';
+        document.getElementById('gate-screen')?.classList.add('hidden');
+        document.getElementById('app-screen')?.classList.remove('hidden');
+        document.getElementById('bottom-tab-bar')?.classList.remove('hidden');
+        switchView('settings');
+        showStatus('No divisions found. Please configure and run Google Sheets sync below.', false);
+    } else {
+        showStatus('Failed to load divisions: ' + error.message, true);
+    }
     }
 }
 

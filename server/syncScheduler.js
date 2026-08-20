@@ -32,6 +32,18 @@ export async function initSyncScheduler() {
   }
   try {
     const status = await SheetsSync.getStatus();
+    
+    const needsInitialSync = !status.lastSync || status.lastSync.status !== 'success';
+    const autoSyncEnabled = !!(status.settings && status.settings.autoSyncEnabled);
+
+    if (needsInitialSync || autoSyncEnabled) {
+      const reason = needsInitialSync ? 'initial run (no previous successful sync)' : 'startup (auto-sync enabled)';
+      console.log(`syncScheduler: Triggering immediate sync on ${reason}...`);
+      SheetsSync.syncAll('startup').catch(e => {
+        console.error('syncScheduler: startup sync failed:', e);
+      });
+    }
+
     applySyncSettings(status.settings);
   } catch (e) {
     console.error('syncScheduler: failed to load initial sync settings', e);
