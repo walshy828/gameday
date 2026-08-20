@@ -1984,7 +1984,12 @@ function commitSetup() {
   launch();
 }
 
-function openSetupFromCtrl() {
+async function openSetupFromCtrl() {
+  // If divisions haven't been fetched yet (e.g. because setup overlay was bypassed on boot), fetch them now
+  if (!setupAvailableDivs || setupAvailableDivs.length === 0) {
+    await initSetupOverlay();
+  }
+
   // Pre-fill current config
   setupSelected   = [...SB.divisions];
   setupRotateSecs = SB.rotateIntervalSecs;
