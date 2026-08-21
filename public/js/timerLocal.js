@@ -232,20 +232,16 @@ export function init() {
   socket.on('timerUpdate', (payload) => {
     if (payload.division !== currentDivision()) return;
     applyState(payload);
-    // Sync indicator mirrors the firebase-mode behavior of pulsing green on
-    // every update received from the server.
-    const syncIndicator = document.getElementById('sync-indicator');
-    if (syncIndicator) syncIndicator.style.background = 'limegreen';
   });
 
-  // Poll a lightweight indicator so it degrades to red if the socket drops.
+  // Connectivity indicator: red border on the clock if the socket drops.
   let lastUpdateSeen = Date.now();
   socket.on('timerUpdate', () => { lastUpdateSeen = Date.now(); });
   setInterval(() => {
-    const syncIndicator = document.getElementById('sync-indicator');
-    if (!syncIndicator) return;
+    const scoreboardEl = document.getElementById('scoreboard');
+    if (!scoreboardEl) return;
     const diff = Math.abs(Date.now() - lastUpdateSeen);
-    syncIndicator.style.background = (diff < 15000 || socket.connected) ? 'limegreen' : 'red';
+    scoreboardEl.style.borderColor = (diff < 15000 || socket.connected) ? '' : '#ef4444';
   }, 2000);
 
   refreshState();

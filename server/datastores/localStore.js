@@ -88,9 +88,16 @@ const MAX_SYNC_LOG_ENTRIES = 25;
         auto_sync_enabled BOOLEAN NOT NULL DEFAULT FALSE,
         interval_seconds INT NOT NULL DEFAULT 300,
         sync_scope VARCHAR(16) NOT NULL DEFAULT 'all',
-        selected_divisions TEXT NULL
+        selected_divisions TEXT NULL,
+        spreadsheet_id VARCHAR(191) NULL
       )
     `);
+    // Added after the table shipped — bring pre-existing databases forward.
+    try {
+      await pool.query('ALTER TABLE sync_settings ADD COLUMN spreadsheet_id VARCHAR(191) NULL');
+    } catch (e) {
+      if (e.code !== 'ER_DUP_FIELDNAME') throw e;
+    }
     await pool.query(`
       CREATE TABLE IF NOT EXISTS sync_log (
         id INT AUTO_INCREMENT PRIMARY KEY,
@@ -287,6 +294,42 @@ export async function writeDivisionData(name, { standings, schedule } = {}) {
   broadcastDivisionUpdate(name, snapshot);
 }
 
+/**
+ * Remove a division and all of its rows (standings, schedule, match history,
+ * timer state). Used when the sheet a division came from is no longer the
+ * source of record — see pruneDivisions().
+ */
+export async function deleteDivision(name) {
+  if (!name) return;
+  const conn = await pool.getConnection();
+  try {
+    await conn.beginTransaction();
+    await conn.query('DELETE FROM standings WHERE division = ?', [name]);
+    await conn.query('DELETE FROM schedule WHERE division = ?', [name]);
+    await conn.query('DELETE FROM match_history WHERE division = ?', [name]);
+    await conn.query('DELETE FROM timer_state WHERE division = ?', [name]);
+    await conn.query('DELETE FROM divisions WHERE name = ?', [name]);
+    await conn.commit();
+  } catch (e) {
+    await conn.rollback();
+    throw e;
+  } finally {
+    conn.release();
+  }
+}
+
+/**
+ * Delete every stored division whose name isn't in `keepNames`, and return
+ * the names that were removed. Called after a spreadsheet swap so divisions
+ * left behind by the previous sheet stop showing up in /api/divisions.
+ */
+export async function pruneDivisions(keepNames = []) {
+  const keep = new Set(keepNames);
+  const stale = (await getDivisionNames()).filter(name => !keep.has(name));
+  for (const name of stale) await deleteDivision(name);
+  return stale;
+}
+
 function mapSyncLogRow(row) {
   let divisionNames;
   if (row.division_names) {
@@ -305,7 +348,7 @@ function mapSyncLogRow(row) {
 }
 
 function mapSyncSettingsRow(row) {
-  if (!row) return { autoSyncEnabled: false, intervalSeconds: 300, syncScope: 'all', selectedDivisions: [] };
+  if (!row) return { autoSyncEnabled: false, intervalSeconds: 300, syncScope: 'all', selectedDivisions: [], spreadsheetId: null };
   let selectedDivisions = [];
   if (row.selected_divisions) {
     try { selectedDivisions = JSON.parse(row.selected_divisions); if (!Array.isArray(selectedDivisions)) selectedDivisions = []; } catch (e) { selectedDivisions = []; }
@@ -314,13 +357,16 @@ function mapSyncSettingsRow(row) {
     autoSyncEnabled: !!row.auto_sync_enabled,
     intervalSeconds: row.interval_seconds,
     syncScope: row.sync_scope || 'all',
-    selectedDivisions
+    selectedDivisions,
+    // Spreadsheet the stored divisions were last pulled from; sheetsSync
+    // compares this against SPREADSHEET_ID to detect a sheet swap.
+    spreadsheetId: row.spreadsheet_id || null
   };
 }
 
 export async function getSyncStatus() {
   const [settingsRows] = await pool.query(
-    'SELECT auto_sync_enabled, interval_seconds, sync_scope, selected_divisions FROM sync_settings WHERE id = 1'
+    'SELECT auto_sync_enabled, interval_seconds, sync_scope, selected_divisions, spreadsheet_id FROM sync_settings WHERE id = 1'
   );
   const settings = mapSyncSettingsRow(settingsRows[0]);
 
@@ -333,10 +379,11 @@ export async function updateSyncSettings(patch) {
   const current = (await getSyncStatus()).settings;
   const next = { ...current, ...patch };
   await pool.query(
-    `INSERT INTO sync_settings (id, auto_sync_enabled, interval_seconds, sync_scope, selected_divisions) VALUES (1, ?, ?, ?, ?)
+    `INSERT INTO sync_settings (id, auto_sync_enabled, interval_seconds, sync_scope, selected_divisions, spreadsheet_id) VALUES (1, ?, ?, ?, ?, ?)
      ON DUPLICATE KEY UPDATE auto_sync_enabled = VALUES(auto_sync_enabled), interval_seconds = VALUES(interval_seconds),
-       sync_scope = VALUES(sync_scope), selected_divisions = VALUES(selected_divisions)`,
-    [next.autoSyncEnabled, next.intervalSeconds, next.syncScope, JSON.stringify(next.selectedDivisions || [])]
+       sync_scope = VALUES(sync_scope), selected_divisions = VALUES(selected_divisions),
+       spreadsheet_id = VALUES(spreadsheet_id)`,
+    [next.autoSyncEnabled, next.intervalSeconds, next.syncScope, JSON.stringify(next.selectedDivisions || []), next.spreadsheetId || null]
   );
   const status = await getSyncStatus();
   broadcastSyncStatus(status);
@@ -463,6 +510,13 @@ export async function getChatMessages() {
 export async function postChatMessage({ who, mgr, text }) {
   const id = Date.now();
   await pool.query('INSERT INTO chat_messages (id, who, is_mgr, text, ts) VALUES (?, ?, ?, ?, ?)', [id, who, !!mgr, text, id]);
+  const list = await getChatMessages();
+  broadcastChatUpdate(list);
+  return list;
+}
+
+export async function deleteChatMessage(id) {
+  await pool.query('DELETE FROM chat_messages WHERE id = ?', [id]);
   const list = await getChatMessages();
   broadcastChatUpdate(list);
   return list;

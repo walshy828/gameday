@@ -34,10 +34,7 @@ import {
     renderScheduleView,
     parseRoundTime,
     getUniqueCourts,
-    getUniqueTeams,
-    buildPagerContent,
-    initStandingsPager,
-    loadAndStartStandingsPager
+    getUniqueTeams
 } from './schedule.js';
 
 import {
@@ -46,6 +43,7 @@ import {
 
 import {
     syncNow,
+    pruneDivisions,
     toggleAutoSync,
     setSyncInterval,
     setCustomSyncInterval,
@@ -58,8 +56,8 @@ import { initTimerOverlay } from './timerOverlay.js';
 import * as TimerFirebase from './timerFirebase.js';
 import * as TimerLocal from './timerLocal.js';
 import { initAnnouncements, dismissAnnouncementBanner, postAnnouncementFromSetup, cancelAnnouncementEdit } from './announcements.js';
-import { initChat, sendChatMessage } from './chat.js';
-import { renderLiveView } from './live.js';
+import { initChat, sendChatMessage, jumpToChatBottom, requestDeleteChatMessage, cancelDeleteChatMessage, confirmDeleteChatMessage } from './chat.js';
+import { renderPlayoffsView } from './playoffs.js';
 
 const IS_LOCAL_BACKEND = window.__DATA_BACKEND__ === 'local';
 const TimerModule = IS_LOCAL_BACKEND ? TimerLocal : TimerFirebase;
@@ -238,9 +236,7 @@ async function loadData(divisionName) {
       updateAdminMatchEntryView();
     }
 
-    // Update admin standings ticker
-    loadAndStartStandingsPager(App.data.allStandingsData);
-    renderLiveView();
+    renderPlayoffsView();
 
     showStatus(null);
 
@@ -323,8 +319,6 @@ async function loadData(divisionName) {
             updateScheduleView(); 
             updateAdminMatchEntryView(); 
 
-            //update admin standings ticker
-            loadAndStartStandingsPager(App.data.allStandingsData);
     
             showStatus(null);
     
@@ -375,7 +369,7 @@ function handleDivisionSnapshot(data, divisionName) {
   renderStandings(App.data.standings);
   updateScheduleView();
   updateAdminMatchEntryView();
-  renderLiveView();
+  renderPlayoffsView();
   // If a playoff final has been completed, show the championship banner locally
   try {
     const finalsGame = App.data.allScheduleData && App.data.allScheduleData.find(game => game.roundTime === "P5.Finals" && game.winner);
@@ -563,6 +557,7 @@ exposeGlobals({
 // Expose settings view handlers (used by inline onclick handlers in index.html)
 exposeGlobals({
   syncNow,
+  pruneDivisions,
   toggleAutoSync,
   setSyncInterval,
   setCustomSyncInterval,
@@ -575,7 +570,11 @@ exposeGlobals({
   dismissAnnouncementBanner,
   postAnnouncementFromSetup,
   cancelAnnouncementEdit,
-  sendChatMessage
+  sendChatMessage,
+  jumpToChatBottom,
+  requestDeleteChatMessage,
+  cancelDeleteChatMessage,
+  confirmDeleteChatMessage
 });
 /*
 window.loadData = loadData;

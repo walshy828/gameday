@@ -52,6 +52,7 @@ app.get('/config.js', (req, res) => {
 // Utilities from env
 const ADMIN_PASSWORD = process.env.ADMIN_PASSWORD;
 const SUPERADMIN_PASSWORD = process.env.SUPERADMIN_PASSWORD;
+const PARENT_PASSWORD = process.env.PARENT_PASSWORD;
 const SECRET_SALT = process.env.SECRET_SALT || 'secret-salt';
 
 // route: getAllData
@@ -110,7 +111,13 @@ app.post('/api/validateAdmin', async (req, res) => {
       : undefined;
     return res.json({ isAdmin: true, isSuperAdmin: true, token, firebaseToken });
   }
-  res.json({ isAdmin: false, isSuperAdmin: false, error: 'Invalid password.' });
+  if (PARENT_PASSWORD && password === PARENT_PASSWORD) {
+    const token = computeToken(PARENT_PASSWORD);
+    // Parents can post in the crew chat (identified as "Parent") but get no
+    // match-entry, timer, or superadmin privileges — see requireChatAuth.
+    return res.json({ isAdmin: false, isSuperAdmin: false, isParent: true, token });
+  }
+  res.json({ isAdmin: false, isSuperAdmin: false, isParent: false, error: 'Invalid password.' });
 });
 
 // route: saveMatchResult
@@ -378,9 +385,20 @@ app.delete('/api/announcements/:id', async (req, res) => {
   }
 });
 
-// --- Crew chat (staff-only; UI-gated, same posture as other staff views) ---
+// --- Crew chat (staff + parents; UI-gated, same posture as other staff views) ---
 // `who`/`mgr` are derived server-side from the validated authToken + the
 // client-supplied display name/court, never trusted directly from the body.
+
+function requireChatAuth(req, res) {
+  const authToken = req.body?.authToken || req.query?.authToken;
+  const expectedParent = computeToken(process.env.PARENT_PASSWORD || '');
+  const isParent = !!process.env.PARENT_PASSWORD && authToken === expectedParent;
+  if (!isValidToken(authToken) && !isParent) {
+    res.status(401).json({ success: false, error: 'Authentication failed.' });
+    return false;
+  }
+  return true;
+}
 
 app.get('/api/chat', async (_req, res) => {
   try {
@@ -392,18 +410,30 @@ app.get('/api/chat', async (_req, res) => {
 });
 
 app.post('/api/chat', async (req, res) => {
-  if (!requireAdmin(req, res)) return;
+  if (!requireChatAuth(req, res)) return;
   try {
     const text = (req.body?.text || '').trim();
     if (!text) return res.status(400).json({ success: false, error: 'text is required' });
 
     const authToken = req.body?.authToken;
     const isMgr = authToken === computeToken(process.env.SUPERADMIN_PASSWORD || '');
+    const isParent = !!process.env.PARENT_PASSWORD && authToken === computeToken(process.env.PARENT_PASSWORD || '');
     const reporterName = (req.body?.reporterName || '').trim() || 'Staff';
     const court = req.body?.court;
-    const who = isMgr ? `Admin · ${reporterName}` : `Court ${court || '?'} · ${reporterName}`;
+    const who = isMgr ? `Admin · ${reporterName}` : isParent ? `Parent · ${reporterName}` : `Court ${court || '?'} · ${reporterName}`;
 
     const chat = await Store.postChatMessage({ who, mgr: isMgr, text });
+    res.json({ success: true, chat });
+  } catch (e) {
+    res.status(500).json({ success: false, error: e.toString() });
+  }
+});
+
+app.delete('/api/chat/:id', async (req, res) => {
+  if (!requireSuperAdmin(req, res)) return;
+  try {
+    const id = Number(req.params.id);
+    const chat = await Store.deleteChatMessage(id);
     res.json({ success: true, chat });
   } catch (e) {
     res.status(500).json({ success: false, error: e.toString() });
@@ -450,6 +480,22 @@ app.post('/api/sheetSync/run', async (req, res) => {
     res.json(result);
   } catch (e) {
     console.error('sheetSync/run error', e);
+    res.status(500).json({ success: false, error: e.toString() });
+  }
+});
+
+// One-shot cleanup: delete every stored division that isn't a tab in the
+// spreadsheet SPREADSHEET_ID currently points at. syncAll() does this
+// automatically when it detects the id changed, but that only works from the
+// first sync onward — this route clears out divisions left behind by a
+// spreadsheet swap that happened before the app started tracking the id.
+app.post('/api/sheetSync/prune', async (req, res) => {
+  if (!requireSuperAdmin(req, res)) return;
+  try {
+    const result = await SheetsSync.pruneStaleDivisions();
+    res.json(result);
+  } catch (e) {
+    console.error('sheetSync/prune error', e);
     res.status(500).json({ success: false, error: e.toString() });
   }
 });

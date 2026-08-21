@@ -6,13 +6,17 @@
 // listener in local mode. The CHAT tab itself is only shown to signed-in
 // staff (see updateAdminUI in admin.js) — same UI-level gating the rest of
 // the app already uses for staff-only views.
-import { getChatMessages, postChatMessage } from './api.js';
+import { getChatMessages, postChatMessage, deleteChatMessage as apiDeleteChatMessage } from './api.js';
 import { getSocket } from './socketClient.js';
 
 const IS_LOCAL_BACKEND = window.__DATA_BACKEND__ === 'local';
 const SEEN_KEY = 'chatSeen';
+const AT_BOTTOM_THRESHOLD = 48; // px of slack before we consider the user "scrolled away"
 
 let chat = [];
+let knownIds = new Set(); // message ids already rendered, used to detect genuinely-new arrivals
+let pendingJumpCount = 0; // messages that arrived while the user was scrolled up
+let confirmDeleteId = null; // message currently showing its inline "delete this?" prompt
 
 function authToken() {
   return sessionStorage.getItem('adminAuthToken');
@@ -21,7 +25,9 @@ function authToken() {
 /** Must match the `who` string the server computes in POST /api/chat. */
 function meLabel() {
   const name = App.state.reporterName || 'Staff';
-  return App.state.isSuperAdmin ? `Admin · ${name}` : `Court ${App.state.selectedCourt || '?'} · ${name}`;
+  if (App.state.isSuperAdmin) return `Admin · ${name}`;
+  if (App.state.isParent) return `Parent · ${name}`;
+  return `Court ${App.state.selectedCourt || '?'} · ${name}`;
 }
 
 async function init() {
@@ -53,30 +59,132 @@ function render() {
   renderUnreadDot();
 }
 
+function isAtBottom(scrollArea) {
+  return scrollArea.scrollHeight - scrollArea.scrollTop - scrollArea.clientHeight < AT_BOTTOM_THRESHOLD;
+}
+
 function renderMessages() {
   const container = document.getElementById('chat-messages');
   if (!container) return;
 
+  const scrollArea = document.getElementById('chat-scroll-area');
+  const wasAtBottom = scrollArea ? isAtBottom(scrollArea) : true;
   const me = meLabel();
+
+  const newMessages = chat.filter(m => !knownIds.has(m.id));
+  const newFromOthers = newMessages.filter(m => m.who !== me);
+  const newFromMe = newMessages.length - newFromOthers.length;
+
   container.innerHTML = chat.map(m => {
     const mine = m.who === me;
+    const canDelete = !!App.state.isSuperAdmin;
+    const confirming = confirmDeleteId === m.id;
     return `
-      <div class="flex ${mine ? 'justify-end' : 'justify-start'}">
-        <div class="max-w-[86%] px-3.5 py-2.5 rounded-2xl ${mine ? 'rounded-br-md' : 'rounded-bl-md'}"
+      <div class="flex ${mine ? 'justify-end' : 'justify-start'} group">
+        <div class="max-w-[86%] px-3.5 py-2.5 rounded-2xl relative ${mine ? 'rounded-br-md' : 'rounded-bl-md'}"
              style="background:${mine ? 'linear-gradient(140deg,rgba(166,48,63,.42) 0%,rgba(123,29,43,.34) 100%)' : (m.mgr ? 'rgba(224,184,99,.12)' : 'rgba(255,255,255,.06)')}">
-          <div class="flex justify-between gap-3 items-baseline">
+          <div class="flex justify-start gap-1.5 items-baseline">
             <span class="text-[10px] font-semibold ${m.mgr ? 'text-gold' : 'text-white/60'}">${escapeHtml(m.who)}</span>
             <span class="text-[10px] text-white/35 flex-none">${new Date(m.ts).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' })}</span>
+            ${canDelete ? `<button onclick="requestDeleteChatMessage(event, ${m.id})" title="Delete message"
+                class="ml-auto flex-none opacity-0 group-hover:opacity-100 transition-opacity text-white/40 hover:text-white/90">
+                <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+                     stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="w-3 h-3">
+                  <path d="M3 6h18"></path>
+                  <path d="M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path>
+                  <path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"></path>
+                  <path d="M10 11v6"></path>
+                  <path d="M14 11v6"></path>
+                </svg>
+              </button>` : ''}
           </div>
           <div class="text-[13px] text-white/[.88] mt-1 leading-relaxed">${escapeHtml(m.text)}</div>
+          ${confirming ? `
+            <div class="mt-2 pt-2 border-t border-white/15 flex items-center justify-between gap-2" onclick="event.stopPropagation()">
+              <span class="text-[11px] text-white/70">Delete this message?</span>
+              <div class="flex gap-1.5 flex-none">
+                <button onclick="cancelDeleteChatMessage(event)"
+                    class="text-[11px] font-semibold px-2.5 py-1 rounded-full bg-white/10 text-white/80 hover:bg-white/15">Cancel</button>
+                <button onclick="confirmDeleteChatMessage(event, ${m.id})"
+                    class="text-[11px] font-semibold px-2.5 py-1 rounded-full bg-warn text-white hover:opacity-90">Delete</button>
+              </div>
+            </div>
+          ` : ''}
         </div>
       </div>
     `;
   }).join('');
 
-  const scrollArea = document.getElementById('chat-scroll-area');
-  if (scrollArea) scrollArea.scrollTop = scrollArea.scrollHeight;
+  knownIds = new Set(chat.map(m => m.id));
+
+  if (!scrollArea) return;
+
+  if (wasAtBottom || newFromMe > 0) {
+    scrollChatToBottom();
+  } else if (newFromOthers.length) {
+    pendingJumpCount += newFromOthers.length;
+    showJumpButton();
+  }
 }
+
+function scrollChatToBottom() {
+  const scrollArea = document.getElementById('chat-scroll-area');
+  if (!scrollArea) return;
+  scrollArea.scrollTop = scrollArea.scrollHeight;
+  pendingJumpCount = 0;
+  hideJumpButton();
+}
+
+function showJumpButton() {
+  const btn = document.getElementById('chat-jump-btn');
+  const count = document.getElementById('chat-jump-count');
+  if (!btn) return;
+  if (count) count.textContent = pendingJumpCount > 1 ? String(pendingJumpCount) : '';
+  btn.classList.remove('hidden');
+}
+
+function hideJumpButton() {
+  const btn = document.getElementById('chat-jump-btn');
+  if (btn) btn.classList.add('hidden');
+}
+
+function jumpToChatBottom() {
+  scrollChatToBottom();
+  renderUnreadDot();
+}
+
+function requestDeleteChatMessage(event, id) {
+  event.stopPropagation();
+  confirmDeleteId = id;
+  renderMessages();
+}
+
+function cancelDeleteChatMessage(event) {
+  event.stopPropagation();
+  confirmDeleteId = null;
+  renderMessages();
+}
+
+async function confirmDeleteChatMessage(event, id) {
+  event.stopPropagation();
+  confirmDeleteId = null;
+  try {
+    await apiDeleteChatMessage(authToken(), id);
+  } catch (e) {
+    console.error('Failed to delete chat message', e);
+    showStatus('Failed to delete: ' + e.message, true);
+  }
+  renderMessages();
+}
+
+// Any click outside an open confirm prompt cancels it (the prompt itself
+// stops propagation, so this only fires for genuine "click off" clicks).
+document.addEventListener('click', () => {
+  if (confirmDeleteId !== null) {
+    confirmDeleteId = null;
+    renderMessages();
+  }
+});
 
 function escapeHtml(str) {
   const div = document.createElement('div');
@@ -107,9 +215,10 @@ function onChatTabOpened() {
     localStorage.setItem(SEEN_KEY, String(chat[chat.length - 1].id));
   }
   renderUnreadDot();
+  scrollChatToBottom();
 
   const sub = document.getElementById('chat-sub');
-  if (sub) sub.textContent = App.state.isSuperAdmin ? 'Every court manager sees this channel.' : 'Court managers and admins.';
+  if (sub) sub.textContent = App.state.isSuperAdmin ? 'Every court manager and parent sees this channel.' : 'Court managers, admins, and parents.';
   const postingAs = document.getElementById('chat-posting-as');
   if (postingAs) postingAs.textContent = meLabel();
 }
@@ -150,5 +259,9 @@ document.addEventListener('DOMContentLoaded', () => {
 export {
   init as initChat,
   onChatTabOpened,
-  sendChatMessage
+  sendChatMessage,
+  jumpToChatBottom,
+  requestDeleteChatMessage,
+  cancelDeleteChatMessage,
+  confirmDeleteChatMessage
 };

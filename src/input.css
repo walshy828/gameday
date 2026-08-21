@@ -200,6 +200,51 @@
   .stepper-value {
     @apply flex-1 text-center text-[26px] font-bold leading-none tracking-[-.03em] text-ink tabular-nums;
   }
+
+  /* ---------------------------------------------------------------
+     Dark modal sheet — used by the "Report final result" modal so it
+     matches the Admin tab's dark glass surfaces (card-dark/select-glass)
+     instead of the light modal-sheet used elsewhere (e.g. admin login).
+     --------------------------------------------------------------- */
+  .modal-sheet-dark {
+    @apply w-full max-h-full overflow-auto rounded-[32px] border border-white/10
+           shadow-[0_40px_90px_rgba(0,0,0,.6)] backdrop-blur-xl;
+    max-width: 420px;
+    background: rgba(24, 24, 26, 0.97);
+    animation: sheetin 0.26s cubic-bezier(0.32, 0.72, 0, 1);
+  }
+  /* Controls on the dark modal surface */
+  .field-dark {
+    @apply w-full box-border rounded-2xl border border-white/15 bg-white/[.07] px-3.5 py-3
+           text-[13px] leading-[1.45] text-[#F1F1F2] outline-none backdrop-blur-lg;
+  }
+  .field-dark::placeholder {
+    color: rgba(255, 255, 255, 0.4);
+  }
+  /* Choice tile (winner picker) on the dark modal sheet */
+  .tile-dark {
+    @apply w-full rounded-2xl border border-white/15 bg-white/[.07] px-3.5 py-3.5 text-left
+           text-[14px] font-semibold text-[#F1F1F2] transition-colors backdrop-blur-lg;
+  }
+  .tile-dark[data-selected="true"] {
+    border-color: var(--gold);
+    background: rgba(224, 184, 99, 0.14);
+    color: var(--gold-l);
+  }
+  /* Stepper (players-left) on the dark modal sheet */
+  .stepper-wrap-dark {
+    @apply flex items-center gap-[7px] rounded-[20px] border border-white/15 bg-white/[.07] p-1.5 backdrop-blur-lg;
+  }
+  .stepper-btn-dark {
+    @apply flex h-[50px] w-[50px] flex-none items-center justify-center rounded-[15px] border-0
+           bg-white/10 text-[20px] font-semibold text-[#F1F1F2];
+  }
+  .stepper-btn-dark:hover {
+    @apply bg-white/[.16];
+  }
+  .stepper-value-dark {
+    @apply flex-1 text-center text-[26px] font-bold leading-none tracking-[-.03em] text-[#F1F1F2] tabular-nums;
+  }
 }
 
 @keyframes glowpulse {

@@ -693,97 +693,67 @@
     /* ==========================================================
        PLAYOFF BRACKET
     ========================================================== */
-    .bracket-outer {
-      overflow-x: auto;
-      padding-bottom: 10px;
-    }
-
-    .bracket-outer::-webkit-scrollbar { height: 4px; }
-    .bracket-outer::-webkit-scrollbar-thumb { background: rgba(255,255,255,.14); border-radius: 2px; }
-
-    /* Row stretches all columns to the same height */
-    .bracket-row {
-      display: flex;
-      min-width: max-content;
-      align-items: stretch;
-    }
-
-    /* Each round column is a flex column */
-    .bracket-round-col {
-      display: flex;
-      flex-direction: column;
-      min-width: 220px;
-      flex-shrink: 0;
-    }
-
-    .bracket-round-hdr {
-      height: 34px;
-      min-height: 34px;
-      flex-shrink: 0;
-      display: flex;
-      align-items: center;
-      justify-content: center;
-      gap: 4px;
-      font-size: 9px; font-weight: 700;
-      letter-spacing: .14em; text-transform: uppercase;
-      color: rgba(255,255,255,.38);
-      text-align: center;
-    }
-
-    .bracket-round-hdr .round-key {
-      color: rgba(255,255,255,.18);
-    }
-
-    /* Slots column fills remaining height after header */
-    .bracket-slots-col {
-      display: flex;
-      flex-direction: column;
-      flex: 1;
-      min-height: 0;
-    }
-
-    /* Each slot has dynamic flex — later rounds get higher flex values
-       so their single game is vertically centred across N feeder slots */
-    .bracket-slot {
-      display: flex;
-      flex-direction: column;
-      justify-content: center;
-      padding: 5px 10px;
-      min-height: 0;
-    }
-
-    /* SVG connector column between rounds */
-    .bracket-conn-col {
-      width: 30px;
-      flex-shrink: 0;
-      display: flex;
-      flex-direction: column;
-    }
-
-    .bracket-conn-hdr-spacer {
-      height: 34px;
-      min-height: 34px;
-      flex-shrink: 0;
-    }
-
-    .bracket-conn-svg-wrap {
-      flex: 1;
-      min-height: 0;
+    /* Scrollable viewport for the bracket canvas */
+    .bracket-fit {
       position: relative;
+      width: 100%;
+      overflow: auto;
+      padding-bottom: 6px;
     }
 
-    .bracket-conn-svg-wrap svg {
+    .bracket-fit::-webkit-scrollbar { height: 4px; width: 4px; }
+    .bracket-fit::-webkit-scrollbar-thumb { background: rgba(255,255,255,.14); border-radius: 2px; }
+
+    /* Absolutely-positioned canvas; scaled by JS to fit the module */
+    /* Auto margins centre the canvas but collapse to 0 once it is wider
+       than the viewport, so nothing gets clipped off the left edge. */
+    .bracket-canvas {
+      position: relative;
+      margin: 0 auto;
+    }
+
+    .bracket-conn-layer {
       position: absolute;
       top: 0; left: 0;
       width: 100%; height: 100%;
+      pointer-events: none;
+      overflow: visible;
+    }
+
+    .bracket-round-hdr {
+      position: absolute;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      gap: 1px;
+      font-size: 9px; font-weight: 700;
+      letter-spacing: .14em; text-transform: uppercase;
+      color: rgba(255,255,255,.42);
+      text-align: center;
+      overflow: hidden;
+    }
+
+    .bracket-round-hdr .round-key {
+      font-size: 8px;
+      letter-spacing: .1em;
+      color: rgba(255,255,255,.2);
     }
 
     /* Match card */
     .bracket-match {
-      border-radius: 12px;
+      position: absolute;
+      border-radius: 10px;
       border: 1px solid rgba(255,255,255,.12);
       background: rgba(255,255,255,.05);
       overflow: hidden;
+      display: flex;
+      flex-direction: column;
+    }
+
+    .bracket-match.live {
+      border-color: rgba(224,184,99,.35);
+      background: rgba(224,184,99,.05);
     }
 
     .bracket-match.champion {
@@ -793,8 +763,10 @@
     }
 
     .bracket-team-row {
-      display: flex; align-items: center; gap: 8px;
-      padding: 9px 12px;
+      display: flex; align-items: center; gap: 7px;
+      padding: 0 9px;
+      flex: 1;
+      min-height: 0;
       border-bottom: 1px solid rgba(255,255,255,.07);
       font-size: 12px; font-weight: 600;
       color: rgba(255,255,255,.65);
@@ -806,6 +778,28 @@
       color: var(--gold-l);
       background: rgba(224,184,99,.1);
       font-weight: 700;
+    }
+
+    .bracket-team-row.eliminated { color: rgba(255,255,255,.3); }
+
+    /* Synthetic "team vs BYE" card standing in for a skipped round */
+    .bracket-match.is-bye {
+      border-style: dashed;
+      border-color: rgba(255,255,255,.09);
+      background: rgba(255,255,255,.02);
+    }
+
+    .bracket-match-tag.is-bye { color: rgba(255,255,255,.2); }
+
+    .bracket-team-row.bye {
+      color: rgba(255,255,255,.2);
+      font-size: 9px; font-weight: 800;
+      letter-spacing: .18em; text-transform: uppercase;
+    }
+
+    .bracket-team-row.bye .bt-seed {
+      background: rgba(255,255,255,.03);
+      color: rgba(255,255,255,.14);
     }
 
     .bracket-team-row.placeholder {
@@ -838,6 +832,47 @@
       color: var(--gold-d);
       letter-spacing: .06em;
       flex-shrink: 0;
+    }
+
+    /* Match id tag pinned to the card corner */
+    .bracket-match-tag {
+      position: absolute;
+      padding: 0 5px;
+      border-radius: 4px;
+      font-size: 8px; font-weight: 800;
+      letter-spacing: .08em;
+      line-height: 13px;
+      background: rgba(20,20,22,.95);
+      color: rgba(255,255,255,.3);
+      z-index: 2;
+    }
+
+    .bracket-match-tag.champion { color: var(--gold-d); }
+
+    /* Champion callout after the final */
+    .bracket-champ {
+      position: absolute;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      padding: 0 12px;
+      border-radius: 10px;
+      border: 1px solid rgba(224,184,99,.45);
+      background: rgba(224,184,99,.1);
+      font-size: 12px; font-weight: 800;
+      color: var(--gold-l);
+      overflow: hidden;
+    }
+
+    .bracket-champ .bc-label {
+      font-size: 8px; font-weight: 800;
+      letter-spacing: .16em;
+      color: var(--gold-d);
+    }
+
+    .bracket-champ .bc-name {
+      flex: 1; min-width: 0;
+      overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
     }
 
     /* ==========================================================
@@ -1185,7 +1220,7 @@
   <img src="/assets/algonquin-hockey.png" alt="Algonquin Hockey" class="sb-logo">
 
   <div class="sb-title-block">
-    <div class="sb-title-super">Algonquin Hockey Presents</div>
+    <div class="sb-title-super" id="sb-header-date">Algonquin Hockey Presents</div>
     <div class="sb-title-main">Dodgeball Tournament</div>
   </div>
 
@@ -1204,10 +1239,20 @@
             onclick="toggleRotatePause()" title="Pause/resume (Space)">⏸</button>
   </div>
 
-  <!-- Clock -->
-  <div class="sb-clock">
-    <div class="sb-time" id="sb-time">--:--:--</div>
-    <div class="sb-date" id="sb-date">Loading…</div>
+  <!-- Clock group: Match Clock + Wall Clock -->
+  <div style="display:flex;align-items:center;gap:20px;text-align:right;flex-shrink:0;">
+    <!-- Match Clock -->
+    <div id="match-clock-wrap" style="display:flex;flex-direction:column;align-items:flex-end;">
+      <div style="font-size:8px;font-weight:700;color:rgba(255,255,255,0.38);letter-spacing:.1em;text-transform:uppercase;margin-bottom:2px;">Match Time</div>
+      <div id="match-clock" style="font-size:34px;font-weight:900;color:var(--gold-l);font-variant-numeric:tabular-nums;line-height:1;letter-spacing:-.02em;">5:00</div>
+    </div>
+    <!-- Separator -->
+    <div style="width:1px;height:36px;background:rgba(255,255,255,0.12);"></div>
+    <!-- Wall Clock -->
+    <div style="display:flex;flex-direction:column;align-items:flex-end;">
+      <div style="font-size:8px;font-weight:700;color:rgba(255,255,255,0.38);letter-spacing:.1em;text-transform:uppercase;margin-bottom:2px;">Time</div>
+      <div id="sb-time" style="font-size:22px;font-weight:700;color:rgba(255,255,255,0.88);font-variant-numeric:tabular-nums;line-height:1;">--:-- am</div>
+    </div>
   </div>
 </header>
 
@@ -1339,6 +1384,17 @@ const SB = {
   rotateCountdown:   0,
   rotateTimer:       null,
   lastDirection:     1,    // 1 = forward, -1 = backward
+  announcements:     [],
+  socket:            null,
+  timerState: {
+    running: false,
+    duration: 300,
+    startTime: 0,
+    startAfterRoundRunning: false,
+    lastSetDuration: 300,
+    serverOffset: 0,
+  },
+  timerIntervalId:   null,
 };
 
 const MODULES = ['standings', 'current', 'next', 'bracket', 'announcements'];
@@ -1366,12 +1422,23 @@ function startClock() {
 
   function tick() {
     const now = new Date();
-    const h = String(now.getHours()).padStart(2,'0');
-    const m = String(now.getMinutes()).padStart(2,'0');
-    const s = String(now.getSeconds()).padStart(2,'0');
-    document.getElementById('sb-time').textContent = `${h}:${m}:${s}`;
-    document.getElementById('sb-date').textContent =
-      `${DAYS[now.getDay()]} · ${MONTHS[now.getMonth()]} ${now.getDate()}, ${now.getFullYear()}`;
+    let hours = now.getHours();
+    const ampm = hours >= 12 ? 'pm' : 'am';
+    hours = hours % 12;
+    hours = hours ? hours : 12;
+    const h = String(hours);
+    const m = String(now.getMinutes()).padStart(2, '0');
+
+    // Wall clock: h:mm am/pm
+    const timeEl = document.getElementById('sb-time');
+    if (timeEl) timeEl.textContent = `${h}:${m} ${ampm}`;
+
+    // Date moved to header title super block
+    const dateEl = document.getElementById('sb-header-date');
+    if (dateEl) {
+      const dateStr = `${DAYS[now.getDay()]} · ${MONTHS[now.getMonth()]} ${now.getDate()}, ${now.getFullYear()}`;
+      dateEl.textContent = `Algonquin Hockey Presents · ${dateStr}`;
+    }
   }
   tick();
   setInterval(tick, 1000);
@@ -1454,6 +1521,11 @@ function toggleExpand(cardId) {
   if (isExpanded) {
     backdrop.classList.add('hidden');
   } else {
+    // Belt and braces: an in-flight slide animation leaves a transform
+    // on the grid, which would capture this card's position:fixed.
+    const grid = document.getElementById('module-grid');
+    if (grid) grid.classList.remove('anim-right', 'anim-left');
+
     card.classList.add('expanded');
     backdrop.classList.remove('hidden');
     const btn = card.querySelector('.expand-btn');
@@ -1596,7 +1668,7 @@ function isReported(g) {
 }
 
 function isPlayoff(g) {
-  return /^P\d/i.test((g.roundTime || '').trim());
+  return /^P\s*\d/i.test((g.match || '').trim()) || /^P\d/i.test((g.roundTime || '').trim());
 }
 
 function getLiveRound(schedule) {
@@ -1622,13 +1694,20 @@ function renderAll(divName, animate = false) {
 
   const { standings = [], schedule = [] } = cached;
 
-  // Slide animation on the grid
+  // Slide animation on the grid. The class must come off once the
+  // animation finishes: it uses animation-fill-mode:forwards, and a
+  // lingering transform on the grid would make it the containing block
+  // for its position:fixed descendants — which is what an expanded
+  // module card is, so it would jump off-screen after a division switch.
   if (animate) {
     const grid = document.getElementById('module-grid');
     const cls = SB.lastDirection >= 0 ? 'anim-right' : 'anim-left';
     grid.classList.remove('anim-right', 'anim-left');
     void grid.offsetWidth; // reflow
     grid.classList.add(cls);
+    grid.addEventListener('animationend', () => {
+      grid.classList.remove('anim-right', 'anim-left');
+    }, { once: true });
   }
 
   renderStandings(standings);
@@ -1809,164 +1888,409 @@ function gameCardHTML(game, ctx) {
 
 // ================================================================
 // PLAYOFF BRACKET
+//
+// Topology is derived from the match ids (P1, P2, P3 …), not from the
+// order rows happen to appear in. A slot in a later match points at an
+// earlier match either explicitly ("Winner P2") or, once the result is
+// entered and the placeholder has been overwritten with a real team
+// name, by matching that name against the winner of an earlier,
+// not-yet-consumed match. Anything that matches neither is a direct
+// entrant (a seed with a bye into this round).
+//
+// Rounds are then columns keyed by distance from the final, and each
+// match is centred on the two slots that feed it — so the winner of a
+// quarterfinal always lines up with the semifinal slot it advances to.
 // ================================================================
+const BRK = {
+  BOX_H:  46,   // match card height (2 team rows)
+  LEAF_H: 32,   // vertical space per entrant slot in the first column
+  COL_W:  186,  // round column width
+  GAP_W:  36,   // horizontal gap between rounds (connector space)
+  HDR_H:  30,   // round header height
+  PAD_T:  10,   // gap between headers and the first card
+  MIN_SCALE: 0.4
+};
+
+function matchNum(g) {
+  const m = /^\s*P\s*(\d+)\s*$/i.exec(g.match || '');
+  return m ? +m[1] : null;
+}
+
+// "Winner P3" / "Winner of P3" / "W P3" → 3
+function placeholderRef(name) {
+  const m = /^\s*(?:winner|w)\s*(?:of\s*)?[-:]?\s*P\s*(\d+)\s*$/i.exec(name || '');
+  return m ? +m[1] : null;
+}
+
+function isBlankSlot(name) {
+  const n = (name || '').trim();
+  return !n || /^(tbd|tba|—|-)$/i.test(n);
+}
+
+function isByeSlot(name) {
+  return /^\s*bye\s*$/i.test(name || '');
+}
+
+// A slot holding an actual team, as opposed to a bye, a blank, or an
+// unresolved "Winner P3" pointer.
+function isRealTeamSlot(slot) {
+  return !isBlankSlot(slot.raw) && !isByeSlot(slot.raw) && placeholderRef(slot.raw) === null;
+}
+
+function normTeam(name) {
+  return (name || '').trim().toLowerCase().replace(/\s+/g, ' ');
+}
+
+function teamSeed(name) {
+  const m = /\(#(\d+)\)/.exec(name || '');
+  return m ? m[1] : null;
+}
+
+function teamLabel(name) {
+  return (name || '').replace(/\s*\(#\d+\)\s*$/, '').trim();
+}
+
+// "P3.Quarterfinals [1]" → "Quarterfinals"
+function cleanRoundLabel(rt) {
+  let s = (rt || '').trim();
+  s = s.replace(/^P\s*\d+\s*[.\-:_]?\s*/i, '');
+  s = s.replace(/\s*[\[(]\s*\d+\s*[\])]\s*$/, '');
+  return s.trim();
+}
+
+function defaultRoundLabel(depth) {
+  if (depth === 0) return 'Final';
+  if (depth === 1) return 'Semifinals';
+  if (depth === 2) return 'Quarterfinals';
+  return `Round of ${Math.pow(2, depth + 1)}`;
+}
+
+// ── Build the bracket tree from the playoff rows ────────────────────
+function buildBracketTree(pGames) {
+  const nodes = [];
+  pGames.forEach(g => {
+    const num = matchNum(g);
+    if (num === null) return;
+    nodes.push({
+      num, g,
+      slots: [
+        { raw: g.team1 || '', feeder: null },
+        { raw: g.team2 || '', feeder: null }
+      ],
+      parent: null, depth: 0, span: 1, y: 0
+    });
+  });
+  if (!nodes.length) return null;
+
+  nodes.sort((a, b) => a.num - b.num);
+  const byNum = new Map(nodes.map(n => [n.num, n]));
+
+  // Winners of matches that nothing has advanced from yet, newest first.
+  const unclaimed = new Map();
+
+  nodes.forEach(node => {
+    node.slots.forEach(slot => {
+      const ref = placeholderRef(slot.raw);
+      if (ref !== null) {
+        const feeder = byNum.get(ref);
+        // Only accept a backwards reference — forward/self refs would cycle.
+        if (feeder && feeder.num < node.num && feeder.parent === null) {
+          slot.feeder = feeder;
+          feeder.parent = node;
+          const list = unclaimed.get(normTeam(feeder.g.winner));
+          if (list) {
+            const i = list.indexOf(feeder);
+            if (i >= 0) list.splice(i, 1);
+          }
+        }
+        return;
+      }
+      if (isBlankSlot(slot.raw)) return;
+
+      const list = unclaimed.get(normTeam(slot.raw));
+      while (list && list.length) {
+        const feeder = list.pop();
+        if (feeder.num < node.num && feeder.parent === null) {
+          slot.feeder = feeder;
+          feeder.parent = node;
+          break;
+        }
+      }
+    });
+
+    if (isReported(node.g)) {
+      const key = normTeam(node.g.winner);
+      if (key) {
+        if (!unclaimed.has(key)) unclaimed.set(key, []);
+        unclaimed.get(key).push(node);
+      }
+    }
+  });
+
+  // Depth = rounds remaining, measured from each root (a match nothing
+  // advances out of — normally the final).
+  const roots = nodes.filter(n => n.parent === null).sort((a, b) => b.num - a.num);
+  let maxDepth = 0;
+  roots.forEach(r => (function walk(node, depth) {
+    node.depth = depth;
+    if (depth > maxDepth) maxDepth = depth;
+    node.slots.forEach(s => { if (s.feeder) walk(s.feeder, depth + 1); });
+  })(r, 0));
+
+  // ── Byes ─────────────────────────────────────────────────────────
+  // A team seeded straight into a later round leaves a hole in the
+  // column before it. Fill each hole with a "team vs BYE" card the team
+  // has already won, so every round reads as a complete draw.
+  //
+  // The field enters at one main column (whichever holds the most
+  // direct entrants). Only entries to the RIGHT of it are byes —
+  // anything to the left is a play-in round, where the rest of the
+  // field genuinely has nothing to play yet.
+  const entrantsByCol = new Array(maxDepth + 1).fill(0);
+  nodes.forEach(n => n.slots.forEach(s => {
+    if (!s.feeder && isRealTeamSlot(s)) entrantsByCol[maxDepth - n.depth]++;
+  }));
+  let mainCol = 0;
+  entrantsByCol.forEach((count, c) => { if (count > entrantsByCol[mainCol]) mainCol = c; });
+
+  // Right to left, so a team byeing through more than one round picks
+  // up a card in every round it sat out, down to the main column.
+  for (let c = maxDepth; c > mainCol; c--) {
+    nodes.filter(n => maxDepth - n.depth === c).forEach(node => {
+      node.slots.forEach(slot => {
+        if (slot.feeder || !isRealTeamSlot(slot)) return;
+        const bye = {
+          num: null, isBye: true, parent: node, depth: node.depth + 1, span: 2, y: 0,
+          g: { team1: slot.raw, team2: 'BYE', winner: slot.raw, roundTime: '', match: '' },
+          slots: [{ raw: slot.raw, feeder: null }, { raw: 'BYE', feeder: null }]
+        };
+        slot.feeder = bye;
+        nodes.push(bye);
+      });
+    });
+  }
+
+  // Vertical placement: every slot without a feeder occupies one leaf
+  // unit; a match sits at the midpoint of its two feed points.
+  let cursor = 0;
+  function place(node, offset) {
+    let o = offset;
+    const points = [];
+    node.slots.forEach(slot => {
+      if (slot.feeder) {
+        place(slot.feeder, o);
+        points.push(slot.feeder.y);
+        o += slot.feeder.span;
+      } else {
+        points.push(o + 0.5);
+        o += 1;
+      }
+    });
+    node.span = Math.max(o - offset, 1);
+    node.y = points.length ? points.reduce((a, b) => a + b, 0) / points.length
+                           : offset + node.span / 2;
+  }
+  roots.forEach(r => { place(r, cursor); cursor += r.span; });
+
+  return { nodes, roots, cols: maxDepth + 1, leaves: cursor };
+}
+
 function renderBracket(schedule) {
   const body  = document.getElementById('body-bracket');
   const badge = document.getElementById('badge-bracket');
   if (!body) return;
 
-  const pGames = schedule.filter(isPlayoff);
-
-  if (pGames.length === 0) {
+  const tree = buildBracketTree(schedule.filter(isPlayoff));
+  if (!tree) {
     badge.textContent = '';
     body.innerHTML = '<div class="empty-state">Bracket will appear here once playoffs begin.</div>';
     return;
   }
 
-  // ── Group by roundTime key (preserve original case/suffix for display) ──
-  const roundMap = new Map();
-  pGames.forEach(g => {
-    const key = (g.roundTime || '').trim();
-    if (!roundMap.has(key)) roundMap.set(key, []);
-    roundMap.get(key).push(g);
-  });
+  const { nodes, roots, cols, leaves } = tree;
+  const realCount = nodes.filter(n => !n.isBye).length;
+  badge.textContent = `${realCount} MATCH${realCount !== 1 ? 'ES' : ''}`;
 
-  // Sort rounds by numeric P value only — handles "P1", "P2.QuarterFinals", "P3.Semis", etc.
-  // e.g. "P2.Round of 16" → extracts 2, never concatenates with other digits
-  const extractPNum = k => { const m = /^P(\d+)/i.exec((k || '').trim()); return m ? +m[1] : 999; };
-  const rounds = [...roundMap.keys()].sort((a, b) => extractPNum(a) - extractPNum(b));
+  // Column 0 is the earliest round, column cols-1 the final.
+  const colOf   = n => cols - 1 - n.depth;
+  const colX    = c => c * (BRK.COL_W + BRK.GAP_W);
+  const centerY = n => BRK.HDR_H + BRK.PAD_T + n.y * BRK.LEAF_H;
 
-  badge.textContent = `${rounds.length} ROUND${rounds.length !== 1 ? 'S' : ''}`;
+  const finalNode  = roots[0];
+  const champion   = finalNode && isReported(finalNode.g) ? finalNode.g.winner : null;
+  const canvasW    = cols * BRK.COL_W + (cols - 1) * BRK.GAP_W + (champion ? BRK.GAP_W + BRK.COL_W : 0);
+  const canvasH    = BRK.HDR_H + BRK.PAD_T + leaves * BRK.LEAF_H + BRK.BOX_H / 2 + 6;
 
-  const gameCounts = rounds.map(r => roundMap.get(r).length);
+  // ── Round headers ────────────────────────────────────────────────
+  const byCol = Array.from({ length: cols }, () => []);
+  nodes.forEach(n => byCol[colOf(n)].push(n));
 
-  // ── Human-readable label driven by game count (not fragile position math) ──
-  function roundLabel(ri) {
-    const n       = gameCounts[ri];
-    const fromEnd = rounds.length - 1 - ri;
-    if (fromEnd === 0)                       return 'Championship';
-    if (n <= 2  || fromEnd === 1)            return 'Semifinals';
-    if (n <= 4  || fromEnd === 2)            return 'Quarterfinals';
-    if (n <= 8)                              return 'Round of 16';
-    if (n <= 16)                             return 'Round of 32';
-    return `Round of ${n * 2}`;
-  }
+  const headers = byCol.map((colNodes, c) => {
+    // Bye cards carry no round name or match id — label the column from
+    // the real games in it.
+    const real = colNodes.filter(n => !n.isBye);
+    const counts = new Map();
+    real.forEach(n => {
+      const l = cleanRoundLabel(n.g.roundTime);
+      if (l) counts.set(l, (counts.get(l) || 0) + 1);
+    });
+    let label = defaultRoundLabel(cols - 1 - c);
+    let best = 0;
+    counts.forEach((v, k) => { if (v > best) { best = v; label = k; } });
 
-  // ── SVG connector: draws bracket lines between two adjacent rounds ──
-  // leftCount = games in the earlier round, rightCount = games in the later round.
-  // Each right-round game feeds from exactly 2 left-round games.
-  // Y positions are expressed in the 0-100 viewBox so they scale to any height.
-  function connectorSVG(leftCount, rightCount) {
-    const clr = 'rgba(255,255,255,.18)';
-    const lines = [];
-    for (let rj = 0; rj < rightCount; rj++) {
-      const ri1 = 2 * rj;       // index of first feeder game in left round
-      const ri2 = 2 * rj + 1;  // index of second feeder game
-      if (ri2 >= leftCount) continue; // safety for odd counts / byes
-
-      // Center Y of each feeder slot (as % of total slots height)
-      const y1   = ((2 * ri1 + 1) / (2 * leftCount)) * 100;
-      const y2   = ((2 * ri2 + 1) / (2 * leftCount)) * 100;
-      const yMid = (y1 + y2) / 2;
-
-      lines.push(
-        // horizontal arm from feeder 1 to mid-column
-        `<line x1="0" y1="${y1.toFixed(3)}" x2="50" y2="${y1.toFixed(3)}" stroke="${clr}" stroke-width="1"/>`,
-        // horizontal arm from feeder 2 to mid-column
-        `<line x1="0" y1="${y2.toFixed(3)}" x2="50" y2="${y2.toFixed(3)}" stroke="${clr}" stroke-width="1"/>`,
-        // vertical spine connecting the two arms
-        `<line x1="50" y1="${y1.toFixed(3)}" x2="50" y2="${y2.toFixed(3)}" stroke="${clr}" stroke-width="1"/>`,
-        // horizontal arm from spine midpoint to right-round card
-        `<line x1="50" y1="${yMid.toFixed(3)}" x2="100" y2="${yMid.toFixed(3)}" stroke="${clr}" stroke-width="1"/>`
-      );
-    }
-    return `<svg viewBox="0 0 100 100" preserveAspectRatio="none">${lines.join('')}</svg>`;
-  }
-
-  // ── Build HTML ───────────────────────────────────────────────────
-  const parts = rounds.map((rnd, ri) => {
-    const games    = roundMap.get(rnd);
-    const isLast   = ri === rounds.length - 1;
-    // Slots in later rounds get proportionally larger flex so one game
-    // is vertically centred across the pair of games it receives from.
-    // R0→flex:1, R1→flex:2, R2→flex:4, R3→flex:8 …
-    const slotFlex = Math.pow(2, ri);
-
-    const slotsHTML = games.map(g => `
-      <div class="bracket-slot" style="flex:${slotFlex}">
-        ${bracketMatchHTML(g, isLast)}
-      </div>
-    `).join('');
-
-    const col = `
-      <div class="bracket-round-col">
-        <div class="bracket-round-hdr">
-          ${esc(roundLabel(ri))}
-          <span class="round-key">(${esc(rnd)})</span>
-        </div>
-        <div class="bracket-slots-col">${slotsHTML}</div>
-      </div>
-    `;
-
-    if (!isLast) {
-      const conn = `
-        <div class="bracket-conn-col">
-          <div class="bracket-conn-hdr-spacer"></div>
-          <div class="bracket-conn-svg-wrap">
-            ${connectorSVG(gameCounts[ri], gameCounts[ri + 1])}
-          </div>
-        </div>
-      `;
-      return col + conn;
-    }
-    return col;
-  });
-
-  body.innerHTML = `
-    <div class="bracket-outer">
-      <div class="bracket-row">${parts.join('')}</div>
-    </div>
-  `;
-}
-
-function bracketMatchHTML(game, isChampion) {
-  const reported = isReported(game);
-  const winner   = reported ? (game.winner || '').trim() : null;
-
-  // Extract seed number from names like "Dodgeball Dynamos (#3)" → "3"
-  function extractSeed(name) {
-    const m = /\(#(\d+)\)/.exec(name || '');
-    return m ? m[1] : null;
-  }
-
-  function teamRowHTML(teamName, isWinner) {
-    const n = (teamName || '').trim();
-    // A placeholder is an un-determined slot: "Winner P1", "TBD", blank, or «—»
-    const isPlaceholder = !n || /^Winner\s+P/i.test(n) || n === 'TBD' || n === '—';
-
-    let rowCls = 'bracket-team-row';
-    if (isPlaceholder) rowCls += ' placeholder';
-    else if (isWinner) rowCls += ' winner';
-
-    const seed     = isPlaceholder ? '?' : (extractSeed(n) || '—');
-    const winLabel = isWinner ? '<span class="bt-win-label">W</span>' : '';
+    const nums = real.map(n => n.num).sort((a, b) => a - b);
+    const key  = nums.length === 0 ? ''
+               : nums.length > 1  ? `P${nums[0]}–P${nums[nums.length - 1]}`
+                                  : `P${nums[0]}`;
 
     return `
-      <div class="${rowCls}">
-        <div class="bt-seed">${esc(seed)}</div>
-        <div class="bt-name">${esc(n || 'TBD')}</div>
-        ${winLabel}
+      <div class="bracket-round-hdr" style="left:${colX(c)}px;top:0;width:${BRK.COL_W}px;height:${BRK.HDR_H}px">
+        <span>${esc(label)}</span>
+        <span class="round-key">${esc(key)}</span>
       </div>
     `;
+  }).join('');
+
+  // ── Connectors ───────────────────────────────────────────────────
+  const lines = [];
+  nodes.forEach(node => {
+    const nx = colX(colOf(node));
+    const ny = centerY(node);
+    const midX = nx - BRK.GAP_W / 2;
+    node.slots.forEach((slot, i) => {
+      if (!slot.feeder) return;
+      const fx = colX(colOf(slot.feeder)) + BRK.COL_W;
+      const fy = centerY(slot.feeder);
+      const slotY = ny - BRK.BOX_H / 4 + i * (BRK.BOX_H / 2);
+      const decided = isReported(slot.feeder.g);
+      const clr = decided ? 'rgba(224,184,99,.42)' : 'rgba(255,255,255,.16)';
+      const w   = decided ? 1.6 : 1.2;
+      lines.push(
+        `<path d="M ${fx} ${fy} H ${midX} V ${slotY} H ${nx}" fill="none" stroke="${clr}" stroke-width="${w}"/>`
+      );
+    });
+  });
+
+  // ── Match cards ──────────────────────────────────────────────────
+  const cards = nodes.map(node => {
+    const x = colX(colOf(node));
+    const y = centerY(node) - BRK.BOX_H / 2;
+    const ready = !isReported(node.g) && node.slots.every(isRealTeamSlot);
+    const gold  = node === finalNode && champion;
+    const tag   = node.isBye ? 'BYE' : `P${node.num}`;
+    return `
+      <div class="bracket-match${gold ? ' champion' : ''}${ready ? ' live' : ''}${node.isBye ? ' is-bye' : ''}"
+           style="left:${x}px;top:${y}px;width:${BRK.COL_W}px;height:${BRK.BOX_H}px">
+        ${bracketTeamRowHTML(node, 0)}
+        ${bracketTeamRowHTML(node, 1)}
+      </div>
+      <span class="bracket-match-tag${gold ? ' champion' : ''}${node.isBye ? ' is-bye' : ''}" style="left:${x + 8}px;top:${y - 7}px">${tag}</span>
+    `;
+  }).join('');
+
+  const champHTML = champion ? `
+    <div class="bracket-champ"
+         style="left:${colX(cols - 1) + BRK.COL_W + BRK.GAP_W}px;top:${centerY(finalNode) - BRK.BOX_H / 2}px;width:${BRK.COL_W}px;height:${BRK.BOX_H}px">
+      <span>🏆</span>
+      <span class="bc-name">
+        <span class="bc-label" style="display:block">CHAMPION</span>
+        ${esc(teamLabel(champion))}
+      </span>
+    </div>
+  ` : '';
+
+  body.innerHTML = `
+    <div class="bracket-fit" id="bracket-fit">
+      <div class="bracket-canvas" id="bracket-canvas" style="width:${canvasW}px;height:${canvasH}px">
+        <svg class="bracket-conn-layer" viewBox="0 0 ${canvasW} ${canvasH}" width="${canvasW}" height="${canvasH}">${lines.join('')}</svg>
+        ${headers}
+        ${cards}
+        ${champHTML}
+      </div>
+    </div>
+  `;
+
+  fitBracket();
+}
+
+function bracketTeamRowHTML(node, i) {
+  const slot = node.slots[i];
+  const raw  = slot.raw;
+
+  let text, placeholder = false, bye = false;
+  if (isByeSlot(raw)) {
+    text = 'Bye';
+    bye = true;
+  } else if (slot.feeder && !slot.feeder.isBye && !isReported(slot.feeder.g)) {
+    text = `Winner of P${slot.feeder.num}`;
+    placeholder = true;
+  } else if (placeholderRef(raw) !== null) {
+    text = `Winner of P${placeholderRef(raw)}`;
+    placeholder = true;
+  } else if (isBlankSlot(raw)) {
+    text = 'TBD';
+    placeholder = true;
+  } else {
+    text = teamLabel(raw);
   }
 
+  const decided  = isReported(node.g);
+  const isWinner = decided && !placeholder && !bye && normTeam(node.g.winner) === normTeam(raw);
+
+  let cls = 'bracket-team-row';
+  if (bye) cls += ' bye';
+  else if (placeholder) cls += ' placeholder';
+  else if (isWinner) cls += ' winner';
+  else if (decided) cls += ' eliminated';
+
+  const seed = bye ? '–' : placeholder ? '?' : (teamSeed(raw) || '—');
+
   return `
-    <div class="bracket-match${isChampion ? ' champion' : ''}">
-      ${teamRowHTML(game.team1, reported && winner === game.team1)}
-      ${teamRowHTML(game.team2, reported && winner === game.team2)}
+    <div class="${cls}">
+      <div class="bt-seed">${esc(seed)}</div>
+      <div class="bt-name">${esc(text)}</div>
+      ${isWinner ? '<span class="bt-win-label">W</span>' : ''}
     </div>
   `;
 }
+
+// Scale the canvas down so the whole bracket fits the module, however
+// many rounds a division has. Below MIN_SCALE we let it scroll instead.
+function fitBracket() {
+  const fit    = document.getElementById('bracket-fit');
+  const canvas = document.getElementById('bracket-canvas');
+  if (!fit || !canvas) return;
+
+  const natW = parseFloat(canvas.style.width);
+  const natH = parseFloat(canvas.style.height);
+  if (!natW || !natH) return;
+
+  const card   = document.getElementById('module-bracket');
+  const availW = fit.clientWidth;
+  if (!availW) return;
+  // Height budget comes from the viewport, not from the module body —
+  // the body is content-sized on narrow layouts, so measuring it would
+  // feed the scale back into its own input.
+  const expanded = card && card.classList.contains('expanded');
+  const availH = window.innerHeight * (expanded ? 0.78 : 0.62);
+
+  // `zoom` rather than `transform: scale()` so the scaled box still
+  // drives layout — otherwise the scroll container reserves room for
+  // the unscaled canvas and shows phantom scrollbars.
+  const scale = Math.max(BRK.MIN_SCALE, Math.min(1, availW / natW, availH / natH));
+  if (canvas.dataset.scale === String(scale)) return;
+  canvas.dataset.scale = String(scale);
+  canvas.style.zoom = String(scale);
+}
+
+if (window.ResizeObserver) {
+  const bracketRO = new ResizeObserver(() => fitBracket());
+  document.addEventListener('DOMContentLoaded', () => {
+    const b = document.getElementById('body-bracket');
+    if (b) bracketRO.observe(b);
+  });
+}
+window.addEventListener('resize', fitBracket);
 
 // ================================================================
 // FULLSCREEN
@@ -2108,6 +2432,62 @@ async function openSetupFromCtrl() {
 }
 
 // ================================================================
+// MATCH CLOCK ENGINE
+// ================================================================
+async function fetchTimerState(divName) {
+  if (window.__DATA_BACKEND__ !== 'local') return; // Firebase uses realtime listener
+  try {
+    const r = await fetch(`${API}/api/timer?sheetName=${encodeURIComponent(divName)}`);
+    if (r.ok) {
+      const payload = await r.json();
+      SB.timerState = {
+        running:               payload.running || false,
+        duration:              payload.duration ?? 300,
+        startTime:             payload.startTime || 0,
+        startAfterRoundRunning: payload.startAfterRoundRunning || false,
+        lastSetDuration:       payload.lastSetDuration || 300,
+        serverOffset:          0,
+      };
+    }
+  } catch(e) {
+    console.error('[timer] Failed to fetch timer state', e);
+  }
+}
+
+function startMatchClockTicker() {
+  if (SB.timerIntervalId) clearInterval(SB.timerIntervalId);
+
+  function tick() {
+    const el = document.getElementById('match-clock');
+    if (!el) return;
+
+    const state = SB.timerState;
+    let remaining = state.duration ?? 300;
+
+    if (state.running && state.startTime) {
+      const now = Date.now() + (state.serverOffset || 0);
+      remaining = Math.max(0, state.duration - Math.floor((now - state.startTime) / 1000));
+    }
+
+    const m = String(Math.floor(remaining / 60));
+    const s = String(remaining % 60).padStart(2, '0');
+    el.textContent = `${m}:${s}`;
+
+    // Color matches main app: gold-light running, gold after-round, warn stopped
+    if (!state.running) {
+      el.style.color = 'var(--warn)';
+    } else if (state.startAfterRoundRunning) {
+      el.style.color = 'var(--gold)';
+    } else {
+      el.style.color = 'var(--gold-l)';
+    }
+  }
+
+  tick();
+  SB.timerIntervalId = setInterval(tick, 250);
+}
+
+// ================================================================
 // ANNOUNCEMENTS DATA ENGINE
 // ================================================================
 async function fetchAnnouncements() {
@@ -2239,6 +2619,29 @@ function launch() {
         renderAnnouncements();
       });
 
+      // Subscribe to global match timer
+      const timerRef = db.ref('timer');
+      activeFbRefs.push(timerRef);
+      timerRef.on('value', (snap) => {
+        const val = snap.val();
+        if (!val) return;
+        SB.timerState = {
+          running:               val.running || false,
+          duration:              val.duration ?? 300,
+          startTime:             val.startTime || 0,
+          startAfterRoundRunning: val.startAfterRoundRunning || false,
+          lastSetDuration:       val.lastSetDuration || 300,
+          serverOffset:          SB.timerState.serverOffset || 0,
+        };
+      });
+
+      // Server time offset for accurate countdown
+      const offsetRef = db.ref('.info/serverTimeOffset');
+      activeFbRefs.push(offsetRef);
+      offsetRef.on('value', (snap) => {
+        SB.timerState.serverOffset = snap.val() || 0;
+      });
+
     } else {
       console.warn('Firebase library not loaded, falling back to REST polling.');
       SB.divisions.forEach(div => startPolling(div));
@@ -2268,12 +2671,28 @@ function launch() {
           SB.announcements = list || [];
           renderAnnouncements();
         });
+
+        SB.socket.on('timerUpdate', (payload) => {
+          // Timer is per-division; only apply if it's for the active division
+          if (payload.division && payload.division !== SB.divisions[SB.activeIndex]) return;
+          console.log('[Websocket Timer Sync]', payload);
+          SB.timerState = {
+            running:               payload.running || false,
+            duration:              payload.duration ?? 300,
+            startTime:             payload.startTime || 0,
+            startAfterRoundRunning: payload.startAfterRoundRunning || false,
+            lastSetDuration:       payload.lastSetDuration || 300,
+            serverOffset:          0,
+          };
+        });
       }
       SB.divisions.forEach(div => {
         SB.socket.emit('joinDivision', div);
         // Load initial state via HTTP REST so it renders instantly
         fetchAndCache(div).catch(console.error);
       });
+      // Fetch initial timer state for the active division
+      fetchTimerState(SB.divisions[SB.activeIndex]).catch(console.error);
     } else {
       console.warn('Socket.IO not loaded, falling back to REST polling.');
       SB.divisions.forEach(div => startPolling(div));
@@ -2282,6 +2701,9 @@ function launch() {
 
   // Start auto-rotate
   if (showRotate) startRotate();
+
+  // Start match clock ticker (runs continuously, updates from timerState)
+  startMatchClockTicker();
 }
 
 // ================================================================

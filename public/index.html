@@ -1,10 +1,13 @@
 <!DOCTYPE html>
 <html lang="en">
+
 <head>
-    <base target="_top">        
-   
+    <base target="_top">
+
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
     <title>Dodgeball Tournament Tracker</title>
+    <link href="https://googleapis.com" rel="stylesheet">
+
     <!--
     <script src="https://cdn.tailwindcss.com"></script>
     <script>
@@ -28,157 +31,184 @@
     <script>
         //main app namespace for configurations and data
         const App = {
-          state: {
-            isAdmin: false,
-            currentView: 'standings',
-            // 'gate' (division picker landing) or 'app' (tab-bar app shell).
-            // Returning visitors with a previously-selected division skip
-            // straight to 'app' — see fetchDivisionNames() in navigation.js.
-            screen: 'gate',
-            // Staff identity, captured once at login (not per-action) —
-            // threaded into match results, chat "who", and the court filter
-            // default. Court managers pick a court; tournament managers don't.
-            reporterName: '',
-            selectedCourt: ''
-          },
+            state: {
+                isAdmin: false,
+                isParent: false,
+                currentView: 'standings',
+                // 'gate' (division picker landing) or 'app' (tab-bar app shell).
+                // Returning visitors with a previously-selected division skip
+                // straight to 'app' — see fetchDivisionNames() in navigation.js.
+                screen: 'gate',
+                // Staff identity, captured once at login (not per-action) —
+                // threaded into match results, chat "who", and the court filter
+                // default. Court managers pick a court; tournament managers don't.
+                reporterName: '',
+                selectedCourt: ''
+            },
 
-          config: {
-            currentSheetName: ''
-          },
-          settings: {},
-          data: {
-            allDivisionNames: [],
-            allStandingsData: [],
-            allScheduleData: [],
-            teamNames: [],
-            courtNames: []
-          },
+            config: {
+                currentSheetName: ''
+            },
+            settings: {},
+            data: {
+                allDivisionNames: [],
+                allStandingsData: [],
+                allScheduleData: [],
+                teamNames: [],
+                courtNames: []
+            },
 
-          admin: {
-            currentGameIndex: null
-          },
-          refresh: {
-            isLoadingData: false,
-          }
-           
+            admin: {
+                currentGameIndex: null
+            },
+            refresh: {
+                isLoadingData: false,
+            }
+
         }
     </script>
-   
+
 
     <script type="module" src="./js/api.js"></script>
-    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@100..900&display=swap" rel="stylesheet">
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@100..900&family=Luckiest+Guy&display=swap"
+        rel="stylesheet">
     <style>
-  /* --- REDESIGN TOKENS (used via var(--x) in inline styles + JS-rendered markup;
+        /* --- REDESIGN TOKENS (used via var(--x) in inline styles + JS-rendered markup;
        also registered as Tailwind colors in tailwind.config.js for utility classes) --- */
-  :root {
-      --mar: #7B1D2B;
-      --mar-l: #A6303F;
-      --mar-d: #4E101B;
-      --gold: #E0B863;
-      --gold-l: #F3DCA9;
-      --gold-d: #B8893A;
-      --ink: #1A1A1C;
-      --mute: #6C6C70;
-      --line: rgba(18,18,20,.09);
-      --ok: #2E9E63;
-      --warn: #D9503C;
+        :root {
+            --mar: #7B1D2B;
+            --mar-l: #A6303F;
+            --mar-d: #4E101B;
+            --gold: #E0B863;
+            --gold-l: #F3DCA9;
+            --gold-d: #B8893A;
+            --ink: #1A1A1C;
+            --mute: #6C6C70;
+            --line: rgba(18, 18, 20, .09);
+            --ok: #2E9E63;
+            --warn: #D9503C;
 
-      /* Page ground wash — maroon at the top blending to near-black by ~440px.
+            /* Page ground wash — maroon at the top blending to near-black by ~440px.
          Declared once here and painted by BOTH `body` (src/input.css @layer
          base) and `.app-header`, always with `background-attachment: fixed`.
          Because a fixed background is positioned against the viewport, the two
          resolve to identical pixels, which is what lets the header be fully
          OPAQUE and still have no visible seam where it meets the page.
          The final layer is opaque, so nothing scrolling under shows through. */
-      --page-wash:
-        radial-gradient(760px 440px at 14% -8%, #55192A 0%, rgba(64,25,33,.62) 34%, transparent 70%),
-        radial-gradient(680px 460px at 100% 10%, #24211F 0%, transparent 62%),
-        linear-gradient(180deg, #141416 0%, #0C0C0D 58%, #0A0A0B 100%);
-  }
+            --page-wash:
+                radial-gradient(760px 440px at 14% -8%, #55192A 0%, rgba(64, 25, 33, .62) 34%, transparent 70%),
+                radial-gradient(680px 460px at 100% 10%, #24211F 0%, transparent 62%),
+                linear-gradient(180deg, #141416 0%, #0C0C0D 58%, #0A0A0B 100%);
+        }
 
-  /* --- COLOR VARIABLES ---
+        /* --- COLOR VARIABLES ---
      Repointed onto the redesign tokens above instead of a separate duller
      maroon/gold, and onto true neutral grays instead of Tailwind's stock
      blue-leaning slate — this block is consumed directly (not through
      Tailwind) by body/.data-card/scrollbar/.text-primary etc below. */
-  :root {
-      /* School Colors — now the same tokens as --mar/--gold above */
-      --color-maroon-light: var(--mar-l);
-      --color-maroon-primary: var(--mar);
-      --color-maroon-dark: var(--mar-d);
-      --color-gold-light: var(--gold-l);
-      --color-gold-primary: var(--gold);
-      --color-gold-dark: var(--gold-d);
+        :root {
+            /* School Colors — now the same tokens as --mar/--gold above */
+            --color-maroon-light: var(--mar-l);
+            --color-maroon-primary: var(--mar);
+            --color-maroon-dark: var(--mar-d);
+            --color-gold-light: var(--gold-l);
+            --color-gold-primary: var(--gold);
+            --color-gold-dark: var(--gold-d);
 
-      /* Grays (true neutral scale, matches tailwind.config.js's gray override) */
-      --color-gray-900: #18181A; /* Body Background */
-      --color-gray-800: #222224; /* Card Background */
-      --color-gray-700: #333335; /* Border Default */
-      --color-gray-600: #4A4A4D; /* Scrollbar Hover */
-      --color-gray-500: var(--mute);
-      --color-gray-400: #9A9A9E; /* Muted Text/Tab Default */
-      --color-gray-100: #F0F0F1; /* Default Text */
+            /* Grays (true neutral scale, matches tailwind.config.js's gray override) */
+            --color-gray-900: #18181A;
+            /* Body Background */
+            --color-gray-800: #222224;
+            /* Card Background */
+            --color-gray-700: #333335;
+            /* Border Default */
+            --color-gray-600: #4A4A4D;
+            /* Scrollbar Hover */
+            --color-gray-500: var(--mute);
+            --color-gray-400: #9A9A9E;
+            /* Muted Text/Tab Default */
+            --color-gray-100: #F0F0F1;
+            /* Default Text */
 
-      /* Semantic UI Colors */
-      --color-text-default: var(--color-gray-100);
-      --color-text-muted: var(--color-gray-400);
-      --color-background-primary: var(--color-gray-900);
-      --color-card-background: var(--color-gray-800);
-      --color-border-default: var(--color-gray-700);
-      --color-accent-primary: var(--color-maroon-primary);
-      --color-accent-secondary: var(--color-gold-primary);
+            /* Semantic UI Colors */
+            --color-text-default: var(--color-gray-100);
+            --color-text-muted: var(--color-gray-400);
+            --color-background-primary: var(--color-gray-900);
+            --color-card-background: var(--color-gray-800);
+            --color-border-default: var(--color-gray-700);
+            --color-accent-primary: var(--color-maroon-primary);
+            --color-accent-secondary: var(--color-gold-primary);
 
-    /* Tailwind Utility Mappings: Connects classes like 'text-primary' to your colors */
-      --color-primary: var(--color-maroon-primary);
-      --color-secondary: var(--color-gold-primary);
-      --color-accent: var(--color-gold-light);
-      --color-danger: var(--warn);
-  }
+            /* Tailwind Utility Mappings: Connects classes like 'text-primary' to your colors */
+            --color-primary: var(--color-maroon-primary);
+            --color-secondary: var(--color-gold-primary);
+            --color-accent: var(--color-gold-light);
+            --color-danger: var(--warn);
+        }
 
-  /* ****************************************************** */
-  /* ********** MANUAL TAILWIND UTILITY CLASSES *********** */
-  /* ****************************************************** */
-  /* Fixes the colors you see as blue in the standings table */
+        /* ****************************************************** */
+        /* ********** MANUAL TAILWIND UTILITY CLASSES *********** */
+        /* ****************************************************** */
+        /* Fixes the colors you see as blue in the standings table */
 
-  /* Text Colors */
-  .text-primary { color: var(--color-primary); }
-  .text-secondary { color: var(--color-secondary); }
-  .text-accent { color: var(--color-accent); } 
-  
-  /* Background Colors */
-  .bg-primary { background-color: var(--color-primary); }
-  .bg-secondary { background-color: var(--color-secondary); }
-  
-  /* Border Colors */
-  .border-primary { border-color: var(--color-primary); }
-  .border-secondary { border-color: var(--color-secondary); }
-  
-  /* Special Utility for Table Header (bg-secondary/70) */
-  /* This requires a slightly different approach for opacity */
-  .bg-secondary\/70 { 
-      /* Uses your gold color with 70% opacity */
-      background-color: color-mix(in srgb, var(--color-secondary) 70%, transparent);
-      /* Fallback for older browsers (can be set to a solid shade) */
-      background-color: var(--color-gold-dark); /* Using Gold Dark (#9F8C58) as an alternative solid shade */
-  }
+        /* Text Colors */
+        .text-primary {
+            color: var(--color-primary);
+        }
 
-  /* ****************************************************** */
-  /* ******************* EXISTING STYLES ****************** */
-  /* ****************************************************** */
-  /* ------------------------------ */
+        .text-secondary {
+            color: var(--color-secondary);
+        }
 
-  body {
-      font-family: 'Inter', sans-serif;
-      /* NOTE: the page-ground wash is declared in src/input.css's @layer base,
+        .text-accent {
+            color: var(--color-accent);
+        }
+
+        /* Background Colors */
+        .bg-primary {
+            background-color: var(--color-primary);
+        }
+
+        .bg-secondary {
+            background-color: var(--color-secondary);
+        }
+
+        /* Border Colors */
+        .border-primary {
+            border-color: var(--color-primary);
+        }
+
+        .border-secondary {
+            border-color: var(--color-secondary);
+        }
+
+        /* Special Utility for Table Header (bg-secondary/70) */
+        /* This requires a slightly different approach for opacity */
+        .bg-secondary\/70 {
+            /* Uses your gold color with 70% opacity */
+            background-color: color-mix(in srgb, var(--color-secondary) 70%, transparent);
+            /* Fallback for older browsers (can be set to a solid shade) */
+            background-color: var(--color-gold-dark);
+            /* Using Gold Dark (#9F8C58) as an alternative solid shade */
+        }
+
+        /* ****************************************************** */
+        /* ******************* EXISTING STYLES ****************** */
+        /* ****************************************************** */
+        /* ------------------------------ */
+
+        body {
+            font-family: 'Inter', sans-serif;
+            /* NOTE: the page-ground wash is declared in src/input.css's @layer base,
          not here — that sheet loads after this block and would override any
          `background` set on `body` at this point. */
-      color: var(--color-text-default);
-      -webkit-tap-highlight-color: transparent;
-      padding: 0;
-      margin: 0;
-  }
+            color: var(--color-text-default);
+            -webkit-tap-highlight-color: transparent;
+            padding: 0;
+            margin: 0;
+        }
 
-  /* App header — OPAQUE, painting the very same fixed --page-wash the body
+        /* App header — OPAQUE, painting the very same fixed --page-wash the body
      paints. Fixed backgrounds are positioned against the viewport, so the
      header's copy lines up pixel-for-pixel with the body's underneath it: the
      header hides everything scrolling beneath (white cards included) while the
@@ -186,417 +216,701 @@
      Do not make this translucent or add a backdrop-filter — a light card
      scrolling under it washes the header out and the white text stops being
      readable. Any change to the wash goes in --page-wash, not here. */
-  .app-header {
-      background: var(--page-wash);
-      background-attachment: fixed;
-      background-repeat: no-repeat;
-      /* Faint top-light, consistent with the design's glass surfaces. */
-      box-shadow: inset 0 1px 0 rgba(255,255,255,.07);
-  }
+        .app-header {
+            background: var(--page-wash);
+            background-attachment: fixed;
+            background-repeat: no-repeat;
+            /* Faint top-light, consistent with the design's glass surfaces. */
+            box-shadow: inset 0 1px 0 rgba(255, 255, 255, .07);
+        }
 
-  .data-card {
-      background-color: var(--color-card-background); /* Color Variable: #1F2937 (Gray 800) */
-      border: 1px solid var(--color-border-default); /* Color Variable: #374151 (Gray 700) */
-  }
-  ::-webkit-scrollbar {
-      width: 6px;
-      height: 6px;
-  }
-  ::-webkit-scrollbar-thumb {
-      background: var(--color-border-default); /* Color Variable: #374151 (Gray 700) */
-      border-radius: 3px;
-  }
-  ::-webkit-scrollbar-thumb:hover {
-      background: var(--color-gray-600); /* Color Variable: #4B5563 (Gray 600) */
-  }
+        .data-card {
+            background-color: var(--color-card-background);
+            /* Color Variable: #1F2937 (Gray 800) */
+            border: 1px solid var(--color-border-default);
+            /* Color Variable: #374151 (Gray 700) */
+        }
 
-  /* Bottom tab bar buttons — design §navigation: 19px radius pill, emoji icon
+        ::-webkit-scrollbar {
+            width: 6px;
+            height: 6px;
+        }
+
+        ::-webkit-scrollbar-thumb {
+            background: var(--color-border-default);
+            /* Color Variable: #374151 (Gray 700) */
+            border-radius: 3px;
+        }
+
+        ::-webkit-scrollbar-thumb:hover {
+            background: var(--color-gray-600);
+            /* Color Variable: #4B5563 (Gray 600) */
+        }
+
+        /* Bottom tab bar buttons — design §navigation: 19px radius pill, emoji icon
      over a 600 8px/.08em label, gold/maroon gradient on the active tab. */
-  .tab-button {
-      flex: 1;
-      min-width: 0;
-      display: flex;
-      flex-direction: column;
-      align-items: center;
-      justify-content: center;
-      padding: 10px 2px;
-      background: transparent;
-      border: 0;
-      border-radius: 19px;
-      color: rgba(255,255,255,.45);
-      transition: background .2s, color .2s;
-      cursor: pointer;
-  }
-  .tab-button.hidden { display: none; }
-  .tab-button:hover {
-      color: rgba(255,255,255,.7);
-  }
-  .tab-icon {
-      position: relative;
-      font-size: 15px;
-      line-height: 1;
-  }
-  .tab-label {
-      margin-top: 5px;
-      font-size: 8px;
-      font-weight: 600;
-      line-height: 1;
-      letter-spacing: .08em;
-  }
-  /* Unread dot, anchored to the CHAT tab's icon (design §11) */
-  #chat-unread-dot {
-      position: absolute;
-      top: -3px;
-      right: -6px;
-      width: 9px;
-      height: 9px;
-      border-radius: 999px;
-      border: 1.5px solid rgba(20,20,22,.9);
-  }
-  #chat-unread-dot.hidden { display: none; }
-  .tab-active, .tab-admin-active {
-      background: linear-gradient(150deg, rgba(224,184,99,.22) 0%, rgba(166,48,63,.28) 100%);
-      color: #F3DCA9; /* gold-l */
-  }
+        .tab-button {
+            flex: 1;
+            min-width: 0;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            padding: 10px 2px;
+            background: transparent;
+            border: 0;
+            border-radius: 19px;
+            color: rgba(255, 255, 255, .45);
+            transition: background .2s, color .2s;
+            cursor: pointer;
+        }
+
+        .tab-button.hidden {
+            display: none;
+        }
+
+        .tab-button:hover {
+            color: rgba(255, 255, 255, .7);
+        }
+
+        .tab-icon {
+            position: relative;
+            font-size: 15px;
+            line-height: 1;
+        }
+
+        .tab-label {
+            margin-top: 5px;
+            font-size: 8px;
+            font-weight: 600;
+            line-height: 1;
+            letter-spacing: .08em;
+        }
+
+        /* Unread dot, anchored to the CHAT tab's icon (design §11) */
+        #chat-unread-dot {
+            position: absolute;
+            top: -3px;
+            right: -6px;
+            width: 9px;
+            height: 9px;
+            border-radius: 999px;
+            border: 1.5px solid rgba(20, 20, 22, .9);
+        }
+
+        #chat-unread-dot.hidden {
+            display: none;
+        }
+
+        .tab-active,
+        .tab-admin-active {
+            background: linear-gradient(150deg, rgba(224, 184, 99, .22) 0%, rgba(166, 48, 63, .28) 100%);
+            color: #F3DCA9;
+            /* gold-l */
+        }
 
 
-  /* Fixed Top Navigation */
-  .fixed-top-nav {
-      position: fixed;
-      top: 0;
-      left: 0;
-      right: 0;
-      z-index: 50; /* Above main content */
-      background-color: var(--color-background-primary); /* Color Variable: #0F172A (Gray 900) */
-      border-bottom: 2px solid var(--color-accent-primary); /* Color Variable: #DC2626 -> #572932 (Maroon Primary) */
-  }
+        /* Fixed Top Navigation */
+        .fixed-top-nav {
+            position: fixed;
+            top: 0;
+            left: 0;
+            right: 0;
+            z-index: 50;
+            /* Above main content */
+            background-color: var(--color-background-primary);
+            /* Color Variable: #0F172A (Gray 900) */
+            border-bottom: 2px solid var(--color-accent-primary);
+            /* Color Variable: #DC2626 -> #572932 (Maroon Primary) */
+        }
 
-  /* Adjust main content padding to account for fixed nav height (No color changes here) */
-  .main-content-wrapper {
-      padding-top: 6rem; /* Sufficient padding for fixed nav */
-      padding-left: 0.75rem; 
-      padding-right: 0.75rem; 
-      padding-bottom: 0.75rem;
-      max-width: 7xl;
-      margin-left: auto;
-      margin-right: auto;
-  }
+        /* Adjust main content padding to account for fixed nav height (No color changes here) */
+        .main-content-wrapper {
+            padding-top: 6rem;
+            /* Sufficient padding for fixed nav */
+            padding-left: 0.75rem;
+            padding-right: 0.75rem;
+            padding-bottom: 0.75rem;
+            max-width: 7xl;
+            margin-left: auto;
+            margin-right: auto;
+        }
 
-  /* Toggle switch — design tokens: 46×26 track, 22px knob, white on a
+        /* Toggle switch — design tokens: 46×26 track, 22px knob, white on a
      rgba(255,255,255,.14) off-track. `.slider-ok` opts into the green ON fill
      used for "Show clock to everyone"; everything else uses maroon. */
-    .switch {
-      position: relative;
-      display: inline-block;
-      width: 46px;
-      height: 26px;
-      flex: none;
-    }
+        .switch {
+            position: relative;
+            display: inline-block;
+            width: 46px;
+            height: 26px;
+            flex: none;
+        }
 
-    /* Hide the default HTML checkbox */
-    .switch input {
-      opacity: 0;
-      width: 0;
-      height: 0;
-      position: absolute;
-    }
+        /* Hide the default HTML checkbox */
+        .switch input {
+            opacity: 0;
+            width: 0;
+            height: 0;
+            position: absolute;
+        }
 
-    /* The slider (the track) */
-    .slider {
-      position: absolute;
-      cursor: pointer;
-      inset: 0;
-      background: rgba(255,255,255,.14);
-      border: 1px solid rgba(255,255,255,.12);
-      transition: background .22s ease, border-color .22s ease;
-    }
+        /* The slider (the track) */
+        .slider {
+            position: absolute;
+            cursor: pointer;
+            inset: 0;
+            background: rgba(255, 255, 255, .14);
+            border: 1px solid rgba(255, 255, 255, .12);
+            transition: background .22s ease, border-color .22s ease;
+        }
 
-    /* The slider's thumb (the circle) */
-    .slider:before {
-      position: absolute;
-      content: "";
-      height: 22px;
-      width: 22px;
-      left: 1px;
-      top: 1px;
-      background-color: #fff;
-      box-shadow: 0 2px 6px rgba(0,0,0,.28);
-      transition: transform .22s ease;
-    }
+        /* The slider's thumb (the circle) */
+        .slider:before {
+            position: absolute;
+            content: "";
+            height: 22px;
+            width: 22px;
+            left: 1px;
+            top: 1px;
+            background-color: #fff;
+            box-shadow: 0 2px 6px rgba(0, 0, 0, .28);
+            transition: transform .22s ease;
+        }
 
-    /* When the checkbox is checked (ON) */
-    input:checked + .slider {
-      background: linear-gradient(135deg, var(--mar-l) 0%, var(--mar) 100%);
-      border-color: transparent;
-    }
-    input:checked + .slider.slider-ok {
-      background: linear-gradient(135deg, var(--ok) 0%, #21774A 100%);
-    }
+        /* When the checkbox is checked (ON) */
+        input:checked+.slider {
+            background: linear-gradient(135deg, var(--mar-l) 0%, var(--mar) 100%);
+            border-color: transparent;
+        }
 
-    /* Move the thumb to the right when ON */
-    input:checked + .slider:before {
-      transform: translateX(20px); /* 46px track − 22px knob − 2×1px inset + 1px */
-    }
+        input:checked+.slider.slider-ok {
+            background: linear-gradient(135deg, var(--ok) 0%, #21774A 100%);
+        }
 
-    /* Rounded corners for the track and thumb */
-    .slider.round {
-      border-radius: 999px;
-    }
+        /* Move the thumb to the right when ON */
+        input:checked+.slider:before {
+            transform: translateX(20px);
+            /* 46px track − 22px knob − 2×1px inset + 1px */
+        }
 
-    .slider.round:before {
-      border-radius: 50%;
-    }
+        /* Rounded corners for the track and thumb */
+        .slider.round {
+            border-radius: 999px;
+        }
 
-    /* CSS for Standings Ticker */
-    .standings-ticker-item {
-        padding: 0 1.5rem; /* Spacing between each team's standing */
-        display: inline-flex;
-        align-items: center;
-        gap: 0.5rem;
-        font-size: 0.875rem; /* text-sm */
-    }
-     /* Confetti Container - Crucial for placing confetti absolutely relative to the viewport */
-    #confetti-container {
-        position: fixed;
-        top: 0;
-        left: 0;
-        width: 100vw;
-        height: 100vh;
-        pointer-events: none; /* Allows user interaction with elements beneath the confetti */
-        z-index: 9999;
-    }
+        .slider.round:before {
+            border-radius: 50%;
+        }
 
-    /* Confetti Particle Styling */
-    .confetti {
-      width: 8px;
-      height: 12px;
-      background-color: #f0f;
-      position: absolute;
-      opacity: 0;
-      /* --- ADJUSTED: Set animation to a faster 4s fall time --- */
-      animation: fall 15s cubic-bezier(0.1, 1.0, 0.4, 1.0) forwards;
-    }
+        /* CSS for Standings Ticker */
+        .standings-ticker-item {
+            padding: 0 1.5rem;
+            /* Spacing between each team's standing */
+            display: inline-flex;
+            align-items: center;
+            gap: 0.5rem;
+            font-size: 0.875rem;
+            /* text-sm */
+        }
 
-    /* Keyframe Animation for Confetti */
-    @keyframes fall {
-      0% {
-        opacity: 1;
-        transform: translate(0, 0) rotateZ(0deg);
-      }
-      100% {
-        opacity: 0;
-        transform: translate(var(--x), var(--y)) rotateZ(var(--r));
-      }
-    }
+        /* Confetti Container - Crucial for placing confetti absolutely relative to the viewport */
+        #confetti-container {
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100vw;
+            height: 100vh;
+            pointer-events: none;
+            /* Allows user interaction with elements beneath the confetti */
+            z-index: 9999;
+        }
 
-    #tournament-champion-message.hidden {
-    display: none !important;
-}
+        /* Confetti Particle Styling */
+        .confetti {
+            width: 8px;
+            height: 12px;
+            background-color: #f0f;
+            position: absolute;
+            opacity: 0;
+            /* --- ADJUSTED: Set animation to a faster 4s fall time --- */
+            animation: fall 15s cubic-bezier(0.1, 1.0, 0.4, 1.0) forwards;
+        }
 
-    /* Hide scrollbar but keep scrolling */
-    .no-scrollbar::-webkit-scrollbar {
-      display: none;
-    }
-    .no-scrollbar {
-      -ms-overflow-style: none;
-      scrollbar-width: none;
-    }
+        /* Keyframe Animation for Confetti */
+        @keyframes fall {
+            0% {
+                opacity: 1;
+                transform: translate(0, 0) rotateZ(0deg);
+            }
 
-    /* Prevent full-page horizontal scroll */
-    #division-selector-wrapper-mobile {
-      overflow-x: hidden;
-      max-width: 100vw;
-    }
-    #division-selector-wrapper-mobile > div {
-      scroll-behavior: smooth;
-      overscroll-behavior-x: contain;
-      -webkit-overflow-scrolling: touch;
-    }
+            100% {
+                opacity: 0;
+                transform: translate(var(--x), var(--y)) rotateZ(var(--r));
+            }
+        }
 
-    /* Pulse animation for active button */
-    @keyframes pulseOnce {
-      0% { transform: scale(1); box-shadow: 0 0 0 0 rgba(200,178,115,0.4); }
-      50% { transform: scale(1.08); box-shadow: 0 0 0 6px rgba(200,178,115,0.2); }
-      100% { transform: scale(1); box-shadow: 0 0 0 0 rgba(200,178,115,0); }
-    }
+        #tournament-champion-message.hidden {
+            display: none !important;
+        }
 
-    @keyframes fadeIn {
-      from { opacity: 0; transform: translateY(-6px); }
-      to   { opacity: 1; transform: translateY(0); }
-    }
-    .animate-fade-in {
-      animation: fadeIn 0.25s ease-out;
-    }   
-    #status-toast.show {
-      opacity: 1;
-      transform: translateY(0);
-    }
+        /* Hide scrollbar but keep scrolling */
+        .no-scrollbar::-webkit-scrollbar {
+            display: none;
+        }
 
-    #status-toast.hide {
-      opacity: 0;
-      transform: translateY(12px);
-    }
-    .animate-pulse-once {
-      animation: pulseOnce 0.6s ease-out;
-    }
-/* * The inner box must be position: relative so that the button can be positioned 
+        .no-scrollbar {
+            -ms-overflow-style: none;
+            scrollbar-width: none;
+        }
+
+        /* Prevent full-page horizontal scroll */
+        #division-selector-wrapper-mobile {
+            overflow-x: hidden;
+            max-width: 100vw;
+        }
+
+        #division-selector-wrapper-mobile>div {
+            scroll-behavior: smooth;
+            overscroll-behavior-x: contain;
+            -webkit-overflow-scrolling: touch;
+        }
+
+        /* Pulse animation for active button */
+        @keyframes pulseOnce {
+            0% {
+                transform: scale(1);
+                box-shadow: 0 0 0 0 rgba(200, 178, 115, 0.4);
+            }
+
+            50% {
+                transform: scale(1.08);
+                box-shadow: 0 0 0 6px rgba(200, 178, 115, 0.2);
+            }
+
+            100% {
+                transform: scale(1);
+                box-shadow: 0 0 0 0 rgba(200, 178, 115, 0);
+            }
+        }
+
+        @keyframes fadeIn {
+            from {
+                opacity: 0;
+                transform: translateY(-6px);
+            }
+
+            to {
+                opacity: 1;
+                transform: translateY(0);
+            }
+        }
+
+        .animate-fade-in {
+            animation: fadeIn 0.25s ease-out;
+        }
+
+        #status-toast.show {
+            opacity: 1;
+            transform: translateY(0);
+        }
+
+        #status-toast.hide {
+            opacity: 0;
+            transform: translateY(12px);
+        }
+
+        .animate-pulse-once {
+            animation: pulseOnce 0.6s ease-out;
+        }
+
+        /* * The inner box must be position: relative so that the button can be positioned 
  * absolutely relative to it (top right corner).
  */
-#champion-inner-box {
-    text-align: center;
-    padding: 20px;
-    /* Matches the redesign's Fundraiser card treatment (maroon gradient,
+        #champion-inner-box {
+            text-align: center;
+            padding: 20px;
+            /* Matches the redesign's Fundraiser card treatment (maroon gradient,
        26px radius) so the celebration banner sits in the same language. */
-    background: linear-gradient(140deg, var(--mar) 0%, #3A171C 100%);
-    border: 1px solid rgba(224,184,99,.34);
-    border-radius: 26px;
-    box-shadow: 0 18px 44px rgba(0,0,0,.36);
-    margin-bottom: 14px;
-    /* KEY LINE: Establishes the coordinate system for the absolute button */
-    position: relative;
-}
+            background: linear-gradient(140deg, var(--mar) 0%, #3A171C 100%);
+            border: 1px solid rgba(224, 184, 99, .34);
+            border-radius: 26px;
+            box-shadow: 0 18px 44px rgba(0, 0, 0, .36);
+            margin-bottom: 14px;
+            /* KEY LINE: Establishes the coordinate system for the absolute button */
+            position: relative;
+        }
 
-/* * Styles for the Dismiss Button
+        /* * Styles for the Dismiss Button
  */
-#champion-dismiss-btn {
-    /* KEY LINES: Positions the button in the top right corner */
-    position: absolute; 
-    top: 5px; /* Adjust as needed */
-    right: 5px; /* Adjust as needed */
+        #champion-dismiss-btn {
+            /* KEY LINES: Positions the button in the top right corner */
+            position: absolute;
+            top: 5px;
+            /* Adjust as needed */
+            right: 5px;
+            /* Adjust as needed */
 
-    /* Styling to make it look like a small 'x' icon */
-    background: rgba(255,255,255,.08);
-    border: 1px solid rgba(255,255,255,.18);
-    font-size: 12px;
-    font-weight: 600;
-    color: rgba(255,255,255,.7);
-    cursor: pointer;
-    line-height: 1;
-    width: 22px;
-    height: 22px;
-    padding: 0;
-    border-radius: 999px;
-    transition: color 0.2s;
-}
+            /* Styling to make it look like a small 'x' icon */
+            background: rgba(255, 255, 255, .08);
+            border: 1px solid rgba(255, 255, 255, .18);
+            font-size: 12px;
+            font-weight: 600;
+            color: rgba(255, 255, 255, .7);
+            cursor: pointer;
+            line-height: 1;
+            width: 22px;
+            height: 22px;
+            padding: 0;
+            border-radius: 999px;
+            transition: color 0.2s;
+        }
 
-#champion-dismiss-btn:hover {
-    color: #fff;
-}
+        #champion-dismiss-btn:hover {
+            color: #fff;
+        }
 
-/* Add a transition for the color change */
+        /* Add a transition for the color change */
         #timerDisplay {
             transition: color 0.3s ease;
         }
+
         /* Custom class for the "finished" state */
         .timer-finished {
-            color: #ef4444; /* red-500 */
+            color: #ef4444;
+            /* red-500 */
         }
 
- 
 
-  @media (min-width: 768px) {
-      .main-content-wrapper {
-          padding-top: 7rem; 
-          padding-left: 2rem;
-          padding-right: 2rem;
-      }
-  }
 
-  /* Mobile Schedule View (Card Style) */
-  @media (max-width: 480px) {
-    #schedule-view table thead { display: none; }
-    #schedule-view table, #schedule-view table tbody, #schedule-view table tr, #schedule-view table td {
-        display: block; width: 100%;
-    }
-    #schedule-view table td.team-matchup-column {
-      text-align: left;
-    }
-    #schedule-view table tr {
-        margin-bottom: 0.75rem; 
-        border: 1px solid var(--color-border-default); /* Color Variable: #374151 (Gray 700) */
-        border-radius: 0.5rem; 
-        background-color: var(--color-card-background); /* Color Variable: #1E293B (Using Gray 800) */
-        padding: 0.5rem;
-        border-left: 4px solid var(--color-border-default); /* Used Gray 700 as a fallback, but often this is set dynamically */
-    }
-    #schedule-view table td {
-        padding: 0.3rem 0.5rem; text-align: right; position: relative;
-    }
-    #schedule-view table td::before {
-        content: attr(data-label); 
-        position: absolute; left: 0.5rem; text-align: left; font-weight: 600; 
-        color: #94A3B8; /* Keeping this specific shade as it's not in the main palette yet, but it's close to Gray 400 */
-    }
-    #schedule-view table td.round-column {
-      text-align: left;
-  }
-    .border-l-4 { border-left-width: 0 !important; }
-    
-    /* Admin View Mobile Adjustments (No color changes here) */
-    #admin-match-entry-view .round-header {
-        text-align: left;
-        padding: 0.75rem 0.5rem;
-        font-size: 1.125rem;
-        margin-top: 1rem;
-    }
-    #admin-match-entry-view .match-entry-card {
-        flex-direction: column;
-        padding: 0.75rem;
-    }
-    #admin-match-entry-view .match-details {
-        flex-direction: column;
-        align-items: flex-start;
-        width: 100%;
-        margin-bottom: 0.5rem;
-    }
-    #admin-match-entry-view .match-controls {
-        flex-direction: column;
-        width: 100%;
-    }
-    #admin-match-entry-view .match-controls > * {
-        margin-top: 0.5rem;
-        width: 100%;
-    }
-    
-  }
-  /* Buttons and filters */
-  select, button { touch-action: manipulation; }
-</style>
+        @media (min-width: 768px) {
+            .main-content-wrapper {
+                padding-top: 7rem;
+                padding-left: 2rem;
+                padding-right: 2rem;
+            }
+        }
 
-  <!-- Tailwind generated CSS (built from src/input.css) -->
-  <link rel="stylesheet" href="/dist/output.css">
+        /* Mobile Schedule View (Card Style) */
+        @media (max-width: 480px) {
+            #schedule-view table thead {
+                display: none;
+            }
+
+            #schedule-view table,
+            #schedule-view table tbody,
+            #schedule-view table tr,
+            #schedule-view table td {
+                display: block;
+                width: 100%;
+            }
+
+            #schedule-view table td.team-matchup-column {
+                text-align: left;
+            }
+
+            #schedule-view table tr {
+                margin-bottom: 0.75rem;
+                border: 1px solid var(--color-border-default);
+                /* Color Variable: #374151 (Gray 700) */
+                border-radius: 0.5rem;
+                background-color: var(--color-card-background);
+                /* Color Variable: #1E293B (Using Gray 800) */
+                padding: 0.5rem;
+                border-left: 4px solid var(--color-border-default);
+                /* Used Gray 700 as a fallback, but often this is set dynamically */
+            }
+
+            #schedule-view table td {
+                padding: 0.3rem 0.5rem;
+                text-align: right;
+                position: relative;
+            }
+
+            #schedule-view table td::before {
+                content: attr(data-label);
+                position: absolute;
+                left: 0.5rem;
+                text-align: left;
+                font-weight: 600;
+                color: #94A3B8;
+                /* Keeping this specific shade as it's not in the main palette yet, but it's close to Gray 400 */
+            }
+
+            #schedule-view table td.round-column {
+                text-align: left;
+            }
+
+            .border-l-4 {
+                border-left-width: 0 !important;
+            }
+
+            /* Admin View Mobile Adjustments (No color changes here) */
+            #admin-match-entry-view .round-header {
+                text-align: left;
+                padding: 0.75rem 0.5rem;
+                font-size: 1.125rem;
+                margin-top: 1rem;
+            }
+
+            #admin-match-entry-view .match-entry-card {
+                flex-direction: column;
+                padding: 0.75rem;
+            }
+
+            #admin-match-entry-view .match-details {
+                flex-direction: column;
+                align-items: flex-start;
+                width: 100%;
+                margin-bottom: 0.5rem;
+            }
+
+            #admin-match-entry-view .match-controls {
+                flex-direction: column;
+                width: 100%;
+            }
+
+            #admin-match-entry-view .match-controls>* {
+                margin-top: 0.5rem;
+                width: 100%;
+            }
+
+        }
+
+        /* Buttons and filters */
+        select,
+        button {
+            touch-action: manipulation;
+        }
+
+        /* ==========================================================
+           PLAYOFF BRACKET (ported from scoreboard.html)
+        ========================================================== */
+        .bracket-fit {
+            position: relative;
+            width: 100%;
+            overflow: auto;
+            padding-bottom: 6px;
+        }
+
+        .bracket-fit::-webkit-scrollbar { height: 4px; width: 4px; }
+        .bracket-fit::-webkit-scrollbar-thumb { background: rgba(255,255,255,.14); border-radius: 2px; }
+
+        .bracket-canvas {
+            position: relative;
+            margin: 0 auto;
+        }
+
+        .bracket-conn-layer {
+            position: absolute;
+            top: 0; left: 0;
+            width: 100%; height: 100%;
+            pointer-events: none;
+            overflow: visible;
+        }
+
+        .bracket-round-hdr {
+            position: absolute;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            gap: 1px;
+            font-size: 9px; font-weight: 700;
+            letter-spacing: .14em; text-transform: uppercase;
+            color: rgba(255,255,255,.42);
+            text-align: center;
+            overflow: hidden;
+        }
+
+        .bracket-round-hdr .round-key {
+            font-size: 8px;
+            letter-spacing: .1em;
+            color: rgba(255,255,255,.2);
+        }
+
+        .bracket-match {
+            position: absolute;
+            border-radius: 10px;
+            border: 1px solid rgba(255,255,255,.12);
+            background: rgba(255,255,255,.05);
+            overflow: hidden;
+            display: flex;
+            flex-direction: column;
+        }
+
+        .bracket-match.live {
+            border-color: rgba(224,184,99,.35);
+            background: rgba(224,184,99,.05);
+        }
+
+        .bracket-match.champion {
+            border-color: rgba(224,184,99,.5);
+            background: rgba(224,184,99,.07);
+            box-shadow: 0 0 28px rgba(224,184,99,.12);
+        }
+
+        .bracket-team-row {
+            display: flex; align-items: center; gap: 7px;
+            padding: 0 9px;
+            flex: 1;
+            min-height: 0;
+            border-bottom: 1px solid rgba(255,255,255,.07);
+            font-size: 12px; font-weight: 600;
+            color: rgba(255,255,255,.65);
+        }
+
+        .bracket-team-row:last-child { border-bottom: none; }
+
+        .bracket-team-row.winner {
+            color: var(--gold-l);
+            background: rgba(224,184,99,.1);
+            font-weight: 700;
+        }
+
+        .bracket-team-row.eliminated { color: rgba(255,255,255,.3); }
+
+        .bracket-match.is-bye {
+            border-style: dashed;
+            border-color: rgba(255,255,255,.09);
+            background: rgba(255,255,255,.02);
+        }
+
+        .bracket-match-tag.is-bye { color: rgba(255,255,255,.2); }
+
+        .bracket-team-row.bye {
+            color: rgba(255,255,255,.2);
+            font-size: 9px; font-weight: 800;
+            letter-spacing: .18em; text-transform: uppercase;
+        }
+
+        .bracket-team-row.bye .bt-seed {
+            background: rgba(255,255,255,.03);
+            color: rgba(255,255,255,.14);
+        }
+
+        .bracket-team-row.placeholder {
+            color: rgba(255,255,255,.28);
+            font-style: italic;
+        }
+
+        .bt-seed {
+            width: 18px; height: 18px; border-radius: 5px;
+            display: flex; align-items: center; justify-content: center;
+            font-size: 9px; font-weight: 700; flex-shrink: 0;
+            background: rgba(255,255,255,.07);
+            color: rgba(255,255,255,.35);
+        }
+
+        .bracket-team-row.placeholder .bt-seed {
+            background: rgba(255,255,255,.04);
+            color: rgba(255,255,255,.2);
+        }
+
+        .bracket-team-row.winner .bt-seed {
+            background: linear-gradient(140deg, var(--mar-l), var(--mar));
+            color: var(--gold-l);
+        }
+
+        .bt-name { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+        .bt-win-label {
+            font-size: 9px; font-weight: 800;
+            color: var(--gold-d);
+            letter-spacing: .06em;
+            flex-shrink: 0;
+        }
+
+        .bracket-match-tag {
+            position: absolute;
+            padding: 0 5px;
+            border-radius: 4px;
+            font-size: 8px; font-weight: 800;
+            letter-spacing: .08em;
+            line-height: 13px;
+            background: rgba(20,20,22,.95);
+            color: rgba(255,255,255,.3);
+            z-index: 2;
+        }
+
+        .bracket-match-tag.champion { color: var(--gold-d); }
+
+        .bracket-champ {
+            position: absolute;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            padding: 0 12px;
+            border-radius: 10px;
+            border: 1px solid rgba(224,184,99,.45);
+            background: rgba(224,184,99,.1);
+            font-size: 12px; font-weight: 800;
+            color: var(--gold-l);
+            overflow: hidden;
+        }
+
+        .bracket-champ .bc-label {
+            font-size: 8px; font-weight: 800;
+            letter-spacing: .16em;
+            color: var(--gold-d);
+        }
+
+        .bracket-champ .bc-name {
+            flex: 1; min-width: 0;
+            overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+        }
+
+        .bracket-empty-state {
+            padding: 28px 16px;
+            text-align: center;
+            font-size: 13px;
+            color: rgba(255,255,255,.3);
+            line-height: 1.6;
+        }
+    </style>
+
+    <!-- Tailwind generated CSS (built from src/input.css) -->
+    <link rel="stylesheet" href="/dist/output.css">
 
 </head>
+
 <body class="min-h-screen">
 
     <!-- ============================================================ -->
     <!-- GATE SCREEN — fan landing + division picker (design Phase 2) -->
     <!-- ============================================================ -->
     <div id="gate-screen" class="min-h-screen flex flex-col justify-between px-5 py-8 md:py-14 max-w-2xl mx-auto">
-      <div>
-        <div class="flex items-center gap-3">
-          <img src="/assets/algonquin-hockey.png" alt="Algonquin Hockey" class="w-12 h-12 object-contain">
-          <div>
-            <div class="text-[10px] tracking-[.18em] font-semibold text-gold uppercase">Algonquin Hockey Presents</div>
-            <div class="text-2xl md:text-3xl font-bold tracking-tight text-gray-50 mt-1">Dodgeball Tournament</div>
-          </div>
-        </div>
-        <p class="text-sm text-white/60 mt-5 max-w-[36ch]">Pick a division — standings, schedule and every result stay scoped to it.</p>
+        <div>
+            <div class="flex items-center gap-3">
+                <img src="/assets/algonquin-hockey.png" alt="Algonquin Hockey" class="w-12 h-12 object-contain">
+                <div>
+                    <div class="text-[10px] tracking-[.18em] font-semibold text-gold uppercase ">Algonquin Hockey Annual
+                    </div>
+                    <div class="text-2xl md:text-3xl text-gray-50 mt-1.5 font-['Luckiest_Guy']">
+                        Dodgeball Tournament
+                    </div>
+                </div>
+            </div>
+            <p class="text-sm text-white/60 mt-5 max-w-[36ch]"><strong>Let's play!</strong> Pick your division below
+                to see standings and the schedule.</p>
 
-        <div class="card-dark mt-5 p-4">
-          <div class="flex items-center justify-between px-1 pb-3">
-            <span class="text-[10px] tracking-[.16em] font-semibold text-white/50 uppercase">Divisions</span>
-          </div>
-          <div id="gate-division-grid" class="grid gap-2.5" style="grid-template-columns:repeat(auto-fit,minmax(150px,1fr))">
-            <p class="text-sm text-white/50 col-span-2">Loading divisions…</p>
-          </div>
+            <div class="card-dark mt-5 p-4">
+                <div class="flex items-center justify-between px-1 pb-3">
+                    <span class="text-[10px] tracking-[.16em] font-semibold text-white/50 uppercase">Divisions</span>
+                </div>
+                <div id="gate-division-grid" class="grid gap-2.5"
+                    style="grid-template-columns:repeat(auto-fit,minmax(150px,1fr))">
+                    <p class="text-sm text-white/50 col-span-2">Loading divisions…</p>
+                </div>
+            </div>
         </div>
-      </div>
 
-      <div class="flex items-center gap-3 mt-10">
-        <div class="flex-1 text-xs text-white/40">All proceeds support Algonquin Regional hockey.</div>
-        <button onclick="showAdminLoginModal()" class="pill-gold flex-none px-4 py-3 text-xs font-semibold">Admin login</button>
-      </div>
+        <div class="flex items-center gap-3 mt-10">
+            <div class="flex-1 text-xs text-white/40">All proceeds support the Algonquin Regional High School Hockey
+                program..</div>
+            <button onclick="showAdminLoginModal()" class="pill-gold flex-none px-4 py-3 text-xs font-semibold">Admin
+                login</button>
+        </div>
     </div>
 
     <!-- ============================================================ -->
@@ -604,454 +918,547 @@
     <!-- ============================================================ -->
     <div id="app-screen" class="hidden">
 
-    <!-- App header: logo + title + division chip + round-clock box -->
-    <header class="app-header sticky top-0 z-50 flex items-center gap-3 px-4 pt-3.5 pb-5">
-      <img src="/assets/algonquin-hockey.png" alt="Algonquin Hockey" class="w-[38px] h-[38px] flex-none object-contain">
+        <!-- App header: logo + title + division chip + round-clock box -->
+        <header class="app-header sticky top-0 z-50 flex items-center gap-3 px-4 pt-3.5 pb-5">
+            <img src="/assets/algonquin-hockey.png" alt="Algonquin Hockey"
+                class="w-[38px] h-[38px] flex-none object-contain">
 
-      <div class="flex-1 min-w-0">
-        <div class="text-sm font-semibold tracking-tight text-gray-50 truncate">Dodgeball Tournament</div>
-        <button onclick="goToGate()" class="pill-gold mt-1.5 inline-flex items-center gap-1.5 px-2.5 py-1 text-[10px] font-semibold">
-          <span id="header-division-label">—</span><span class="opacity-60 font-semibold">CHANGE</span>
-        </button>
-      </div>
-
-      <!-- DEV MODE INDICATOR -->
-      <div class="text-red-400 hidden" id="devMode">DEV</div>
-
-      <!-- TIMER WRAPPER -->
-      <div id="timer-wrapper" class="relative flex-none">
-        <!-- ROUND CLOCK -->
-        <div
-          id="scoreboard"
-          class="relative text-center px-4 py-2.5 rounded-[18px] bg-black/[.34] border border-gold/30 backdrop-blur min-w-[92px]"
-        >
-          <!-- Sync indicator -->
-          <div
-            id="sync-indicator"
-            class="absolute right-2 top-2 h-1.5 w-1.5 rounded-full bg-yellow-500"
-          ></div>
-
-          <!-- Timer -->
-          <div
-            id="timer-display"
-            class="text-2xl font-bold leading-none tabular-nums tracking-[-.02em]"
-            style="color:var(--gold-l)"
-          >
-            04:00
-          </div>
-
-          <!-- Current round value (used programmatically, not shown per-design) -->
-          <div id="current-round-display" class="hidden">Round 1</div>
-        </div>
-
-        <!-- Hidden legacy division-select containers (still populated by navigation.js, header chip above is the primary UI) -->
-        <div id="division-selector-wrapper" class="hidden"></div>
-        <div id="division-selector-wrapper-mobile" class="hidden"></div>
-
-      </div>
-    </header>
-
-
-
-    <!-- Main Content Wrapper -->
-  <div id="main-wrapper" class="min-h-screen">
-    <div class="container mx-auto max-w-2xl px-3.5 pt-3.5">
-      <div id="confetti-container"></div>
-        <div id="tournament-champion-message" class="hidden"></div>
-
-        <!-- Announcement banner — always shows the latest active announcement -->
-        <div id="announcement-banner" class="hidden mt-3 p-3 rounded-2xl border" style="background:linear-gradient(135deg,rgba(224,184,99,.2) 0%,rgba(166,48,63,.16) 100%);border-color:rgba(224,184,99,.28)">
-            <div class="flex gap-2.5 items-start">
-                <span class="flex-none text-[9px] font-semibold tracking-[.14em] text-gold">NOW</span>
-                <span id="announcement-banner-text" class="flex-1 text-xs text-white/85"></span>
-                <button onclick="dismissAnnouncementBanner()" title="Dismiss" class="flex-none w-[22px] h-[22px] rounded-full border border-white/20 bg-white/10 text-white/70 text-xs">✕</button>
-            </div>
-        </div>
-
-        <!-- STATUS AND ERROR MESSAGES -->
-
-        <!-- Floating Status Toast (bottom-right) -->
-        <div id="status-toast"
-            class="fixed bottom-6 right-6 z-50 hidden px-4 py-3 rounded-lg text-gold-l text-sm font-medium shadow-xl backdrop-blur-md flex items-center gap-2 border transition-all duration-300 ease-out translate-y-4 opacity-0" style="background:rgba(224,184,99,.14);border-color:rgba(224,184,99,.3)">
-          <div class="w-4 h-4 border-2 border-gold-l border-r-transparent rounded-full animate-spin"></div>
-          <span id="status-toast-text">Loading...</span>
-        </div>
-
-        <div id="error-message" 
-            class="bg-red-900/80 p-3 rounded-lg text-center font-medium text-red-200 border border-red-700 mt-4 hidden">
-          <div class="flex justify-center items-center gap-2">
-            <span>❌</span>
-            <p class="font-bold">Error loading data</p>
-          </div>
-          <p id="error-details" class="text-sm mt-1"></p>
-        </div>
-        
-        <main class="pb-28">
-
-            <!-- LIVE VIEW (fans; hidden once signed in — staff get the clock on Admin) -->
-            <div id="live-view" class="space-y-2.5 hidden">
-                <!-- Round status hero card -->
-                <section class="rounded-[26px] p-4 border border-white/10" style="background:linear-gradient(140deg,rgba(166,48,63,.32) 0%,rgba(24,24,26,.5) 100%)">
-                    <div class="flex justify-between items-start gap-3">
-                        <div>
-                            <div id="live-round-label" class="text-[9px] tracking-[.16em] font-semibold text-gold uppercase"></div>
-                            <div id="live-round-time" class="font-bold text-3xl md:text-4xl tracking-tight text-gray-50 mt-2 tabular-nums">—</div>
-                            <div id="live-round-sub" class="text-xs text-white/60 mt-1.5"></div>
-                        </div>
-                        <div class="flex-none flex items-center gap-1.5 px-2.5 py-1.5 rounded-full bg-black/30 border border-white/10">
-                            <span id="live-status-dot" class="w-1.5 h-1.5 rounded-full flex-none" style="background:#B8873A"></span>
-                            <span id="live-status-text" class="text-[9px] font-semibold tracking-[.08em] text-white/80 uppercase">Awaiting</span>
-                        </div>
-                    </div>
-                    <div class="mt-4 flex items-center gap-2.5">
-                        <span class="flex-1 h-[7px] rounded-full bg-black/[.34] overflow-hidden"><span id="live-reported-bar" class="block h-full rounded-full bg-gradient-to-r from-gold to-gold-d" style="width:0%"></span></span>
-                        <span id="live-reported-label" class="flex-none text-[10px] font-semibold tracking-[.06em] text-gold-l">0/0</span>
-                    </div>
-                </section>
-
-                <div id="live-courts-grid" class="grid gap-2.5" style="grid-template-columns:repeat(auto-fit,minmax(180px,1fr))"></div>
-
-                <section class="card-dark p-4">
-                    <div class="flex items-center justify-between">
-                        <span class="text-[10px] tracking-[.14em] font-semibold text-white/50 uppercase">Top of the standings</span>
-                        <button onclick="switchView('standings')" class="text-xs font-semibold text-gold">All standings →</button>
-                    </div>
-                    <div id="live-top3" class="mt-3 grid gap-1.5"></div>
-                </section>
-            </div>
-
-            <!-- STANDINGS VIEW -->
-            <div id="standings-view" class="screen">
-                <div class="screen-head">
-                    <h2 class="screen-title">Standings</h2>
-                    <span id="standings-scoring-label" class="screen-kicker !text-gold"></span>
-                </div>
-
-                <!-- Admin Controls will be dynamically inserted here -->
-
-                <div class="card-light mt-3.5 p-3.5">
-                    <div class="rounded-[14px] px-3 py-2.5 kicker !tracking-[.08em] leading-[1.4]"
-                         style="background:rgba(123,29,43,.08);color:var(--mar)">Every team makes the playoffs — this is your seed</div>
-                    <div class="flex gap-2.5 px-3 pt-3 pb-2 text-[9px] font-semibold leading-none tracking-[.12em] text-mute uppercase">
-                        <span class="w-[26px]">#</span><span class="flex-1">Team</span>
-                        <span class="w-[58px] text-right">W-L-T</span><span class="w-[52px] text-right">Pts</span>
-                    </div>
-                    <div id="standings-list" class="grid gap-1">
-                        <p class="py-4 text-center text-sm text-mute">Loading standings…</p>
-                    </div>
-                </div>
-                <p class="mx-1.5 mt-3 text-[11px] leading-[1.55] text-white/45">Ties broken by players remaining across wins — that's the decimal.</p>
-            </div>
-
-            <!-- SCHEDULE VIEW -->
-            <div id="schedule-view" class="screen hidden">
-                <div class="screen-head">
-                    <h2 class="screen-title">Schedule</h2>
-                    <span id="schedule-court-count" class="screen-kicker"></span>
-                </div>
-
-                <div class="mt-3.5 grid gap-2 sm:grid-cols-2">
-                    <select id="team-select" aria-label="Filter by team" onchange="updateScheduleView()" class="select-glass"></select>
-                    <select id="court-select" aria-label="Filter by court" onchange="updateScheduleView()" class="select-glass"></select>
-                </div>
-                <div id="bye-rounds-info" class="hidden mt-2.5 rounded-2xl border border-white/10 bg-white/5 p-3 text-sm text-white/70"></div>
-
-                <!-- Schedule round cards -->
-                <div id="schedule-view-container" class="mt-3.5 grid gap-3">
-                    <p class="py-4 text-center text-sm text-white/45">Select filters to view matches, or load data.</p>
-                </div>
-            </div>
-            
-            <!-- INFO VIEW -->
-            <div id="info-view" class="screen hidden">
-                <div class="screen-head">
-                    <h2 class="screen-title">Tournament info</h2>
-                </div>
-
-                <div class="mt-3.5 grid gap-2.5 md:grid-cols-2 md:items-start">
-                <section class="card-dark p-4">
-                    <div class="text-[10px] tracking-[.14em] font-semibold text-white/50 uppercase">Announcements</div>
-                    <div id="info-announcements-list" class="mt-3 grid gap-1.5">
-                        <p class="text-sm text-white/40">No announcements yet.</p>
-                    </div>
-                </section>
-
-                <section class="card-light p-4">
-                    <div class="text-[10px] tracking-[.14em] font-semibold text-mute uppercase">House Rules</div>
-                    <div class="mt-3 grid gap-1">
-                        <div class="flex gap-2.5 p-2.5 rounded-xl bg-[#F5F5F6]"><span class="flex-none w-5 h-5 rounded-md font-bold text-[10px] flex items-center justify-center" style="background:rgba(123,29,43,.1);color:var(--mar)">1</span><span class="text-sm text-ink">Balls must be caught below the shoulder to count as an out.</span></div>
-                        <div class="flex gap-2.5 p-2.5 rounded-xl bg-[#F5F5F6]"><span class="flex-none w-5 h-5 rounded-md font-bold text-[10px] flex items-center justify-center" style="background:rgba(123,29,43,.1);color:var(--mar)">2</span><span class="text-sm text-ink">A caught ball eliminates the thrower and returns one teammate.</span></div>
-                        <div class="flex gap-2.5 p-2.5 rounded-xl bg-[#F5F5F6]"><span class="flex-none w-5 h-5 rounded-md font-bold text-[10px] flex items-center justify-center" style="background:rgba(123,29,43,.1);color:var(--mar)">3</span><span class="text-sm text-ink">Head shots are a re-throw, not an out.</span></div>
-                        <div class="flex gap-2.5 p-2.5 rounded-xl bg-[#F5F5F6]"><span class="flex-none w-5 h-5 rounded-md font-bold text-[10px] flex items-center justify-center" style="background:rgba(123,29,43,.1);color:var(--mar)">4</span><span class="text-sm text-ink">No crossing the center line.</span></div>
-                        <div class="flex gap-2.5 p-2.5 rounded-xl bg-[#F5F5F6]"><span class="flex-none w-5 h-5 rounded-md font-bold text-[10px] flex items-center justify-center" style="background:rgba(123,29,43,.1);color:var(--mar)">5</span><span class="text-sm text-ink">Games run until time expires or one team is fully eliminated.</span></div>
-                        <div class="flex gap-2.5 p-2.5 rounded-xl bg-[#F5F5F6]"><span class="flex-none w-5 h-5 rounded-md font-bold text-[10px] flex items-center justify-center" style="background:rgba(123,29,43,.1);color:var(--mar)">6</span><span class="text-sm text-ink">Most players remaining wins if time runs out.</span></div>
-                    </div>
-                </section>
-
-                <section class="p-4 rounded-[26px]" style="background:linear-gradient(140deg,var(--mar) 0%,#3A171C 100%)">
-                    <div class="text-[10px] tracking-[.14em] font-semibold text-gold uppercase">Fundraiser</div>
-                    <div class="text-lg font-bold text-gray-50 mt-2">Every entry backs Algonquin hockey.</div>
-                    <p class="text-xs text-white/65 mt-1.5">Raffle tickets at the scorer's table all day. Bring a food pantry donation.</p>
-                </section>
-
-                <button id="info-admin-link" onclick="showAdminLoginModal()" class="w-full text-left p-[18px] !rounded-[26px] pill-gold">
-                    <span class="font-semibold text-[13px]">Admin login →</span>
-                    <span class="block text-[11px] leading-[1.45] text-white/50 mt-1.5 font-normal">Court managers and admins only.</span>
+            <div class="flex-1 min-w-0">
+                <div class="text-sm font-semibold tracking-tight text-gray-50 truncate">Dodgeball Tournament</div>
+                <button onclick="goToGate()"
+                    class="pill-gold mt-1.5 inline-flex items-center gap-1.5 px-2.5 py-1 text-[10px] font-semibold">
+                    <span id="header-division-label">—</span><span class="opacity-60 font-semibold">CHANGE</span>
                 </button>
-                </div>
-                <p class="mx-1.5 mt-3 text-[11px] leading-[1.55] text-white/35">Last updated: <span id="last-updated">…</span></p>
             </div>
 
-            <!-- CHAT VIEW -->
-            <div id="chat-view" class="screen hidden flex-col" style="height:min(72vh,680px)">
-                <div class="screen-head">
-                    <h2 class="screen-title">Crew chat</h2>
-                    <span class="screen-kicker">Courts 1–4 + desk</span>
-                </div>
-                <p id="chat-sub" class="mx-1 mt-2 text-xs leading-[1.45] text-white/50">Every court manager sees this channel.</p>
+            <!-- DEV MODE INDICATOR -->
+            <div class="text-red-400 hidden" id="devMode">DEV</div>
 
-                <div id="chat-scroll-area" class="flex-1 min-h-0 overflow-y-auto no-scrollbar mt-3.5">
-                    <div id="chat-messages" class="grid gap-2"></div>
+            <!-- TIMER WRAPPER -->
+            <div id="timer-wrapper" class="relative flex-none">
+                <!-- ROUND CLOCK -->
+                <div id="scoreboard"
+                    class="relative flex-col items-center text-center px-4 py-2 rounded-[18px] bg-black/[.34] border border-gold/30 backdrop-blur min-w-[92px] transition-colors">
+                    <!-- Timer -->
+                    <div id="timer-display" class="text-2xl font-bold leading-none tabular-nums tracking-[-.02em]"
+                        style="color:var(--gold-l)">
+                        04:00
+                    </div>
+
+                    <!-- Current round / match label, e.g. "P5.Finals" or "11:25 am" -->
+                    <div id="current-round-display"
+                        class="mt-1 text-[10px] font-semibold uppercase tracking-[.04em] text-white/60 leading-none truncate max-w-[110px]">
+                        Round 1</div>
                 </div>
 
-                <div class="mt-3.5 flex items-center gap-2 rounded-full border border-white/[.13] bg-white/[.07] p-1.5 backdrop-blur-lg">
-                    <input id="chat-composer-input" type="text" placeholder="Message the crew…"
-                           class="min-w-0 flex-1 border-0 bg-transparent px-3.5 py-3 text-sm font-medium text-[#F1F1F2] outline-none placeholder:text-white/40">
-                    <button id="chat-send-btn" onclick="sendChatMessage()"
-                            class="flex-none rounded-full px-[18px] py-3 text-xs font-semibold text-white transition-colors"
-                            style="background:rgba(255,255,255,.12)">Send</button>
-                </div>
-                <p class="mx-1.5 mt-2.5 text-[11px] leading-[1.5] text-white/[.42]">Posting as <span id="chat-posting-as">—</span> — fans never see this channel.</p>
+                <!-- Hidden legacy division-select containers (still populated by navigation.js, header chip above is the primary UI) -->
+                <div id="division-selector-wrapper" class="hidden"></div>
+                <div id="division-selector-wrapper-mobile" class="hidden"></div>
+
             </div>
+        </header>
 
-            <!-- ADMIN MATCH ENTRY VIEW -->
-            <div id="admin-match-entry-view" class="screen hidden">
-                <div class="screen-head !items-start">
-                    <div>
-                        <h2 id="admin-title" class="screen-title !text-2xl">Match admin</h2>
-                        <div id="admin-who" class="mt-1.5 text-[11px] leading-[1.4] font-medium text-white/50"></div>
-                    </div>
-                    <div class="flex flex-none items-center gap-1.5">
-                        <button onclick="logoutAdmin()" class="flex-none rounded-full border border-white/20 bg-white/[.06] px-3.5 py-2.5 text-[11px] font-semibold leading-none text-white/75">Sign out</button>
-                        <button id="admin-setup-gear" onclick="switchView('settings')" title="Setup" class="hidden pill-gold w-9 h-9 flex-none items-center justify-center text-[15px] leading-none">⚙</button>
+
+
+        <!-- Main Content Wrapper -->
+        <div id="main-wrapper" class="min-h-screen">
+            <div class="container mx-auto max-w-2xl px-3.5 pt-3.5">
+                <div id="confetti-container"></div>
+                <div id="tournament-champion-message" class="hidden"></div>
+
+                <!-- Announcement banner — always shows the latest active announcement -->
+                <div id="announcement-banner" class="hidden mt-3 p-3 rounded-2xl border"
+                    style="background:linear-gradient(135deg,rgba(224,184,99,.2) 0%,rgba(166,48,63,.16) 100%);border-color:rgba(224,184,99,.28)">
+                    <div class="flex gap-2.5 items-start">
+                        <span class="flex-none text-[9px] font-semibold tracking-[.14em] text-gold">NOW</span>
+                        <span id="announcement-banner-text" class="flex-1 text-xs text-white/85"></span>
+                        <button onclick="dismissAnnouncementBanner()" title="Dismiss"
+                            class="flex-none w-[22px] h-[22px] rounded-full border border-white/20 bg-white/10 text-white/70 text-xs">✕</button>
                     </div>
                 </div>
 
-                <!-- Admin Timer Control Panel (superadmin only) -->
-                <div id="admin-panel" class="hidden mt-3.5 rounded-[26px] border border-white/[.12] p-[18px] shadow-[inset_0_1px_0_rgba(255,255,255,.09)] backdrop-blur-xl"
-                     style="background:linear-gradient(140deg,rgba(24,24,26,.6) 0%,rgba(58,23,28,.5) 100%)">
+                <!-- STATUS AND ERROR MESSAGES -->
 
-                    <!-- TIMER CONTROLS (design §9). These are the same control IDs the
+                <!-- Floating Status Toast (bottom-right) -->
+                <div id="status-toast"
+                    class="fixed bottom-6 right-6 z-50 hidden px-4 py-3 rounded-lg text-gold-l text-sm font-medium shadow-xl backdrop-blur-md flex items-center gap-2 border transition-all duration-300 ease-out translate-y-4 opacity-0"
+                    style="background:rgba(224,184,99,.14);border-color:rgba(224,184,99,.3)">
+                    <div class="w-4 h-4 border-2 border-gold-l border-r-transparent rounded-full animate-spin"></div>
+                    <span id="status-toast-text">Loading...</span>
+                </div>
+
+                <div id="error-message"
+                    class="bg-red-900/80 p-3 rounded-lg text-center font-medium text-red-200 border border-red-700 mt-4 hidden">
+                    <div class="flex justify-center items-center gap-2">
+                        <span>❌</span>
+                        <p class="font-bold">Error loading data</p>
+                    </div>
+                    <p id="error-details" class="text-sm mt-1"></p>
+                </div>
+
+                <main class="pb-28">
+
+                    <!-- PLAYOFFS VIEW -->
+                    <div id="playoffs-view" class="screen hidden">
+                        <div class="screen-head">
+                            <h2 class="screen-title">Playoffs</h2>
+                            <span id="playoffs-match-count" class="screen-kicker"></span>
+                        </div>
+
+                        <div class="card-dark mt-3.5 p-3.5">
+                            <div id="playoffs-bracket-body"></div>
+                        </div>
+                    </div>
+
+                    <!-- STANDINGS VIEW -->
+                    <div id="standings-view" class="screen">
+                        <div class="screen-head">
+                            <h2 class="screen-title">Standings</h2>
+                        </div>
+
+                        <!-- Admin Controls will be dynamically inserted here -->
+
+                        <div class="card-dark mt-3.5 p-3.5">
+                            <div
+                                class="flex gap-2.5 px-3 pt-1 pb-2 text-[9px] font-semibold leading-none tracking-[.12em] text-white/45 uppercase">
+                                <span class="w-[26px]">#</span><span class="flex-1">Team</span>
+                                <span class="w-[58px] text-right">W-L-T</span><span
+                                    class="w-[52px] text-right">Pts</span>
+                            </div>
+                            <div id="standings-list" class="grid gap-1">
+                                <p class="py-4 text-center text-sm text-white/45">Loading standings…</p>
+                            </div>
+                        </div>
+                        <p class="mx-1.5 mt-3 text-[11px] leading-[1.55] text-white/45">Ties broken by players remaining
+                            across wins — that's the decimal.</p>
+                    </div>
+
+                    <!-- SCHEDULE VIEW -->
+                    <div id="schedule-view" class="screen hidden">
+                        <div class="screen-head">
+                            <h2 class="screen-title">Schedule</h2>
+                            <span id="schedule-court-count" class="screen-kicker"></span>
+                        </div>
+
+                        <div class="mt-3.5">
+                            <select id="team-select" aria-label="Filter by team" onchange="updateScheduleView()"
+                                class="select-glass w-full"></select>
+                        </div>
+                        <div class="mt-2 grid gap-2 sm:grid-cols-2">
+                            <select id="court-select" aria-label="Filter by court" onchange="updateScheduleView()"
+                                class="select-glass w-full"></select>
+                            <label
+                                class="flex items-center justify-between gap-2.5 rounded-[18px] border border-white/[.12] bg-white/[.05] px-[15px] py-3 cursor-pointer">
+                                <span class="text-xs font-semibold text-[#F1F1F2]">Hide finished games</span>
+                                <span class="switch flex-none">
+                                    <input type="checkbox" id="hide-finished-toggle" onchange="updateScheduleView()">
+                                    <span class="slider round"></span>
+                                </span>
+                            </label>
+                        </div>
+                        <div id="bye-rounds-info"
+                            class="hidden mt-2.5 rounded-2xl border border-white/10 bg-white/5 p-3 text-sm text-white/70">
+                        </div>
+
+                        <!-- Schedule round cards -->
+                        <div id="schedule-view-container" class="mt-3.5 grid gap-3">
+                            <p class="py-4 text-center text-sm text-white/45">Select filters to view matches, or load
+                                data.</p>
+                        </div>
+                    </div>
+
+                    <!-- INFO VIEW -->
+                    <div id="info-view" class="screen hidden">
+                        <div class="screen-head">
+                            <h2 class="screen-title">Tournament info</h2>
+                        </div>
+
+                        <div class="mt-3.5 grid gap-2.5 md:grid-cols-2 md:items-start">
+                            <section class="card-dark p-4">
+                                <div class="text-[10px] tracking-[.14em] font-semibold text-white/50 uppercase">
+                                    Announcements</div>
+                                <div id="info-announcements-list" class="mt-3 grid gap-1.5">
+                                    <p class="text-sm text-white/40">No announcements yet.</p>
+                                </div>
+                            </section>
+
+                            <section class="card-light p-4">
+                                <div class="text-[10px] tracking-[.14em] font-semibold text-mute uppercase">House Rules
+                                </div>
+                                <div class="mt-3 grid gap-1">
+                                    <div class="flex gap-2.5 p-2.5 rounded-xl bg-[#F5F5F6]"><span
+                                            class="flex-none w-5 h-5 rounded-md font-bold text-[10px] flex items-center justify-center"
+                                            style="background:rgba(123,29,43,.1);color:var(--mar)">1</span><span
+                                            class="text-sm text-ink">Good Sportsmanship a must!</span></div>
+                                    <div class="flex gap-2.5 p-2.5 rounded-xl bg-[#F5F5F6]"><span
+                                            class="flex-none w-5 h-5 rounded-md font-bold text-[10px] flex items-center justify-center"
+                                            style="background:rgba(123,29,43,.1);color:var(--mar)">2</span><span
+                                            class="text-sm text-ink"><strong>Refs have final say. No arguing or you will
+                                                be asked to leave.</strong></span></div>
+                                    <div class="flex gap-2.5 p-2.5 rounded-xl bg-[#F5F5F6]"><span
+                                            class="flex-none w-5 h-5 rounded-md font-bold text-[10px] flex items-center justify-center"
+                                            style="background:rgba(123,29,43,.1);color:var(--mar)">3</span><span
+                                            class="text-sm text-ink">If you're called out, team managers assist getting
+                                            out players off court</span></div>
+                                    <div class="flex gap-2.5 p-2.5 rounded-xl bg-[#F5F5F6]"><span
+                                            class="flex-none w-5 h-5 rounded-md font-bold text-[10px] flex items-center justify-center"
+                                            style="background:rgba(123,29,43,.1);color:var(--mar)">4</span><span
+                                            class="text-sm text-ink">Only 1 player returns if ball is caught by your
+                                            team</span></div>
+                                    <div class="flex gap-2.5 p-2.5 rounded-xl bg-[#F5F5F6]"><span
+                                            class="flex-none w-5 h-5 rounded-md font-bold text-[10px] flex items-center justify-center"
+                                            style="background:rgba(123,29,43,.1);color:var(--mar)">5</span><span
+                                            class="text-sm text-ink">Games run until time expires or one team is fully
+                                            eliminated.</span></div>
+                                    <div class="flex gap-2.5 p-2.5 rounded-xl bg-[#F5F5F6]"><span
+                                            class="flex-none w-5 h-5 rounded-md font-bold text-[10px] flex items-center justify-center"
+                                            style="background:rgba(123,29,43,.1);color:var(--mar)">6</span><span
+                                            class="text-sm text-ink">Most players remaining wins if time runs
+                                            out.</span></div>
+                                </div>
+                            </section>
+
+                            <section class="p-4 rounded-[26px]"
+                                style="background:linear-gradient(140deg,var(--mar) 0%,#3A171C 100%)">
+                                <div class="text-[10px] tracking-[.14em] font-semibold text-gold uppercase">Hockey Team
+                                    Fundraiser
+                                </div>
+                                <div class="text-lg font-bold text-gray-50 mt-2">Thank you for your support and have fun
+                                    today!
+                                </div>
+                                <p class="text-xs text-white/65 mt-1.5">Every purchase at the concession stand and
+                                    raffle desk goes to support Algonquin Hockey Team. The raffle drawing will occur at
+                                    the end of the tournament and you will be notified by your contact information left
+                                    with the raffle.</p>
+                            </section>
+
+                            <button id="info-admin-link" onclick="showAdminLoginModal()"
+                                class="w-full text-left p-[18px] !rounded-[26px] pill-gold">
+                                <span class="font-semibold text-[13px]">Admin login →</span>
+                                <span class="block text-[11px] leading-[1.45] text-white/50 mt-1.5 font-normal">Court
+                                    managers and admins only.</span>
+                            </button>
+                        </div>
+                        <p class="mx-1.5 mt-3 text-[11px] leading-[1.55] text-white/35">Last updated: <span
+                                id="last-updated">…</span></p>
+                    </div>
+
+                    <!-- CHAT VIEW -->
+                    <div id="chat-view" class="screen hidden flex-col" style="height:min(72vh,680px)">
+                        <div class="screen-head">
+                            <h2 class="screen-title">Crew chat</h2>
+                            <span class="screen-kicker">Courts 1–4 + desk</span>
+                        </div>
+                        <p id="chat-sub" class="mx-1 mt-2 text-xs leading-[1.45] text-white/50">Every court manager sees
+                            this channel.</p>
+
+                        <div class="relative flex-1 min-h-0 mt-3.5">
+                            <div id="chat-scroll-area" class="h-full overflow-y-auto no-scrollbar">
+                                <div id="chat-messages" class="grid gap-2"></div>
+                            </div>
+                            <button id="chat-jump-btn" onclick="jumpToChatBottom()"
+                                class="hidden absolute left-1/2 -translate-x-1/2 bottom-2.5 flex items-center gap-1.5 rounded-full px-3.5 py-2 text-[11px] font-semibold text-white shadow-lg"
+                                style="background:linear-gradient(135deg,var(--mar-l) 0%,var(--mar) 100%)">
+                                <span id="chat-jump-count"></span>
+                                <span>New messages ↓</span>
+                            </button>
+                        </div>
+
+                        <div
+                            class="mt-3.5 flex items-center gap-2 rounded-full border border-white/[.13] bg-white/[.07] p-1.5 backdrop-blur-lg">
+                            <input id="chat-composer-input" type="text" placeholder="Message the crew…"
+                                class="min-w-0 flex-1 border-0 bg-transparent px-3.5 py-3 text-sm font-medium text-[#F1F1F2] outline-none placeholder:text-white/40">
+                            <button id="chat-send-btn" onclick="sendChatMessage()"
+                                class="flex-none rounded-full px-[18px] py-3 text-xs font-semibold text-white transition-colors"
+                                style="background:rgba(255,255,255,.12)">Send</button>
+                        </div>
+                        <p class="mx-1.5 mt-2.5 text-[11px] leading-[1.5] text-white/[.42]">Posting as <span
+                                id="chat-posting-as">—</span> — fans never see this channel.</p>
+                    </div>
+
+                    <!-- ADMIN MATCH ENTRY VIEW -->
+                    <div id="admin-match-entry-view" class="screen hidden">
+                        <div class="screen-head !items-start">
+                            <div>
+                                <h2 id="admin-title" class="screen-title !text-2xl">Match admin</h2>
+                                <div id="admin-who" class="mt-1.5 text-[11px] leading-[1.4] font-medium text-white/50">
+                                </div>
+                            </div>
+                            <div class="flex flex-none items-center gap-1.5">
+                                <button onclick="logoutAdmin()"
+                                    class="flex-none rounded-full border border-white/20 bg-white/[.06] px-3.5 py-2.5 text-[11px] font-semibold leading-none text-white/75">Sign
+                                    out</button>
+                                <button id="admin-setup-gear" onclick="switchView('settings')" title="Setup"
+                                    class="hidden pill-gold w-9 h-9 flex-none items-center justify-center text-[15px] leading-none">⚙</button>
+                            </div>
+                        </div>
+
+                        <!-- Admin Timer Control Panel (superadmin only) -->
+                        <div id="admin-panel"
+                            class="hidden mt-3.5 rounded-[26px] border border-white/[.12] p-[18px] shadow-[inset_0_1px_0_rgba(255,255,255,.09)] backdrop-blur-xl"
+                            style="background:linear-gradient(140deg,rgba(24,24,26,.6) 0%,rgba(58,23,28,.5) 100%)">
+
+                            <!-- TIMER CONTROLS (design §9). These are the same control IDs the
                          timer modules bind to — they simply live inline on the Admin
                          page now instead of in a popover under the header clock. -->
-                    <div id="timer-controls-overlay">
-                        <div class="flex items-baseline justify-between gap-2.5">
-                            <div class="kicker text-gold">Timer controls</div>
-                            <div id="admin-round-kicker" class="text-[9px] font-medium leading-none tracking-[.08em] text-white/40 uppercase"></div>
+                            <div id="timer-controls-overlay">
+                                <div class="flex items-baseline justify-between gap-2.5">
+                                    <div class="kicker text-gold">Timer controls</div>
+                                    <div id="admin-round-kicker"
+                                        class="text-[9px] font-medium leading-none tracking-[.08em] text-white/40 uppercase">
+                                    </div>
+                                </div>
+
+                                <div id="admin-timer-display"
+                                    class="my-3 text-[48px] font-bold leading-none tracking-[-.04em] tabular-nums"
+                                    style="color:var(--gold-l)">0:00</div>
+
+                                <div class="grid gap-[7px]" style="grid-template-columns:1fr 1.25fr 1fr">
+                                    <button id="minus-btn" class="timer-btn">−30s</button>
+                                    <span class="contents">
+                                        <button id="start-btn" class="timer-btn timer-btn-go">Start</button>
+                                        <button id="stop-btn" class="timer-btn timer-btn-stop"
+                                            style="display:none">Stop</button>
+                                        <button id="reset-btn" class="timer-btn" style="display:none">Reset</button>
+                                    </span>
+                                    <button id="plus-btn" class="timer-btn">+30s</button>
+                                </div>
+
+                                <div class="my-4 h-px bg-white/10"></div>
+
+                                <label class="flex cursor-pointer items-center justify-between gap-2.5">
+                                    <span class="text-xs font-semibold leading-tight text-[#F1F1F2]">After-round
+                                        timer</span>
+                                    <span class="switch flex-none">
+                                        <input id="after-round-toggle" type="checkbox">
+                                        <span class="slider round"></span>
+                                    </span>
+                                </label>
+                                <button id="after-round-settings-btn" class="hidden"></button>
+
+                                <div id="after-round-settings" class="mt-2.5 grid grid-cols-3 gap-[7px]">
+                                    <button id="minus-after-btn" class="timer-btn !rounded-[14px] !py-3">−15s</button>
+                                    <span id="after-round-duration"
+                                        class="rounded-[14px] border border-gold/35 bg-gold/10 py-3 text-center text-xs font-semibold leading-none text-gold-l tabular-nums">60s</span>
+                                    <button id="plus-after-btn" class="timer-btn !rounded-[14px] !py-3">+15s</button>
+                                </div>
+
+                                <div class="mt-2.5 grid grid-cols-2 gap-[7px]">
+                                    <button id="prev-round-btn" class="timer-btn !py-3.5 !text-xs">Prev round</button>
+                                    <button id="next-round-btn" class="timer-btn timer-btn-next !py-3.5 !text-xs">Next
+                                        round</button>
+                                </div>
+
+                                <label for="toggle-display-switch" title="Toggle clock visibility for non-admins"
+                                    class="mt-4 flex cursor-pointer items-center justify-between gap-2.5 border-t border-white/10 pt-3.5">
+                                    <span class="text-xs font-semibold leading-tight text-[#F1F1F2]">Show clock to
+                                        everyone</span>
+                                    <span class="switch flex-none">
+                                        <input id="toggle-display-switch" type="checkbox">
+                                        <span class="slider round slider-ok"></span>
+                                    </span>
+                                </label>
+
+                            </div>
                         </div>
 
-                        <div id="admin-timer-display" class="my-3 text-[48px] font-bold leading-none tracking-[-.04em] tabular-nums" style="color:var(--gold-l)">0:00</div>
-
-                        <div class="grid gap-[7px]" style="grid-template-columns:1fr 1.25fr 1fr">
-                            <button id="minus-btn" class="timer-btn">−30s</button>
-                            <span class="contents">
-                                <button id="start-btn" class="timer-btn timer-btn-go">Start</button>
-                                <button id="stop-btn" class="timer-btn timer-btn-stop" style="display:none">Stop</button>
-                                <button id="reset-btn" class="timer-btn" style="display:none">Reset</button>
-                            </span>
-                            <button id="plus-btn" class="timer-btn">+30s</button>
+                        <!-- Filters (reused from the schedule view) -->
+                        <div class="mt-2.5">
+                            <select id="admin-team-select" aria-label="Filter by team"
+                                onchange="updateAdminMatchEntryView()" class="select-glass w-full"></select>
+                        </div>
+                        <div class="mt-2 grid gap-2 sm:grid-cols-2">
+                            <select id="admin-court-select" aria-label="Filter by court"
+                                onchange="updateAdminMatchEntryView()" class="select-glass w-full"></select>
+                            <label
+                                class="flex items-center justify-between gap-2.5 rounded-[18px] border border-white/[.12] bg-white/[.05] px-[15px] py-3 cursor-pointer">
+                                <span class="text-xs font-semibold text-[#F1F1F2]">Hide games already reported</span>
+                                <span class="switch flex-none">
+                                    <input type="checkbox" id="hide-played-toggle"
+                                        onchange="updateAdminMatchEntryView()">
+                                    <span class="slider round"></span>
+                                </span>
+                            </label>
                         </div>
 
-                        <div class="my-4 h-px bg-white/10"></div>
-
-                        <label class="flex cursor-pointer items-center justify-between gap-2.5">
-                            <span class="text-xs font-semibold leading-tight text-[#F1F1F2]">After-round timer</span>
-                            <span class="switch flex-none">
-                                <input id="after-round-toggle" type="checkbox">
-                                <span class="slider round"></span>
-                            </span>
-                        </label>
-                        <button id="after-round-settings-btn" class="hidden"></button>
-
-                        <div id="after-round-settings" class="mt-2.5 grid grid-cols-3 gap-[7px]">
-                            <button id="minus-after-btn" class="timer-btn !rounded-[14px] !py-3">−15s</button>
-                            <span id="after-round-duration" class="rounded-[14px] border border-gold/35 bg-gold/10 py-3 text-center text-xs font-semibold leading-none text-gold-l tabular-nums">60s</span>
-                            <button id="plus-after-btn" class="timer-btn !rounded-[14px] !py-3">+15s</button>
+                        <div id="admin-filter-info" class="hidden mt-2 px-1.5 text-[11px] leading-[1.5] text-white/45">
                         </div>
 
-                        <div class="mt-2.5 grid grid-cols-2 gap-[7px]">
-                            <button id="prev-round-btn" class="timer-btn !py-3.5 !text-xs">Prev round</button>
-                            <button id="next-round-btn" class="timer-btn timer-btn-next !py-3.5 !text-xs">Next round</button>
+                        <!-- Match Entry List -->
+                        <div id="admin-match-list" class="mt-2.5 grid gap-2.5">
+                            <p class="py-4 text-center text-sm text-white/45">Select filters to view matches, or load
+                                data.</p>
                         </div>
-
-                        <label for="toggle-display-switch" title="Toggle clock visibility for non-admins"
-                               class="mt-4 flex cursor-pointer items-center justify-between gap-2.5 border-t border-white/10 pt-3.5">
-                            <span class="text-xs font-semibold leading-tight text-[#F1F1F2]">Show clock to everyone</span>
-                            <span class="switch flex-none">
-                                <input id="toggle-display-switch" type="checkbox">
-                                <span class="slider round slider-ok"></span>
-                            </span>
-                        </label>
-
-                        <div class="my-4 h-px bg-white/10"></div>
                     </div>
 
-                    <div class="kicker text-gold mb-2.5">Live standings</div>
-                    <div class="standings-pager relative flex h-10 items-center overflow-hidden rounded-2xl border border-white/10 bg-black/25 px-2">
-                        <div id="standings-pager-content" class="flex h-full w-full items-center opacity-0 transition-opacity duration-500 ease-in-out">
-                            <p class="px-2 text-sm text-white/45">Loading standings…</p>
+                    <!-- SETTINGS VIEW (Superadmin only) -->
+                    <div id="settings-view" class="screen hidden">
+                        <div class="screen-head">
+                            <h2 class="screen-title">Setup</h2>
+                            <button onclick="switchView('admin-entry')"
+                                class="flex-none rounded-full border border-white/20 bg-white/[.06] px-3.5 py-2.5 text-[11px] font-semibold leading-none text-white/75">←
+                                Admin</button>
+                        </div>
+
+                        <div class="mt-3.5 grid gap-2.5">
+                            <!-- Announcement manager -->
+                            <section class="card-dark p-4 space-y-3">
+                                <h3 class="text-lg font-bold text-white">📣 Announcement manager</h3>
+                                <textarea id="announcement-draft" rows="3"
+                                    placeholder="e.g. Grades 5–6 semifinals move to Court 1 at 4:20."
+                                    class="w-full p-3 bg-gray-700 border border-gray-600 rounded-lg text-white shadow-sm focus:border-accent focus:ring focus:ring-accent/50 transition duration-150 text-sm"></textarea>
+                                <div class="flex gap-2">
+                                    <button id="announcement-post-btn" onclick="postAnnouncementFromSetup()"
+                                        class="btn-gold px-4 py-2 text-sm">Post announcement</button>
+                                    <button id="announcement-cancel-btn" onclick="cancelAnnouncementEdit()"
+                                        class="hidden px-4 py-2 rounded-lg bg-gray-700 text-gray-300 text-sm">Cancel
+                                        edit</button>
+                                </div>
+                                <div id="setup-announcements-list" class="grid gap-2 pt-2 border-t border-gray-800">
+                                </div>
+                            </section>
+
+                            <!-- Google Sheet Sync -->
+                            <section class="card-dark p-4 space-y-4">
+                                <div class="flex items-center justify-between flex-wrap gap-2">
+                                    <h3 class="text-lg font-bold text-white">📄 Google Sheet Sync</h3>
+                                    <span id="sheet-sync-configured-status"
+                                        class="px-2 py-0.5 rounded text-xs font-semibold bg-gray-600 text-white">Checking…</span>
+                                </div>
+                                <p class="text-sm text-gray-400">The Google Sheet is the document of record. Match data
+                                    is pulled from the sheet into this app.</p>
+
+                                <a id="sheet-sync-link" href="#" target="_blank" rel="noopener noreferrer"
+                                    class="inline-flex items-center gap-1 text-sm font-medium text-gold-l hover:text-gold underline hidden">
+                                    Open Google Sheet ↗
+                                </a>
+
+                                <div
+                                    class="flex flex-col sm:flex-row sm:items-center gap-3 pt-2 border-t border-gray-800">
+                                    <button id="sync-now-button" onclick="syncNow()"
+                                        class="btn-gold px-4 py-2 shadow transition-colors disabled:opacity-50 disabled:cursor-not-allowed">
+                                        🔄 Sync Now
+                                    </button>
+                                    <button id="prune-divisions-button" onclick="pruneDivisions()"
+                                        class="px-4 py-2 rounded border border-gray-700 text-sm text-gray-300 hover:text-white hover:border-gray-500 transition-colors disabled:opacity-50 disabled:cursor-not-allowed">
+                                        🧹 Remove Stale Divisions
+                                    </button>
+                                    <p class="text-sm text-gray-400">
+                                        Last sync: <span id="sync-last-time"
+                                            class="text-gray-200 font-medium">Never</span>
+                                    </p>
+                                </div>
+                                <p class="text-xs text-gray-500 -mt-1">
+                                    "Remove Stale Divisions" deletes any division that isn't a tab in the spreadsheet
+                                    this app currently points at — use it after changing <code>SPREADSHEET_ID</code>.
+                                </p>
+
+                                <!-- Auto-sync toggle + interval -->
+                                <div class="pt-3 border-t border-gray-800 space-y-3">
+                                    <div class="flex items-center gap-3">
+                                        <label class="switch">
+                                            <input type="checkbox" id="auto-sync-toggle"
+                                                onchange="toggleAutoSync(this.checked)">
+                                            <span class="slider round"></span>
+                                        </label>
+                                        <label for="auto-sync-toggle"
+                                            class="text-sm font-medium text-gray-300 cursor-pointer">Enable
+                                            Auto-Sync</label>
+                                    </div>
+
+                                    <div id="auto-sync-interval-controls" class="flex flex-wrap items-center gap-2">
+                                        <span class="text-sm text-gray-400 mr-1">Sync every:</span>
+                                        <button id="sync-interval-30" onclick="setSyncInterval(30)"
+                                            class="px-3 py-1.5 rounded-lg bg-gray-700 text-gray-300 text-sm font-semibold transition-colors">30s</button>
+                                        <button id="sync-interval-60" onclick="setSyncInterval(60)"
+                                            class="px-3 py-1.5 rounded-lg bg-gray-700 text-gray-300 text-sm font-semibold transition-colors">1
+                                            min</button>
+                                        <button id="sync-interval-300" onclick="setSyncInterval(300)"
+                                            class="px-3 py-1.5 rounded-lg bg-gray-700 text-gray-300 text-sm font-semibold transition-colors">5
+                                            min</button>
+
+                                        <button id="sync-interval-custom-btn" onclick="setCustomSyncInterval()"
+                                            class="px-3 py-1.5 rounded-lg bg-gray-700 text-gray-300 text-sm font-semibold transition-colors">Custom</button>
+                                        <input id="sync-interval-custom-input" type="number" min="10" step="1"
+                                            placeholder="seconds"
+                                            onkeypress="if(event.key==='Enter') setCustomSyncInterval()"
+                                            class="w-24 p-1.5 bg-gray-800 border border-gray-600 rounded-lg text-white text-sm shadow-sm focus:border-accent focus:ring focus:ring-accent/50">
+                                    </div>
+                                </div>
+
+                                <!-- Sync scope -->
+                                <div class="pt-3 border-t border-gray-800 space-y-3">
+                                    <h4 class="text-sm font-bold text-gray-300">Sync Scope</h4>
+                                    <p class="text-xs text-gray-500">Limit syncing to just the division(s) currently
+                                        playing, instead of pulling the whole sheet every time.</p>
+                                    <div class="flex flex-wrap gap-4">
+                                        <label class="flex items-center gap-2 text-sm text-gray-300 cursor-pointer">
+                                            <input type="radio" name="sync-scope" id="sync-scope-all"
+                                                onchange="setSyncScope('all')" checked>
+                                            All Divisions
+                                        </label>
+                                        <label class="flex items-center gap-2 text-sm text-gray-300 cursor-pointer">
+                                            <input type="radio" name="sync-scope" id="sync-scope-selected"
+                                                onchange="setSyncScope('selected')">
+                                            Selected Divisions
+                                        </label>
+                                    </div>
+                                    <div id="sync-division-picker" class="flex flex-wrap gap-2 hidden">
+                                        <p class="text-sm text-gray-500">Loading divisions…</p>
+                                    </div>
+                                </div>
+
+                                <!-- Sync log -->
+                                <div class="pt-3 border-t border-gray-800">
+                                    <h4 class="text-sm font-bold text-gray-300 mb-2">Recent Sync History</h4>
+                                    <div class="overflow-x-auto rounded-lg border border-gray-800">
+                                        <table class="min-w-full divide-y divide-gray-800 text-sm">
+                                            <thead class="bg-gray-800/70">
+                                                <tr>
+                                                    <th
+                                                        class="px-3 py-2 text-left text-xs font-semibold uppercase tracking-wider text-gray-400">
+                                                        Time</th>
+                                                    <th
+                                                        class="px-3 py-2 text-left text-xs font-semibold uppercase tracking-wider text-gray-400">
+                                                        Status</th>
+                                                    <th
+                                                        class="px-3 py-2 text-left text-xs font-semibold uppercase tracking-wider text-gray-400">
+                                                        Duration</th>
+                                                    <th
+                                                        class="px-3 py-2 text-left text-xs font-semibold uppercase tracking-wider text-gray-400">
+                                                        Trigger</th>
+                                                    <th
+                                                        class="px-3 py-2 text-left text-xs font-semibold uppercase tracking-wider text-gray-400">
+                                                        Details</th>
+                                                </tr>
+                                            </thead>
+                                            <tbody id="sync-log-table-body" class="divide-y divide-gray-800">
+                                                <tr>
+                                                    <td colspan="5" class="text-center py-3 text-gray-500">Loading…</td>
+                                                </tr>
+                                            </tbody>
+                                        </table>
+                                    </div>
+                                </div>
+                            </section>
                         </div>
                     </div>
-                </div>
 
-                <!-- Filters (reused from the schedule view) -->
-                <div class="mt-2.5 grid gap-2 sm:grid-cols-2">
-                    <select id="admin-team-select" aria-label="Filter by team" onchange="updateAdminMatchEntryView()" class="select-glass"></select>
-                    <select id="admin-court-select" aria-label="Filter by court" onchange="updateAdminMatchEntryView()" class="select-glass"></select>
-                </div>
-                <label class="mt-2 flex items-center justify-between gap-2.5 rounded-[18px] border border-white/[.12] bg-white/[.05] px-[15px] py-3 cursor-pointer">
-                    <span class="text-xs font-semibold text-[#F1F1F2]">Hide games already reported</span>
-                    <span class="switch flex-none">
-                        <input type="checkbox" id="hide-played-toggle" onchange="updateAdminMatchEntryView()">
-                        <span class="slider round"></span>
-                    </span>
-                </label>
-
-                <div id="admin-filter-info" class="hidden mt-2 px-1.5 text-[11px] leading-[1.5] text-white/45"></div>
-
-                <!-- Match Entry List -->
-                <div id="admin-match-list" class="mt-2.5 grid gap-2.5">
-                    <p class="py-4 text-center text-sm text-white/45">Select filters to view matches, or load data.</p>
-                </div>
+                </main>
             </div>
-
-            <!-- SETTINGS VIEW (Superadmin only) -->
-            <div id="settings-view" class="screen hidden">
-                <div class="screen-head">
-                    <h2 class="screen-title">Setup</h2>
-                    <button onclick="switchView('admin-entry')" class="flex-none rounded-full border border-white/20 bg-white/[.06] px-3.5 py-2.5 text-[11px] font-semibold leading-none text-white/75">← Admin</button>
-                </div>
-
-                <div class="mt-3.5 grid gap-2.5">
-                <!-- Announcement manager -->
-                <section class="card-dark p-4 space-y-3">
-                    <h3 class="text-lg font-bold text-white">📣 Announcement manager</h3>
-                    <textarea id="announcement-draft" rows="3" placeholder="e.g. Grades 5–6 semifinals move to Court 1 at 4:20."
-                              class="w-full p-3 bg-gray-700 border border-gray-600 rounded-lg text-white shadow-sm focus:border-accent focus:ring focus:ring-accent/50 transition duration-150 text-sm"></textarea>
-                    <div class="flex gap-2">
-                        <button id="announcement-post-btn" onclick="postAnnouncementFromSetup()" class="btn-gold px-4 py-2 text-sm">Post announcement</button>
-                        <button id="announcement-cancel-btn" onclick="cancelAnnouncementEdit()" class="hidden px-4 py-2 rounded-lg bg-gray-700 text-gray-300 text-sm">Cancel edit</button>
-                    </div>
-                    <div id="setup-announcements-list" class="grid gap-2 pt-2 border-t border-gray-800"></div>
-                </section>
-
-                <!-- Google Sheet Sync -->
-                <section class="card-dark p-4 space-y-4">
-                    <div class="flex items-center justify-between flex-wrap gap-2">
-                        <h3 class="text-lg font-bold text-white">📄 Google Sheet Sync</h3>
-                        <span id="sheet-sync-configured-status" class="px-2 py-0.5 rounded text-xs font-semibold bg-gray-600 text-white">Checking…</span>
-                    </div>
-                    <p class="text-sm text-gray-400">The Google Sheet is the document of record. Match data is pulled from the sheet into this app.</p>
-
-                    <a id="sheet-sync-link" href="#" target="_blank" rel="noopener noreferrer"
-                       class="inline-flex items-center gap-1 text-sm font-medium text-gold-l hover:text-gold underline hidden">
-                        Open Google Sheet ↗
-                    </a>
-
-                    <div class="flex flex-col sm:flex-row sm:items-center gap-3 pt-2 border-t border-gray-800">
-                        <button id="sync-now-button" onclick="syncNow()" class="btn-gold px-4 py-2 shadow transition-colors disabled:opacity-50 disabled:cursor-not-allowed">
-                            🔄 Sync Now
-                        </button>
-                        <p class="text-sm text-gray-400">
-                            Last sync: <span id="sync-last-time" class="text-gray-200 font-medium">Never</span>
-                        </p>
-                    </div>
-
-                    <!-- Auto-sync toggle + interval -->
-                    <div class="pt-3 border-t border-gray-800 space-y-3">
-                        <div class="flex items-center gap-3">
-                            <label class="switch">
-                                <input type="checkbox" id="auto-sync-toggle" onchange="toggleAutoSync(this.checked)">
-                                <span class="slider round"></span>
-                            </label>
-                            <label for="auto-sync-toggle" class="text-sm font-medium text-gray-300 cursor-pointer">Enable Auto-Sync</label>
-                        </div>
-
-                        <div id="auto-sync-interval-controls" class="flex flex-wrap items-center gap-2">
-                            <span class="text-sm text-gray-400 mr-1">Sync every:</span>
-                            <button id="sync-interval-30" onclick="setSyncInterval(30)"
-                                    class="px-3 py-1.5 rounded-lg bg-gray-700 text-gray-300 text-sm font-semibold transition-colors">30s</button>
-                            <button id="sync-interval-60" onclick="setSyncInterval(60)"
-                                    class="px-3 py-1.5 rounded-lg bg-gray-700 text-gray-300 text-sm font-semibold transition-colors">1 min</button>
-                            <button id="sync-interval-300" onclick="setSyncInterval(300)"
-                                    class="px-3 py-1.5 rounded-lg bg-gray-700 text-gray-300 text-sm font-semibold transition-colors">5 min</button>
-
-                            <button id="sync-interval-custom-btn" onclick="setCustomSyncInterval()"
-                                    class="px-3 py-1.5 rounded-lg bg-gray-700 text-gray-300 text-sm font-semibold transition-colors">Custom</button>
-                            <input id="sync-interval-custom-input" type="number" min="10" step="1" placeholder="seconds"
-                                   onkeypress="if(event.key==='Enter') setCustomSyncInterval()"
-                                   class="w-24 p-1.5 bg-gray-800 border border-gray-600 rounded-lg text-white text-sm shadow-sm focus:border-accent focus:ring focus:ring-accent/50">
-                        </div>
-                    </div>
-
-                    <!-- Sync scope -->
-                    <div class="pt-3 border-t border-gray-800 space-y-3">
-                        <h4 class="text-sm font-bold text-gray-300">Sync Scope</h4>
-                        <p class="text-xs text-gray-500">Limit syncing to just the division(s) currently playing, instead of pulling the whole sheet every time.</p>
-                        <div class="flex flex-wrap gap-4">
-                            <label class="flex items-center gap-2 text-sm text-gray-300 cursor-pointer">
-                                <input type="radio" name="sync-scope" id="sync-scope-all" onchange="setSyncScope('all')" checked>
-                                All Divisions
-                            </label>
-                            <label class="flex items-center gap-2 text-sm text-gray-300 cursor-pointer">
-                                <input type="radio" name="sync-scope" id="sync-scope-selected" onchange="setSyncScope('selected')">
-                                Selected Divisions
-                            </label>
-                        </div>
-                        <div id="sync-division-picker" class="flex flex-wrap gap-2 hidden">
-                            <p class="text-sm text-gray-500">Loading divisions…</p>
-                        </div>
-                    </div>
-
-                    <!-- Sync log -->
-                    <div class="pt-3 border-t border-gray-800">
-                        <h4 class="text-sm font-bold text-gray-300 mb-2">Recent Sync History</h4>
-                        <div class="overflow-x-auto rounded-lg border border-gray-800">
-                            <table class="min-w-full divide-y divide-gray-800 text-sm">
-                                <thead class="bg-gray-800/70">
-                                    <tr>
-                                        <th class="px-3 py-2 text-left text-xs font-semibold uppercase tracking-wider text-gray-400">Time</th>
-                                        <th class="px-3 py-2 text-left text-xs font-semibold uppercase tracking-wider text-gray-400">Status</th>
-                                        <th class="px-3 py-2 text-left text-xs font-semibold uppercase tracking-wider text-gray-400">Duration</th>
-                                        <th class="px-3 py-2 text-left text-xs font-semibold uppercase tracking-wider text-gray-400">Trigger</th>
-                                        <th class="px-3 py-2 text-left text-xs font-semibold uppercase tracking-wider text-gray-400">Details</th>
-                                    </tr>
-                                </thead>
-                                <tbody id="sync-log-table-body" class="divide-y divide-gray-800">
-                                    <tr><td colspan="5" class="text-center py-3 text-gray-500">Loading…</td></tr>
-                                </tbody>
-                            </table>
-                        </div>
-                    </div>
-                </section>
-                </div>
-            </div>
-
-        </main>
-    </div>
-    </div>
+        </div>
     </div><!-- /#app-screen -->
 
     <!-- BOTTOM TAB BAR -->
     <nav id="bottom-tab-bar" class="tabbar">
-        <button id="live-tab" onclick="switchView('live')" class="tab-button">
-            <span class="tab-icon">🔴</span><span class="tab-label">LIVE</span>
-        </button>
         <button id="standings-tab" onclick="switchView('standings')" class="tab-button">
             <span class="tab-icon">🏆</span><span class="tab-label">STANDINGS</span>
         </button>
         <button id="schedule-tab" onclick="switchView('schedule')" class="tab-button">
             <span class="tab-icon">🗓️</span><span class="tab-label">GAMES</span>
+        </button>
+        <button id="playoffs-tab" onclick="switchView('playoffs')" class="tab-button">
+            <span class="tab-icon">🥇</span><span class="tab-label">PLAYOFFS</span>
         </button>
         <button id="info-tab" onclick="switchView('info')" class="tab-button">
             <span class="tab-icon">📣</span><span class="tab-label">INFO</span>
@@ -1060,7 +1467,8 @@
             <span class="tab-icon">🛠️</span><span class="tab-label">ADMIN</span>
         </button>
         <button id="chat-tab" onclick="switchView('chat')" class="tab-button hidden">
-            <span class="tab-icon">💬<span id="chat-unread-dot" class="hidden"></span></span><span class="tab-label">CHAT</span>
+            <span class="tab-icon">💬<span id="chat-unread-dot" class="hidden"></span></span><span
+                class="tab-label">CHAT</span>
         </button>
     </nav>
 
@@ -1069,7 +1477,8 @@
         <div class="modal-sheet">
             <div class="modal-head">
                 <div class="kicker !tracking-[.16em] text-gold">Admin sign-in</div>
-                <div class="mt-2 text-[17px] font-bold leading-[1.3] tracking-[-.02em] text-[#F7F7F8]">Sign in to run games</div>
+                <div class="mt-2 text-[17px] font-bold leading-[1.3] tracking-[-.02em] text-[#F7F7F8]">Sign in to run
+                    games</div>
             </div>
             <div class="modal-body">
                 <div>
@@ -1078,8 +1487,11 @@
                 </div>
 
                 <div>
-                    <div class="kicker text-mute mb-2.5">Your court <span class="font-medium normal-case tracking-normal opacity-70">· court managers only</span></div>
-                    <div class="grid grid-cols-4 gap-1.5 rounded-[18px] p-1.5" style="background:#EFEFF0" id="login-court-picker">
+                    <div class="kicker text-mute mb-2.5">Your court <span
+                            class="font-medium normal-case tracking-normal opacity-70">· court managers only</span>
+                    </div>
+                    <div class="grid grid-cols-4 gap-1.5 rounded-[18px] p-1.5" style="background:#EFEFF0"
+                        id="login-court-picker">
                         <!-- populated by admin.js -->
                     </div>
                 </div>
@@ -1092,19 +1504,23 @@
                 <p id="admin-login-message" class="hidden text-[12px] font-semibold" style="color:var(--warn)"></p>
 
                 <div class="grid grid-cols-[1fr_1.7fr] gap-2">
-                    <button onclick="hideAdminLoginModal()" class="rounded-[18px] border bg-[#F3F3F4] p-4 text-[13px] font-semibold leading-none text-ink" style="border-color:var(--line)">Cancel</button>
-                    <button onclick="loginAdmin()" id="login-button" class="btn-primary !rounded-[18px] p-4 text-[13px] leading-none">Sign in →</button>
+                    <button onclick="hideAdminLoginModal()"
+                        class="rounded-[18px] border bg-[#F3F3F4] p-4 text-[13px] font-semibold leading-none text-ink"
+                        style="border-color:var(--line)">Cancel</button>
+                    <button onclick="loginAdmin()" id="login-button"
+                        class="btn-primary !rounded-[18px] p-4 text-[13px] leading-none">Sign in →</button>
                 </div>
             </div>
         </div>
     </div>
-    
+
     <!-- ADMIN MATCH ENTRY VIEW -->
     <div id="match-entry-modal" class="modal-backdrop hidden">
-        <div class="modal-sheet">
+        <div class="modal-sheet-dark">
             <div class="modal-head">
                 <div class="kicker !tracking-[.16em] text-gold">Report final result</div>
-                <div id="match-info-display" class="mt-2 text-[17px] font-bold leading-[1.3] tracking-[-.02em] text-[#F7F7F8]"></div>
+                <div id="match-info-display"
+                    class="mt-2 text-[17px] font-bold leading-[1.3] tracking-[-.02em] text-[#F7F7F8]"></div>
             </div>
 
             <div class="modal-body">
@@ -1113,36 +1529,39 @@
                 <input type="hidden" id="modal-winner-select" value="—">
 
                 <div>
-                    <div class="kicker text-mute mb-2.5">Who won?</div>
+                    <div class="kicker text-white/45 mb-2.5">Who won?</div>
                     <div id="modal-winner-tiles" class="grid gap-[7px]"></div>
                 </div>
 
                 <div>
-                    <div class="kicker text-mute mb-2.5">Winner's players left · tiebreak</div>
-                    <div class="stepper-wrap">
-                        <button type="button" onclick="changePlayers(-1)" class="stepper-btn">–</button>
-                        <input type="number" min="0" max="8" id="modal-players-input" value="0" readonly class="stepper-value w-full min-w-0 border-0 bg-transparent outline-none">
-                        <button type="button" onclick="changePlayers(1)" class="stepper-btn">+</button>
+                    <div class="kicker text-white/45 mb-2.5">Winner's players left · tiebreak</div>
+                    <div class="stepper-wrap-dark">
+                        <button type="button" onclick="changePlayers(-1)" class="stepper-btn-dark">–</button>
+                        <input type="number" min="0" max="8" id="modal-players-input" value="0" readonly
+                            class="stepper-value-dark w-full min-w-0 border-0 bg-transparent outline-none">
+                        <button type="button" onclick="changePlayers(1)" class="stepper-btn-dark">+</button>
                     </div>
                 </div>
 
                 <div>
-                    <div class="kicker text-mute mb-2.5">Notes · optional</div>
+                    <div class="kicker text-white/45 mb-2.5">Notes · optional</div>
                     <textarea id="modal-notes-textarea" rows="3" placeholder="Forfeit, injury, short-handed team…"
-                              class="field-light resize-none"></textarea>
+                        class="field-dark resize-none"></textarea>
                 </div>
 
                 <div>
-                    <div class="kicker text-mute mb-2.5">Reported by</div>
-                    <input type="text" id="admin-name-input" placeholder="Your name" class="field-light">
-                    <p class="mt-2 text-[11px] leading-[1.5] text-mute">Writes straight to the tournament sheet.</p>
+                    <div class="kicker text-white/45 mb-2.5">Reported by</div>
+                    <input type="text" id="admin-name-input" placeholder="Your name" class="field-dark">
+                    <p class="mt-2 text-[11px] leading-[1.5] text-white/45">Writes straight to the tournament sheet.</p>
                 </div>
 
                 <p id="modal-save-message" class="hidden text-[12px] font-semibold" style="color:var(--warn)"></p>
 
                 <div class="grid grid-cols-[1fr_1.7fr] gap-2">
-                    <button onclick="hideMatchEntryModal()" class="rounded-[18px] border bg-[#F3F3F4] p-4 text-[13px] font-semibold leading-none text-ink" style="border-color:var(--line)">Cancel</button>
-                    <button onclick="saveMatchResultFromModal()" id="modal-save-button" class="btn-primary !rounded-[18px] p-4 text-[13px] leading-none">Submit result</button>
+                    <button onclick="hideMatchEntryModal()"
+                        class="rounded-[18px] border border-white/15 bg-white/[.07] p-4 text-[13px] font-semibold leading-none text-[#F1F1F2]">Cancel</button>
+                    <button onclick="saveMatchResultFromModal()" id="modal-save-button"
+                        class="btn-primary !rounded-[18px] p-4 text-[13px] leading-none">Submit result</button>
                 </div>
             </div>
         </div>
@@ -1152,25 +1571,26 @@
          kept hidden purely so updateAdminUI()'s existing bookkeeping still has
          its elements to write to. -->
     <footer id="footer" class="hidden">
-      <button id="admin-button"><span id="admin-status-text">Admin</span></button>
+        <button id="admin-button"><span id="admin-status-text">Admin</span></button>
     </footer>
 
-      
-<script src="https://www.gstatic.com/firebasejs/10.13.1/firebase-app-compat.js"></script>
-<script src="https://www.gstatic.com/firebasejs/10.13.1/firebase-database-compat.js"></script>
-<script src="https://www.gstatic.com/firebasejs/10.13.1/firebase-auth-compat.js"></script>
-<!-- Only used when DATA_BACKEND=local (see server/index.js /config.js and public/js/main.js) -->
-<script src="https://cdn.socket.io/4.7.5/socket.io.min.js"></script>
+
+    <script src="https://www.gstatic.com/firebasejs/10.13.1/firebase-app-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/10.13.1/firebase-database-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/10.13.1/firebase-auth-compat.js"></script>
+    <!-- Only used when DATA_BACKEND=local (see server/index.js /config.js and public/js/main.js) -->
+    <script src="https://cdn.socket.io/4.7.5/socket.io.min.js"></script>
 
     <script src="/config.js"></script>
-<script type="module" src="./js/main.js"></script>
+    <script type="module" src="./js/main.js"></script>
 
-<!-- Google tag (gtag.js) -->
+    <!-- Google tag (gtag.js) -->
     <!--
       Google Analytics will be initialized from `main.js` after `/api/allData`
       populates `App.settings.ga_measurement_id`. This avoids race conditions
       where the GA snippet runs before the server-provided settings arrive.
     -->
-  
+
 </body>
+
 </html>

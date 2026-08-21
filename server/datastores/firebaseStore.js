@@ -61,6 +61,28 @@ export async function writeDivisionData(name, { standings, schedule } = {}) {
   }
 }
 
+/**
+ * Remove a division and everything under it (standings, schedule, per-match
+ * history). Used when the sheet a division came from is no longer the
+ * source of record — see pruneDivisions().
+ */
+export async function deleteDivision(name) {
+  if (!name) return;
+  await admin.database().ref(`dodgeball-tournament/divisions/${name}`).remove();
+}
+
+/**
+ * Delete every stored division whose name isn't in `keepNames`, and return
+ * the names that were removed. Called after a spreadsheet swap so divisions
+ * left behind by the previous sheet stop showing up in /api/divisions.
+ */
+export async function pruneDivisions(keepNames = []) {
+  const keep = new Set(keepNames);
+  const stale = (await getDivisionNames()).filter(name => !keep.has(name));
+  for (const name of stale) await deleteDivision(name);
+  return stale;
+}
+
 const ANNOUNCEMENTS_PATH = 'dodgeball-tournament/announcements';
 const CHAT_PATH = 'dodgeball-tournament/chat';
 
@@ -118,6 +140,15 @@ export async function postChatMessage({ who, mgr, text }) {
   return getChatMessages();
 }
 
+export async function deleteChatMessage(id) {
+  const db = admin.database();
+  const snap = await db.ref(CHAT_PATH).orderByChild('id').equalTo(id).once('value');
+  const val = snap.val() || {};
+  const key = Object.keys(val)[0] || null;
+  if (key) await db.ref(`${CHAT_PATH}/${key}`).remove();
+  return getChatMessages();
+}
+
 export async function getSyncStatus() {
   const snap = await admin.database().ref(SYNC_SETTINGS_PATH).once('value');
   const val = snap.val() || {};
@@ -127,7 +158,10 @@ export async function getSyncStatus() {
       autoSyncEnabled: !!val.autoSyncEnabled,
       intervalSeconds: Number(val.intervalSeconds) || 300,
       syncScope: val.syncScope || 'all',
-      selectedDivisions: Array.isArray(val.selectedDivisions) ? val.selectedDivisions : []
+      selectedDivisions: Array.isArray(val.selectedDivisions) ? val.selectedDivisions : [],
+      // Spreadsheet the stored divisions were last pulled from; sheetsSync
+      // compares this against SPREADSHEET_ID to detect a sheet swap.
+      spreadsheetId: val.spreadsheetId || null
     },
     lastSync: val.lastSync || null,
     log

@@ -117,6 +117,30 @@ export async function syncAll(triggeredBy = 'manual') {
     const { settings } = await Store.getSyncStatus();
     const allDivisionNames = await getAvailableDivisions();
 
+    // Spreadsheet swap: SPREADSHEET_ID in .env no longer matches the sheet
+    // the stored divisions came from, so anything not a tab in the new sheet
+    // is left over from the old one and gets deleted. Only prune when the
+    // new sheet actually returned tabs — an empty list means an API/permission
+    // problem, and wiping every division over that would be destructive.
+    let pruned = [];
+    if (settings.spreadsheetId !== SPREADSHEET_ID && allDivisionNames.length) {
+      if (settings.spreadsheetId) {
+        pruned = await Store.pruneDivisions(allDivisionNames);
+        if (pruned.length) {
+          console.log(`sheetsSync: spreadsheet changed — removed ${pruned.length} division(s) from the previous sheet: ${pruned.join(', ')}`);
+        }
+      }
+      // Drop any selected-division picks that only existed in the old sheet,
+      // otherwise a 'selected' scope can end up matching nothing.
+      const patch = { spreadsheetId: SPREADSHEET_ID };
+      const keptSelections = (settings.selectedDivisions || []).filter(n => allDivisionNames.includes(n));
+      if (keptSelections.length !== (settings.selectedDivisions || []).length) {
+        patch.selectedDivisions = keptSelections;
+        settings.selectedDivisions = keptSelections;
+      }
+      await Store.updateSyncSettings(patch);
+    }
+
     let divisionNames = allDivisionNames;
     let scope = 'all';
     if (settings.syncScope === 'selected' && Array.isArray(settings.selectedDivisions) && settings.selectedDivisions.length) {
@@ -128,7 +152,7 @@ export async function syncAll(triggeredBy = 'manual') {
       return recordResult({
         success: false,
         error: scope === 'selected' ? 'No matching divisions found for the selected sync scope.' : 'No divisions found in the sheet.',
-        triggeredBy, startedAt, scope, divisionNames: settings.selectedDivisions
+        triggeredBy, startedAt, scope, divisionNames: settings.selectedDivisions, pruned
       });
     }
 
@@ -143,7 +167,7 @@ export async function syncAll(triggeredBy = 'manual') {
     }
 
     return recordResult({
-      success: true, triggeredBy, startedAt, scope, divisionNames,
+      success: true, triggeredBy, startedAt, scope, divisionNames, pruned,
       divisions: divisionNames.length, standingsCount, matchesCount
     });
   } catch (e) {
@@ -152,7 +176,7 @@ export async function syncAll(triggeredBy = 'manual') {
   }
 }
 
-async function recordResult({ success, error, triggeredBy, startedAt, divisions, standingsCount, matchesCount, scope, divisionNames }) {
+async function recordResult({ success, error, triggeredBy, startedAt, divisions, standingsCount, matchesCount, scope, divisionNames, pruned }) {
   const timestamp = Date.now();
   const durationMs = timestamp - startedAt;
   const entry = {
@@ -163,7 +187,8 @@ async function recordResult({ success, error, triggeredBy, startedAt, divisions,
     ...(error ? { error } : {}),
     ...(divisions != null ? { divisions, standingsCount, matchesCount } : {}),
     ...(scope ? { scope } : {}),
-    ...(divisionNames && divisionNames.length ? { divisionNames } : {})
+    ...(divisionNames && divisionNames.length ? { divisionNames } : {}),
+    ...(pruned && pruned.length ? { prunedDivisions: pruned } : {})
   };
 
   try {
@@ -173,6 +198,31 @@ async function recordResult({ success, error, triggeredBy, startedAt, divisions,
   }
 
   return { success, ...entry };
+}
+
+/**
+ * Delete every stored division that isn't a visible tab in the spreadsheet
+ * SPREADSHEET_ID currently points at, and record that id as the one the
+ * stored data came from. syncAll() does this on its own when it notices the
+ * id changed; this is the manual entry point for cleaning up a swap that
+ * happened before the id was being tracked.
+ */
+export async function pruneStaleDivisions() {
+  if (!isConfigured()) {
+    return { success: false, error: 'Google Sheets sync not configured.', pruned: [] };
+  }
+  try {
+    const allDivisionNames = await getAvailableDivisions();
+    if (!allDivisionNames.length) {
+      return { success: false, error: 'No divisions found in the sheet — refusing to prune.', pruned: [] };
+    }
+    const pruned = await Store.pruneDivisions(allDivisionNames);
+    await Store.updateSyncSettings({ spreadsheetId: SPREADSHEET_ID });
+    return { success: true, pruned, kept: allDivisionNames };
+  } catch (e) {
+    console.error('sheetsSync.pruneStaleDivisions failed', e);
+    return { success: false, error: e.toString(), pruned: [] };
+  }
 }
 
 export async function getStatus() {

@@ -1,7 +1,7 @@
 import { getDivisions } from './api.js';
 import { initSettingsView } from './settings.js';
 import { onChatTabOpened } from './chat.js';
-import { renderLiveView } from './live.js';
+import { renderPlayoffsView } from './playoffs.js';
 
 /**
  * Fetches all division (sheet) names via the /api/divisions REST endpoint.
@@ -60,7 +60,7 @@ function renderGateDivisions() {
 
     App.data.allDivisionNames.forEach(name => {
         const btn = document.createElement('button');
-        btn.className = 'text-left rounded-2xl p-3.5 border border-white/[.12] bg-white/[.06] hover:bg-white/10 transition-colors';
+        btn.className = 'text-left rounded-2xl p-3.5 border border-white/[.12] bg-white/[.06] hover:bg-gold/10 hover:border-gold/40 active:bg-gold/15 transition-colors';
         btn.innerHTML = `<span class="block text-lg font-bold tracking-tight text-gray-50">${name}</span>`;
         btn.onclick = () => enterApp(name);
         grid.appendChild(btn);
@@ -321,18 +321,18 @@ function switchView(view) {
     //                view: view
     //                });
     const views = {
-        'live': document.getElementById('live-view'),
         'standings': document.getElementById('standings-view'),
         'schedule': document.getElementById('schedule-view'),
+        'playoffs': document.getElementById('playoffs-view'),
         'info': document.getElementById('info-view'),
         'admin-entry': document.getElementById('admin-match-entry-view'),
         'chat': document.getElementById('chat-view'),
         'settings': document.getElementById('settings-view')
     };
     const tabs = {
-        'live': document.getElementById('live-tab'),
         'standings': document.getElementById('standings-tab'),
         'schedule': document.getElementById('schedule-tab'),
+        'playoffs': document.getElementById('playoffs-tab'),
         'info': document.getElementById('info-tab'),
         'admin-entry': document.getElementById('admin-entry-tab'),
         'chat': document.getElementById('chat-tab')
@@ -356,7 +356,7 @@ function switchView(view) {
             if (v === 'admin-entry') updateAdminMatchEntryView();
             if (v === 'settings') initSettingsView();
             if (v === 'chat') onChatTabOpened();
-            if (v === 'live') renderLiveView();
+            if (v === 'playoffs') renderPlayoffsView();
 
         } else {
             viewEl.classList.add('hidden');

@@ -78,7 +78,8 @@ CREATE TABLE IF NOT EXISTS sync_settings (
   auto_sync_enabled BOOLEAN NOT NULL DEFAULT FALSE,
   interval_seconds INT NOT NULL DEFAULT 300,
   sync_scope VARCHAR(16) NOT NULL DEFAULT 'all',
-  selected_divisions TEXT NULL
+  selected_divisions TEXT NULL,
+  spreadsheet_id VARCHAR(191) NULL
 );
 
 -- Superadmin Settings page: log of each Google Sheet sync attempt.

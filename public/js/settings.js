@@ -10,7 +10,7 @@
 // updates in local mode — 'syncStatusUpdate' is broadcast to every client
 // regardless of DATA_BACKEND, so this works the same whether the server is
 // running against Firebase or MariaDB.
-import { getSheetSyncConfig, getSheetSyncStatus, updateSheetSyncSettings, runSheetSync } from './api.js';
+import { getSheetSyncConfig, getSheetSyncStatus, updateSheetSyncSettings, runSheetSync, pruneSheetSyncDivisions } from './api.js';
 import { getSocket } from './socketClient.js';
 
 const PRESET_INTERVALS = [30, 60, 300];
@@ -198,6 +198,8 @@ function initSettingsView() {
                 : 'px-2 py-0.5 rounded text-xs font-semibold bg-gray-600 text-white';
         }
         if (syncBtn) syncBtn.disabled = !cfg.configured;
+        const pruneBtn = document.getElementById('prune-divisions-button');
+        if (pruneBtn) pruneBtn.disabled = !cfg.configured;
 
         availableDivisions = Array.isArray(cfg.availableDivisions) ? cfg.availableDivisions : [];
         renderDivisionPicker();
@@ -234,6 +236,55 @@ async function syncNow() {
         showStatus('Sync failed: ' + e.message, true);
     } finally {
         if (btn) { btn.disabled = false; btn.textContent = '🔄 Sync Now'; }
+    }
+}
+
+// Deletes divisions left over from a previously configured SPREADSHEET_ID.
+// Destructive, so the first click only arms the button — the second one
+// within 5s actually runs it.
+let pruneArmed = false;
+let pruneArmTimer = null;
+
+async function pruneDivisions() {
+    const btn = document.getElementById('prune-divisions-button');
+    const authToken = sessionStorage.getItem('adminAuthToken');
+    if (!authToken) {
+        showStatus('Please log in as superadmin.', true);
+        return;
+    }
+
+    if (!pruneArmed) {
+        pruneArmed = true;
+        if (btn) btn.textContent = 'Click again to confirm';
+        clearTimeout(pruneArmTimer);
+        pruneArmTimer = setTimeout(() => {
+            pruneArmed = false;
+            if (btn) btn.textContent = '🧹 Remove Stale Divisions';
+        }, 5000);
+        return;
+    }
+
+    clearTimeout(pruneArmTimer);
+    pruneArmed = false;
+    if (btn) { btn.disabled = true; btn.textContent = 'Removing…'; }
+    try {
+        const result = await pruneSheetSyncDivisions(authToken);
+        if (result.success) {
+            showStatus(result.pruned.length
+                ? `Removed ${result.pruned.length} stale division(s): ${result.pruned.join(', ')}`
+                : 'No stale divisions found — everything matches the current sheet.', false);
+            // The division list is built once at bootstrap, so reload to drop
+            // the removed divisions from the picker.
+            if (result.pruned.length) setTimeout(() => window.location.reload(), 2500);
+        } else {
+            showStatus('Cleanup failed: ' + (result.error || 'Unknown error'), true);
+        }
+        setTimeout(() => showStatus(null), 5000);
+    } catch (e) {
+        console.error('Prune divisions failed', e);
+        showStatus('Cleanup failed: ' + e.message, true);
+    } finally {
+        if (btn) { btn.disabled = false; btn.textContent = '🧹 Remove Stale Divisions'; }
     }
 }
 
@@ -292,6 +343,7 @@ function toggleSyncDivision(name, checked) {
 export {
     initSettingsView,
     syncNow,
+    pruneDivisions,
     toggleAutoSync,
     setSyncInterval,
     setCustomSyncInterval,

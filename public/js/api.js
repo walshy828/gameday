@@ -80,6 +80,10 @@ export async function runSheetSync(authToken) {
   return await apiPost(`/sheetSync/run`, { authToken });
 }
 
+export async function pruneSheetSyncDivisions(authToken) {
+  return await apiPost(`/sheetSync/prune`, { authToken });
+}
+
 export async function getSheetSyncStatus(authToken) {
   return await apiGet(`/sheetSync/status?authToken=${encodeURIComponent(authToken)}`);
 }
@@ -110,4 +114,8 @@ export async function getChatMessages() {
 
 export async function postChatMessage(authToken, text, reporterName, court) {
   return await apiPost(`/chat`, { authToken, text, reporterName, court });
+}
+
+export async function deleteChatMessage(authToken, id) {
+  return await apiDelete(`/chat/${id}`, { authToken });
 }

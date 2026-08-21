@@ -273,13 +273,14 @@ export function init() {
     serverOffset = snap.val() || 0;
   });
 
-  // --- Sync Indicator ---
+  // --- Connectivity indicator: red border on the clock when sync is stale ---
   let lastServerTimeCheck = Date.now();
   setInterval(() => {
-    const syncIndicator = document.getElementById('sync-indicator');
+    const scoreboardEl = document.getElementById('scoreboard');
+    if (!scoreboardEl) return;
     const now = Date.now();
     const diff = Math.abs(now - lastServerTimeCheck);
-    syncIndicator.style.background = diff < 2000 ? 'limegreen' : 'red';
+    scoreboardEl.style.borderColor = diff < 2000 ? '' : '#ef4444';
   }, 2000);
 
   // --- Main Timer Listener ---

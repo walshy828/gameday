@@ -10,32 +10,20 @@ function updateScheduleView() {
     
     
     
-    const allRoundTimes = new Set(App.data.allScheduleData.map(g => g.roundTime).filter(t => t)); 
-    let chronologicalRounds = Array.from(allRoundTimes);
-    
-    chronologicalRounds.sort((a, b) => {
-        // a and b are the roundTime strings, so pass them directly to parseRoundTime
-        const sortA = parseRoundTime(a);
-        const sortB = parseRoundTime(b);
-        
-        const isTimeA = sortA.isTime;
-        const isTimeB = sortB.isTime;
-
-        // Case 1: Both are times or both are text (sort by their respective values)
-        if (isTimeA === isTimeB) {
-            return sortA.sortValue.localeCompare(sortB.sortValue);
-        }
-
-        // Case 2: Mixed types - Time always comes before Text
-        return isTimeA ? -1 : 1; 
-    });
+    const allRoundTimes = new Set(App.data.allScheduleData.map(g => g.roundTime).filter(t => t));
+    let chronologicalRounds = Array.from(allRoundTimes).sort(compareRoundTimes);
 
     let combinedSchedule = [];
     //const byeContainer = document.getElementById('bye-rounds-info');
     //byeContainer.classList.add('hidden');
 
-    const courtFilteredSchedule = App.data.allScheduleData.filter(game => 
-        selectedCourt === 'all' || (game.court && game.court.trim() === selectedCourt)
+    // "Hide finished games" drops every game with a reported result; a round
+    // whose games are all reported then falls out of the view entirely.
+    const hideFinished = document.getElementById('hide-finished-toggle')?.checked;
+
+    const courtFilteredSchedule = App.data.allScheduleData.filter(game =>
+        (selectedCourt === 'all' || (game.court && game.court.trim() === selectedCourt)) &&
+        !(hideFinished && isReported(game))
     );
 
     if (selectedTeam === 'all') {
@@ -61,7 +49,14 @@ function updateScheduleView() {
 
         let byeRounds = [];
 
+        // With "hide finished" on, byes already in the past go too — only the
+        // current and upcoming ones are still worth showing.
+        const liveKey = getLiveRoundKey();
+        const liveIndex = liveKey === undefined ? chronologicalRounds.length : chronologicalRounds.indexOf(liveKey);
+
         for (const roundTime of chronologicalRounds) {
+            if (hideFinished && chronologicalRounds.indexOf(roundTime) < liveIndex) continue;
+
             if (!teamPlayedRoundTimes.has(roundTime) && !roundTime.startsWith('P')) {
                 const gamesInRound = App.data.allScheduleData.filter(g => g.roundTime === roundTime);
                 const gameIsOnFilteredCourt = selectedCourt === 'all' || gamesInRound.some(g => g.court && g.court.trim() === selectedCourt);
@@ -87,22 +82,7 @@ function updateScheduleView() {
         //byeContainer.innerHTML = `<p class="font-bold text-sm">${infoText}</p>`;
     }
 
-    combinedSchedule.sort((a, b) => {
-        // a.roundTime and b.roundTime are the strings, so pass them to parseRoundTime
-        const sortA = parseRoundTime(a.roundTime);
-        const sortB = parseRoundTime(b.roundTime);
-
-        const isTimeA = sortA.isTime;
-        const isTimeB = sortB.isTime;
-
-        // Case 1: Both are times or both are text (sort by their respective values)
-        if (isTimeA === isTimeB) {
-            return sortA.sortValue.localeCompare(sortB.sortValue);
-        }
-
-        // Case 2: Mixed types - Time always comes before Text
-        return isTimeA ? -1 : 1;
-    });
+    combinedSchedule.sort((a, b) => compareRoundTimes(a.roundTime, b.roundTime));
 
                 
     renderScheduleView(combinedSchedule);
@@ -141,23 +121,43 @@ function renderScheduleView(schedule) {
         rounds.get(key).push(game);
     });
 
-    // The "live" round is the earliest one with an unreported game — everything
-    // before it is FINAL, everything after is UPCOMING. That's the same signal
-    // the old renderer used for its single amber "next game" highlight.
+    // The "live" round comes from the WHOLE schedule, not the filtered view, so
+    // that a team filtered down to a bye still sees its current round marked —
+    // otherwise its synthetic BYE row (which carries a winner) would read as a
+    // finished round and nothing would be highlighted.
     const roundKeys = [...rounds.keys()];
-    const liveKey = roundKeys.find(key => rounds.get(key).some(g => !isReported(g)));
+    const roundOrder = getRoundOrder();
+    const liveKey = getLiveRoundKey();
+    const liveIndex = liveKey === undefined ? roundOrder.length : roundOrder.indexOf(liveKey);
 
     const fragment = document.createDocumentFragment();  //to batch updates
+
+    // Bye teams are only meaningful in the unfiltered view — with a single team
+    // selected the round card holds just that team's game, so listing every
+    // other team as "not playing" would be noise.
+    const showByeFooter = (document.getElementById('team-select')?.value || 'all') === 'all';
+    const allTeams = showByeFooter ? getRosterTeams() : null;
+
+    const dim = 'rgba(255,255,255,.38)';
+    const strong = 'rgba(255,255,255,.86)';
 
     roundKeys.forEach(roundTime => {
         const games = rounds.get(roundTime);
         const live = roundTime === liveKey;
-        const done = liveKey === undefined || roundKeys.indexOf(roundTime) < roundKeys.indexOf(liveKey);
+        const done = roundOrder.indexOf(roundTime) < liveIndex;
+        // A live round holding only BYE rows means the filtered team is sitting
+        // this round out — same gold highlight, different wording.
+        const liveBye = live && games.every(g => g.isBye);
 
+        // The live round keeps the same dark card as every other round; the only
+        // difference is a gold border (plus a soft gold glow) marking it active.
         const card = document.createElement('section');
-        card.className = 'rounded-[26px] border p-3.5 shadow-[0_14px_36px_rgba(0,0,0,.26)]';
-        card.style.background = live ? 'rgba(255,255,255,.95)' : 'rgba(255,255,255,.055)';
-        card.style.borderColor = live ? 'rgba(224,184,99,.5)' : 'rgba(255,255,255,.1)';
+        card.className = 'rounded-[26px] border p-3.5';
+        card.style.background = live ? 'rgba(255,255,255,.075)' : 'rgba(255,255,255,.055)';
+        card.style.borderColor = live ? 'var(--gold)' : 'rgba(255,255,255,.1)';
+        card.style.boxShadow = live
+            ? '0 0 0 1px rgba(224,184,99,.35), 0 14px 36px rgba(0,0,0,.26)'
+            : '0 14px 36px rgba(0,0,0,.26)';
 
         const chipStyle = live
             ? 'background:linear-gradient(135deg,var(--gold) 0%,var(--gold-d) 100%);color:#2A1B08'
@@ -167,7 +167,7 @@ function renderScheduleView(schedule) {
         head.className = 'flex items-center gap-2.5';
         head.innerHTML = `
             <span class="rounded-full px-2.5 py-1.5 text-[11px] font-semibold leading-none tracking-[.02em]" style="${chipStyle}">${esc(roundTime)}</span>
-            <span class="text-[9px] font-semibold leading-none tracking-[.12em]" style="color:${live ? 'var(--mar)' : 'rgba(255,255,255,.4)'}">${live ? 'ON COURT NOW' : done ? 'FINAL' : 'UPCOMING'}</span>
+            <span class="text-[9px] font-semibold leading-none tracking-[.12em]" style="color:${live ? 'var(--gold)' : 'rgba(255,255,255,.4)'}">${liveBye ? 'ON BYE THIS ROUND' : live ? 'ON COURT NOW' : done ? 'FINAL' : 'UPCOMING'}</span>
         `;
         card.appendChild(head);
 
@@ -177,14 +177,20 @@ function renderScheduleView(schedule) {
         games.forEach(game => {
             const row = document.createElement('div');
             row.className = 'flex items-center gap-2.5 rounded-2xl px-3 py-2.5';
-            row.style.background = live ? '#F5F5F6' : 'rgba(255,255,255,.05)';
+            row.style.background = 'rgba(255,255,255,.05)';
 
             if (game.isBye) {
+                // A bye in the current round gets the same gold treatment an
+                // in-progress game does, so "you're off this round" is obvious.
+                if (live) {
+                    row.style.background = 'rgba(224,184,99,.07)';
+                    row.style.boxShadow = 'inset 0 0 0 1px rgba(224,184,99,.55)';
+                }
                 row.innerHTML = `
                     <span class="flex-none w-[26px] h-[26px] rounded-[9px] text-center text-[10px] font-bold leading-[26px]"
-                          style="background:${live ? 'rgba(123,29,43,.1)' : 'rgba(255,255,255,.08)'};color:${live ? 'var(--mar)' : 'rgba(255,255,255,.6)'}">—</span>
-                    <span class="flex-1 min-w-0 truncate text-[13px] font-semibold leading-[1.4]" style="color:${live ? 'var(--ink)' : 'rgba(255,255,255,.86)'}">${esc(game.team)}</span>
-                    <span class="flex-none text-right text-[9px] font-semibold leading-[1.3] tracking-[.08em]" style="color:${live ? 'var(--mute)' : 'rgba(255,255,255,.38)'}">BYE</span>
+                          style="background:${live ? 'rgba(224,184,99,.14)' : 'rgba(255,255,255,.08)'};color:${live ? 'var(--gold-l)' : 'rgba(255,255,255,.6)'}">—</span>
+                    <span class="flex-1 min-w-0 truncate text-[13px] font-semibold leading-[1.4]" style="color:${strong}">${esc(game.team)}</span>
+                    <span class="flex-none text-right text-[9px] font-semibold leading-[1.3] tracking-[.08em]" style="color:${live ? 'var(--gold)' : dim}">${live ? 'ON BYE NOW' : 'BYE'}</span>
                 `;
                 rows.appendChild(row);
                 return;
@@ -196,28 +202,33 @@ function renderScheduleView(schedule) {
             const aWon = reported && winner === game.team1;
             const bWon = reported && winner === game.team2;
 
-            // Losing side dims; winner (or both, on a tie) stays at full strength.
-            const dim = live ? 'var(--mute)' : 'rgba(255,255,255,.38)';
-            const strong = live ? 'var(--ink)' : 'rgba(255,255,255,.86)';
+            // Within the live round, a game still awaiting a result is the one
+            // actually being played — give it its own gold outline.
+            if (live && !reported) {
+                row.style.background = 'rgba(224,184,99,.07)';
+                row.style.boxShadow = 'inset 0 0 0 1px rgba(224,184,99,.55)';
+            }
 
             let res, resColor;
             if (reported) {
-                res = tie ? 'TIE' : `WIN · ${game.playersRemaining ?? 0}`;
-                resColor = live ? 'var(--mar)' : 'var(--gold)';
+                // The winner is called out on its own team line, so the result
+                // slot only carries the tie case.
+                res = tie ? 'TIE' : '';
+                resColor = 'var(--gold)';
             } else if (live) {
                 res = 'ON COURT';
                 resColor = 'var(--ok)';
             } else {
                 res = esc(roundTime);
-                resColor = 'rgba(255,255,255,.38)';
+                resColor = dim;
             }
 
             row.innerHTML = `
                 <span class="flex-none w-[26px] h-[26px] rounded-[9px] text-center text-[10px] font-bold leading-[26px]"
-                      style="background:${live ? 'rgba(123,29,43,.1)' : 'rgba(255,255,255,.08)'};color:${live ? 'var(--mar)' : 'rgba(255,255,255,.6)'}">C${esc(game.court || '?')}</span>
-                <span class="flex-1 min-w-0">
-                    <span class="block truncate text-[13px] font-semibold leading-[1.4]" style="color:${reported && !aWon && !tie ? dim : strong}">${esc(game.team1 || 'TBD')}</span>
-                    <span class="block truncate text-[13px] font-semibold leading-[1.4]" style="color:${reported && !bWon && !tie ? dim : strong}">${esc(game.team2 || 'TBD')}</span>
+                      style="background:${live ? 'rgba(224,184,99,.14)' : 'rgba(255,255,255,.08)'};color:${live ? 'var(--gold-l)' : 'rgba(255,255,255,.6)'}">C${esc(game.court || '?')}</span>
+                <span class="flex-1 min-w-0 grid gap-[2px]">
+                    ${teamLine(game.team1, reported, aWon, tie, dim, strong, game.playersRemaining)}
+                    ${teamLine(game.team2, reported, bWon, tie, dim, strong, game.playersRemaining)}
                 </span>
                 <span class="flex-none text-right text-[9px] font-semibold leading-[1.3] tracking-[.08em]" style="color:${resColor}">${res}</span>
             `;
@@ -225,10 +236,109 @@ function renderScheduleView(schedule) {
         });
 
         card.appendChild(rows);
+
+        // --- Teams sitting this round out ---------------------------------
+        if (allTeams) {
+            const byeTeams = getByeTeams(roundTime, allTeams);
+            if (byeTeams.length) {
+                const footer = document.createElement('div');
+                footer.className = 'mt-2.5 flex flex-wrap items-center gap-x-2 gap-y-1 border-t pt-2.5';
+                footer.style.borderColor = 'rgba(255,255,255,.08)';
+                footer.innerHTML = `
+                    <span class="text-[9px] font-semibold leading-none tracking-[.12em]" style="color:rgba(255,255,255,.4)">ON BYE</span>
+                    ${byeTeams.map(t => `
+                        <span class="rounded-full px-2 py-1 text-[11px] font-medium leading-none"
+                              style="background:rgba(255,255,255,.06);color:rgba(255,255,255,.6)">${esc(t)}</span>
+                    `).join('')}
+                `;
+                card.appendChild(footer);
+            }
+        }
+
         fragment.appendChild(card);
     });
 
     scheduleContainer.appendChild(fragment);
+}
+
+/**
+ * One team line inside a game row. A reported winner is called out with a gold
+ * check badge (carrying its players-remaining count) and gold text; the losing
+ * side dims. On a tie neither is marked.
+ */
+function teamLine(name, reported, won, tie, dim, strong, playersRemaining) {
+    const mark = won && !tie
+        ? `<span class="flex-none inline-flex items-center gap-1 rounded-full px-1.5 h-[15px] text-[9px] font-bold leading-[15px]"
+                 style="background:var(--gold);color:#2A1B08">✓ ${esc(playersRemaining ?? 0)}</span>`
+        : '';
+    const color = !reported || tie ? strong : (won ? 'var(--gold-l)' : dim);
+    return `
+        <span class="flex items-center gap-1.5">
+            <span class="min-w-0 truncate text-[13px] leading-[1.4] ${won && !tie ? 'font-bold' : 'font-semibold'}" style="color:${color}">${esc(name || 'TBD')}</span>
+            ${mark}
+        </span>
+    `;
+}
+
+/** Chronological comparator for two roundTime strings (times before text). */
+function compareRoundTimes(a, b) {
+    const sortA = parseRoundTime(a);
+    const sortB = parseRoundTime(b);
+
+    // Both times or both text: compare their values. Mixed: time comes first.
+    if (sortA.isTime === sortB.isTime) return sortA.sortValue.localeCompare(sortB.sortValue);
+    return sortA.isTime ? -1 : 1;
+}
+
+/** Every round in the full schedule, chronologically. */
+function getRoundOrder() {
+    return [...new Set(App.data.allScheduleData.map(g => g.roundTime || 'TBD'))].sort(compareRoundTimes);
+}
+
+/**
+ * The round currently being played: the earliest round in the full schedule
+ * that still has an unreported game. Undefined once everything is reported.
+ */
+function getLiveRoundKey() {
+    return getRoundOrder().find(key =>
+        App.data.allScheduleData.some(g => (g.roundTime || 'TBD') === key && !isReported(g))
+    );
+}
+
+/** True for an actual team name (not a bracket placeholder like 'Winner P3'). */
+function isRealTeam(name) {
+    return getFilterableTeamName(name) !== null;
+}
+
+/** Every real team appearing anywhere in the schedule, as their raw names. */
+function getRosterTeams() {
+    const teams = new Set();
+    App.data.allScheduleData.forEach(g => {
+        [g.team1, g.team2].forEach(t => { if (isRealTeam(t)) teams.add(t.trim()); });
+    });
+    return teams;
+}
+
+/**
+ * Teams from the full roster with no game in this round. Reads the unfiltered
+ * schedule so a court filter can't make a playing team look like it's on a bye.
+ * Playoff rounds ('P…') sit most of the field out by design, so they're skipped.
+ */
+function getByeTeams(roundTime, allTeams) {
+    if (typeof roundTime === 'string' && roundTime.startsWith('P')) return [];
+
+    const playing = new Set();
+    App.data.allScheduleData.forEach(g => {
+        if ((g.roundTime || 'TBD') !== roundTime) return;
+        [g.team1, g.team2].forEach(t => { if (isRealTeam(t)) playing.add(t.trim()); });
+    });
+
+    if (playing.size === 0) return [];
+    // Playoff bracket seeds (e.g. "Team Name (#6)") duplicate the base team
+    // name — only the base name belongs on the bye footer.
+    return [...allTeams]
+        .filter(t => !playing.has(t) && !/\(#\d+\)\s*$/.test(t))
+        .sort((a, b) => a.localeCompare(b));
 }
 
 /** A game counts as played once it carries a real winner value. */
@@ -339,128 +449,16 @@ function getFilterableTeamName(teamName) {
     return cleanedName;
 }
 
-// Global state variables for the pager
-// Global state variables for the pager (now initialized dynamically)
-let pagerInterval;
-let currentPage = 0;
-
-/**
- * Renders a single page of standings data into the pager element.
- * (This function remains the same as before)
- */
-function buildPagerContent(pageItems) {
-    if (!pageItems || pageItems.length === 0) {
-        return '<p class="text-sm text-gray-500 px-2">No standings data available.</p>';
-    }
-
-    // Build the HTML for the current page
-    return pageItems.map(item => `
-        <span class="standings-pager-item flex items-center gap-1.5 px-3 border-r border-white/10 last:border-r-0">
-            <span class="text-sm font-bold text-gold-l tabular-nums">${esc(item.rank || '?')}</span>
-            <span class="text-sm font-medium text-white/75">${esc(item.team)}</span>
-            <span class="text-xs text-white/40 tabular-nums">(${esc(item.record || '0-0')})</span>
-        </span>
-    `).join('');
-}
-
-
-/**
- * Core function to start the paginating cycle.
- * (This function remains mostly the same, but now accepts dynamic config)
- */
-function initStandingsPager(standingsData, itemsPerPage, cycleDelayMs) {
-    const contentDiv = document.getElementById('standings-pager-content');
-    if (!contentDiv) return;
-
-    // 1. Clear any existing interval
-    if (pagerInterval) {
-        clearInterval(pagerInterval);
-    }
-    
-    // 2. Handle no data
-    if (!standingsData || standingsData.length === 0) {
-        contentDiv.innerHTML = '<p class="text-sm text-gray-500 px-2">No standings data available.</p>';
-        contentDiv.classList.remove('opacity-0');
-        return;
-    }
-
-    // 3. Slice the full data into pages using the dynamic itemsPerPage
-    const pages = [];
-    for (let i = 0; i < standingsData.length; i += itemsPerPage) {
-        pages.push(standingsData.slice(i, i + itemsPerPage));
-    }
-
-    const totalPages = pages.length;
-    currentPage = 0;
-
-    // 4. Function to update the view
-    function updatePager() {
-        contentDiv.classList.add('opacity-0'); 
-
-        // Wait for the fade-out to complete (500ms from CSS transition)
-        setTimeout(() => {
-            const pageData = pages[currentPage];
-            contentDiv.innerHTML = buildPagerContent(pageData);
-
-            currentPage = (currentPage + 1) % totalPages;
-
-            contentDiv.classList.remove('opacity-0');
-        }, 500); 
-    }
-
-    // 5. Start the cycle with the dynamic cycleDelayMs
-    updatePager(); // Display the first page immediately
-    pagerInterval = setInterval(updatePager, cycleDelayMs); 
-}
-
-
-/**
- * Initializes the standings pager by checking screen size, setting config, 
- * fetching data, and starting the cycle.
- */
-async function loadAndStartStandingsPager(standingsData) {
-    let itemsPerPage;
-    let cycleDelayMs;
-    // Define the mobile breakpoint (e.g., Tailwind's 'sm' breakpoint is 640px)
-    const MOBILE_BREAKPOINT = 640; 
-
-    // Check the current screen width
-    if (window.innerWidth < MOBILE_BREAKPOINT) {
-        // 📱 Mobile/Small Screen Configuration
-        itemsPerPage = 1;
-        cycleDelayMs = 2000; // 2 seconds
-        console.log("Pager: Mobile config (1 item / 2s cycle)");
-    } else {
-        // 💻 Desktop/Large Screen Configuration
-        itemsPerPage = 4;
-        cycleDelayMs = 6000; // 6 seconds
-        console.log("Pager: Desktop config (5 items / 6s cycle)");
-    }
-    
-    try {
-        // 1. Fetch data (This remains the same)
-        // ASSUMPTION: Your getStandingsData() fetches and returns the data array.
-        
-        // 2. Start the pager with the dynamic settings
-        initStandingsPager(standingsData, itemsPerPage, cycleDelayMs);
-    } catch (error) {
-        console.error("Error loading standings for pager:", error);
-        const contentDiv = document.getElementById('standings-pager-content');
-        if (contentDiv) {
-            contentDiv.innerHTML = '<p class="text-sm text-red-400 px-2">Failed to load standings data.</p>';
-            contentDiv.classList.remove('opacity-0');
-        }
-    }
-}
-
 export {
     updateScheduleView,
     renderScheduleView,
     parseRoundTime,
     getUniqueCourts,
     getUniqueTeams,
-    buildPagerContent,
-    initStandingsPager,
-    loadAndStartStandingsPager,
-    getFilterableTeamName
+    getFilterableTeamName,
+    getRoundOrder,
+    getLiveRoundKey,
+    getRosterTeams,
+    getByeTeams,
+    isReported
 };
