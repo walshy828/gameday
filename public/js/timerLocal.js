@@ -4,10 +4,16 @@
 // arrive over Socket.IO instead of a Firebase RTDB listener; all writes go
 // through the /api/timer/* REST endpoints (admin/superadmin authenticated
 // with the same SHA-256 authToken used for match results).
+//
+// Clock ownership + expiry are enforced server-side (server/timerControl.js):
+// control calls from a tab that doesn't own the division's clock get a 409,
+// and the server — not any browser — performs the after-round/reset
+// transition when the clock hits zero.
 import { getSocket } from './socketClient.js';
+import { getClientId, getClientName } from './timerClient.js';
+import { renderControlState, setControlHandlers } from './timerControlsUI.js';
 
 let localTimerInterval = null;
-let afterRoundEnabled = false;
 let allRounds = [];
 let latestState = null;
 
@@ -23,14 +29,29 @@ async function postTimer(path, body = {}) {
   const res = await fetch(`/api/timer/${path}`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ sheetName: currentDivision(), authToken: authToken(), ...body })
+    body: JSON.stringify({
+      sheetName: currentDivision(),
+      authToken: authToken(),
+      clientId: getClientId(),
+      clientName: getClientName(),
+      ...body
+    })
   });
+  if (res.status === 409) {
+    // Someone else owns this clock — show who, and re-sync the locked controls.
+    const info = await res.json().catch(() => ({}));
+    if (info.state) applyState(info.state);
+    window.showStatus?.(`${info.controllerName || 'Another manager'} is running this clock. Use "Take over" to control it.`, true);
+    throw new Error('not_controller');
+  }
   if (!res.ok) {
     const text = await res.text();
     throw new Error(`POST /api/timer/${path} failed: ${res.status} ${text}`);
   }
   return res.json();
 }
+
+const logTimerError = (e) => { if (e.message !== 'not_controller') console.error(e); };
 
 function loadRounds() {
   if (!App?.data?.allScheduleData) return [];
@@ -64,9 +85,19 @@ export async function initRounds() {
 
   allRounds = loadRounds();
 
-  if (!latestState || !latestState.currentRound || !allRounds.includes(latestState.currentRound)) {
+  const division = currentDivision();
+
+  // If the stored round isn't one of this division's rounds, repair it — but
+  // only from a super admin tab, only against the server's *current* value
+  // (latestState can still belong to the previously viewed division), and via
+  // compare-and-set so a round someone just chose is never clobbered.
+  if (App.state?.isSuperAdmin && division && App.data.scheduleDivision === division && allRounds.length) {
     try {
-      await postTimer('nextRound', { round: allRounds[0] || 'Unknown Round' });
+      const res = await fetch(`/api/timer?sheetName=${encodeURIComponent(division)}`);
+      const state = await res.json();
+      if (division === currentDivision() && (!state.currentRound || !allRounds.includes(state.currentRound))) {
+        await postTimer('fixRound', { round: allRounds[0], expected: state.currentRound ?? null, sheetName: division });
+      }
     } catch (e) {
       console.error('Failed to initialize currentRound', e);
     }
@@ -80,7 +111,7 @@ export async function initRounds() {
     let idx = allRounds.findIndex(r => r.trim() === current);
     if (idx === -1) idx = 0;
     if (idx < allRounds.length - 1) {
-      try { await postTimer('nextRound', { round: allRounds[idx + 1] }); } catch (e) { console.error(e); }
+      try { await postTimer('setRound', { round: allRounds[idx + 1] }); } catch (e) { logTimerError(e); }
     }
   };
 
@@ -89,7 +120,7 @@ export async function initRounds() {
     let idx = allRounds.findIndex(r => r.trim() === current);
     if (idx === -1) idx = 0;
     if (idx > 0) {
-      try { await postTimer('prevRound', { round: allRounds[idx - 1] }); } catch (e) { console.error(e); }
+      try { await postTimer('setRound', { round: allRounds[idx - 1] }); } catch (e) { logTimerError(e); }
     }
   };
 }
@@ -98,7 +129,7 @@ export async function initRounds() {
 // computed value, unlike the Prev/Next buttons which step by one index).
 export function setCurrentRound(round) {
   if (!round) return;
-  postTimer('nextRound', { round }).catch(e => console.error('Failed to sync round', e));
+  postTimer('setRound', { round }).catch(logTimerError);
 }
 
 // Redesign palette (design tokens, §5/§9): the clock is gold-light while it
@@ -119,23 +150,6 @@ function formatTime(sec) {
   const m = String(Math.floor(sec / 60)).padStart(1, '0');
   const s = String(sec % 60).padStart(2, '0');
   return `${m}:${s}`;
-}
-
-function blinkThenReset(originalDuration) {
-  const el = document.getElementById('timer-display');
-  let visible = true;
-  let count = 0;
-
-  const blinkInterval = setInterval(() => {
-    el.style.visibility = visible ? 'hidden' : 'visible';
-    visible = !visible;
-    count++;
-    if (count >= 10) {
-      clearInterval(blinkInterval);
-      el.style.visibility = 'visible';
-      el.innerText = formatTime(originalDuration);
-    }
-  }, 500);
 }
 
 function updateDisplay(timerData) {
@@ -179,17 +193,11 @@ function updateDisplay(timerData) {
     updateTimerColor(timerEl, timerData);
 
     if (remaining <= 0) {
+      // The server performs the after-round/reset transition and broadcasts it
+      // (see server/timerControl.js). Just hold 0:00; if that broadcast never
+      // shows up (dropped socket), pull the state ourselves.
       clearInterval(localTimerInterval);
-
-      if (afterRound) {
-        postTimer('reset').catch(e => console.error(e));
-      } else if (afterRoundEnabled && App.state.isSuperAdmin) {
-        postTimer('start', { afterRound: true }).catch(e => console.error(e));
-      } else if (!App.state.isSuperAdmin) {
-        blinkThenReset(timerData.lastSetDuration || 300);
-      } else {
-        postTimer('reset').catch(e => console.error(e));
-      }
+      setTimeout(refreshState, 3000);
     }
   }, 250);
 }
@@ -205,6 +213,10 @@ function applyState(state) {
     }
   }
   updateDisplay(state);
+  renderControlState(state, currentDivision());
+
+  const afterRoundToggle = document.getElementById('after-round-toggle');
+  if (afterRoundToggle) afterRoundToggle.checked = !!state.afterRoundEnabled;
 
   const toggleSwitch = document.getElementById('toggle-display-switch');
   if (toggleSwitch) toggleSwitch.checked = state.showClock ?? true;
@@ -224,9 +236,14 @@ function applyState(state) {
 export async function refreshState() {
   const division = currentDivision();
   if (!division) return;
+  // The previous division's state must not linger (or drive Prev/Next) while
+  // this division's is loading.
+  latestState = null;
   try {
     const res = await fetch(`/api/timer?sheetName=${encodeURIComponent(division)}`);
     const state = await res.json();
+    // Ignore a response for a division the user has already navigated away from.
+    if (division !== currentDivision()) return;
     applyState(state);
   } catch (e) {
     console.error('Failed to load timer state', e);
@@ -256,7 +273,7 @@ export function init() {
   const toggleSwitch = document.getElementById('toggle-display-switch');
   if (toggleSwitch) {
     toggleSwitch.onchange = async (e) => {
-      try { await postTimer('showClock', { showClock: e.target.checked }); } catch (err) { console.error(err); }
+      try { await postTimer('showClock', { showClock: e.target.checked }); } catch (err) { logTimerError(err); }
     };
   } else {
     console.error('Could not find #toggle-display-switch element.');
@@ -273,17 +290,26 @@ export function init() {
   async function adjustAfterRoundTime(delta) {
     const current = latestState?.afterRoundDuration || 60;
     const updated = Math.max(15, current + delta);
-    try { await postTimer('afterRoundDuration', { afterRoundDuration: updated }); } catch (e) { console.error(e); }
+    try { await postTimer('afterRoundDuration', { afterRoundDuration: updated }); } catch (e) { logTimerError(e); }
   }
   plusAfterBtn.onclick = () => adjustAfterRoundTime(15);
   minusAfterBtn.onclick = () => adjustAfterRoundTime(-15);
 
-  document.getElementById('plus-btn').onclick = () => postTimer('adjust', { deltaSeconds: 30 }).catch(e => console.error(e));
-  document.getElementById('minus-btn').onclick = () => postTimer('adjust', { deltaSeconds: -30 }).catch(e => console.error(e));
-  document.getElementById('start-btn').onclick = () => postTimer('start').catch(e => console.error(e));
-  document.getElementById('stop-btn').onclick = () => postTimer('stop').catch(e => console.error(e));
-  document.getElementById('reset-btn').onclick = () => postTimer('reset').catch(e => console.error(e));
+  document.getElementById('plus-btn').onclick = () => postTimer('adjust', { deltaSeconds: 30 }).catch(logTimerError);
+  document.getElementById('minus-btn').onclick = () => postTimer('adjust', { deltaSeconds: -30 }).catch(logTimerError);
+  document.getElementById('start-btn').onclick = () => postTimer('start').catch(logTimerError);
+  document.getElementById('stop-btn').onclick = () => postTimer('stop').catch(logTimerError);
+  document.getElementById('reset-btn').onclick = () => postTimer('reset').catch(logTimerError);
   document.getElementById('after-round-toggle').onchange = e => {
-    afterRoundEnabled = e.target.checked;
+    // Shared per-division setting (server-side), not a per-tab flag.
+    postTimer('afterRoundEnabled', { afterRoundEnabled: e.target.checked }).catch((err) => {
+      logTimerError(err);
+      e.target.checked = !!latestState?.afterRoundEnabled;
+    });
   };
+
+  setControlHandlers({
+    takeover: () => postTimer('takeover').catch(logTimerError),
+    release: () => postTimer('release').catch(logTimerError)
+  });
 }

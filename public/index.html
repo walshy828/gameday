@@ -302,6 +302,42 @@
             display: none;
         }
 
+        /* Chat channels: crew = maroon (everyone), lead = violet (admins & parents only) */
+        :root { --lead-a: #8B7CF6; --lead-b: #5B4BC4; }
+        #chat-view {
+            --ch-a: var(--mar-l);
+            --ch-b: var(--mar);
+            --ch-mine: linear-gradient(140deg, rgba(166, 48, 63, .42) 0%, rgba(123, 29, 43, .34) 100%);
+            --ch-tint: rgba(166, 48, 63, .12);
+            --ch-border: rgba(166, 48, 63, .35);
+        }
+        #chat-view[data-channel="lead"] {
+            --ch-a: var(--lead-a);
+            --ch-b: var(--lead-b);
+            --ch-mine: linear-gradient(140deg, rgba(139, 124, 246, .38) 0%, rgba(91, 75, 196, .32) 100%);
+            --ch-tint: rgba(139, 124, 246, .12);
+            --ch-border: rgba(139, 124, 246, .45);
+        }
+        #chat-view[data-channel="lead"] #chat-scroll-area {
+            background: linear-gradient(180deg, rgba(139, 124, 246, .07), transparent 40%);
+            border-radius: 14px;
+        }
+        #chat-channel-banner { background: var(--ch-tint); border: 1px solid var(--ch-border); color: rgba(255, 255, 255, .8); }
+        #chat-composer { border-color: var(--ch-border); }
+        .chat-seg {
+            display: flex; flex-direction: column; align-items: center; gap: 1px;
+            border-radius: 12px; padding: 7px 8px; color: rgba(255, 255, 255, .55);
+            transition: background .15s, color .15s;
+        }
+        .chat-seg-title { font-size: 12px; font-weight: 700; display: inline-flex; align-items: center; gap: 5px; }
+        .chat-seg-sub { font-size: 10px; font-weight: 500; opacity: .75; }
+        .chat-seg[data-ch="crew"].chat-seg-on { background: linear-gradient(135deg, var(--mar-l), var(--mar)); color: #fff; }
+        .chat-seg[data-ch="lead"].chat-seg-on { background: linear-gradient(135deg, var(--lead-a), var(--lead-b)); color: #fff; }
+        .chat-seg-badge {
+            min-width: 16px; height: 16px; padding: 0 4px; border-radius: 999px;
+            background: var(--warn); color: #fff; font-size: 10px; line-height: 16px; text-align: center;
+        }
+
         .tab-active,
         .tab-admin-active {
             background: linear-gradient(150deg, rgba(224, 184, 99, .22) 0%, rgba(166, 48, 63, .28) 100%);
@@ -915,8 +951,11 @@
         <div class="flex items-center gap-3 mt-10">
             <div class="flex-1 text-xs text-white/40">All proceeds support the Algonquin Regional High School Hockey
                 program..</div>
-            <button onclick="showAdminLoginModal()" class="pill-gold flex-none px-4 py-3 text-xs font-semibold">Admin
-                login</button>
+            <div class="flex-none flex flex-col items-end gap-1.5 max-w-[48%]">
+                <button id="gate-admin-btn" onclick="showAdminLoginModal()"
+                    class="pill-gold px-4 py-3 text-xs font-semibold">Admin login</button>
+                <div id="gate-admin-who" class="hidden text-[11px] leading-[1.35] text-right text-white/60 break-words"></div>
+            </div>
         </div>
     </div>
 
@@ -932,10 +971,15 @@
 
             <div class="flex-1 min-w-0">
                 <div class="text-sm font-semibold tracking-tight text-gray-50 truncate">Dodgeball Tournament</div>
-                <button onclick="goToGate()"
-                    class="pill-gold mt-1.5 inline-flex items-center gap-1.5 px-2.5 py-1 text-[10px] font-semibold">
-                    <span id="header-division-label">—</span><span class="opacity-60 font-semibold">CHANGE</span>
-                </button>
+                <div class="mt-1.5 flex items-center gap-2 min-w-0">
+                    <button onclick="goToGate()"
+                        class="pill-gold flex-none inline-flex items-center gap-1.5 px-2.5 py-1 text-[10px] font-semibold">
+                        <span id="header-division-label">—</span><span class="opacity-60 font-semibold">CHANGE</span>
+                    </button>
+                    <span id="header-staff-badge" class="hidden min-w-0 items-center gap-1 text-[10px] font-semibold text-white/60"
+                        title="Signed in"><span class="w-1.5 h-1.5 flex-none rounded-full bg-green-500"></span><span
+                            id="header-staff-name" class="truncate"></span></span>
+                </div>
             </div>
 
             <!-- DEV MODE INDICATOR -->
@@ -979,6 +1023,15 @@
                         </div>
                         <button id="timer-overlay-close" type="button" title="Close"
                             class="flex-none w-7 h-7 rounded-full border border-white/20 bg-white/10 text-white/70 text-xs">✕</button>
+                    </div>
+
+                    <!-- Clock ownership (timerControlsUI.js) and "wrong division" warning (timerOverlay.js) -->
+                    <div id="timer-division-warning" class="hidden mt-3 rounded-2xl border border-warn/40 bg-warn/10 px-3 py-2 text-[11px] font-semibold leading-snug text-white/80"
+                        role="alert"></div>
+                    <div class="mt-3 flex items-center justify-between gap-2 rounded-2xl border border-white/10 bg-white/[.04] px-3 py-2">
+                        <span id="timer-control-text" class="text-[11px] font-medium leading-snug text-white/65"></span>
+                        <button id="timer-control-action" type="button"
+                            class="flex-none rounded-full border border-gold/40 bg-gold/10 px-3 py-1.5 text-[11px] font-semibold text-gold-l"></button>
                     </div>
 
                     <div id="admin-timer-display"
@@ -1208,7 +1261,7 @@
                             <h2 class="screen-title">Tournament info</h2>
                         </div>
 
-                        <div class="mt-3.5 grid gap-2.5 md:grid-cols-2 md:items-start">
+                        <div class="mt-3.5 grid gap-2.5">
                             <section class="card-dark p-4">
                                 <div class="text-[10px] tracking-[.14em] font-semibold text-white/50 uppercase">
                                     Announcements</div>
@@ -1267,12 +1320,6 @@
                                     with the raffle.</p>
                             </section>
 
-                            <button id="info-admin-link" onclick="showAdminLoginModal()"
-                                class="w-full text-left p-[18px] !rounded-[26px] pill-gold">
-                                <span class="font-semibold text-[13px]">Admin login →</span>
-                                <span class="block text-[11px] leading-[1.45] text-white/50 mt-1.5 font-normal">Court
-                                    managers and admins only.</span>
-                            </button>
                         </div>
                         <p class="mx-1.5 mt-3 text-[11px] leading-[1.55] text-white/35">Last updated: <span
                                 id="last-updated">…</span></p>
@@ -1283,11 +1330,14 @@
                         <div class="screen-head">
                             <h2 class="screen-title">Referee chat</h2>
                             <div class="flex items-center gap-2">
-                                <span class="screen-kicker">Referees &amp; parents</span>
+                                <span id="chat-kicker" class="screen-kicker">Referees &amp; parents</span>
                                 <button id="chat-setup-gear" onclick="switchView('settings')" title="Who's online"
                                     class="hidden pill-gold w-7 h-7 flex-none items-center justify-center text-[13px] leading-none">⚙</button>
                             </div>
                         </div>
+
+                        <div id="chat-channel-bar" class="hidden mt-2.5 grid grid-cols-2 gap-1 rounded-2xl border border-white/[.13] bg-white/[.05] p-1"></div>
+                        <div id="chat-channel-banner" class="hidden mt-2 rounded-xl px-3 py-1.5 text-[11px] font-medium"></div>
 
                         <div class="relative flex-1 min-h-0 mt-2.5">
                             <div id="chat-scroll-area" class="h-full overflow-y-auto no-scrollbar">
@@ -1297,13 +1347,13 @@
                             </div>
                             <button id="chat-jump-btn" onclick="jumpToChatBottom()"
                                 class="hidden absolute left-1/2 -translate-x-1/2 bottom-2.5 flex items-center gap-1.5 rounded-full px-3.5 py-2 text-[11px] font-semibold text-white shadow-lg"
-                                style="background:linear-gradient(135deg,var(--mar-l) 0%,var(--mar) 100%)">
+                                style="background:linear-gradient(135deg,var(--ch-a) 0%,var(--ch-b) 100%)">
                                 <span id="chat-jump-count"></span>
                                 <span>New messages ↓</span>
                             </button>
                         </div>
 
-                        <div
+                        <div id="chat-composer"
                             class="mt-2.5 flex items-center gap-2 rounded-full border border-white/[.13] bg-white/[.07] p-1.5 backdrop-blur-lg">
                             <input id="chat-composer-input" type="text" placeholder="Message the crew…"
                                 class="min-w-0 flex-1 border-0 bg-transparent px-3.5 py-2.5 text-sm font-medium text-[#F1F1F2] outline-none placeholder:text-white/40">

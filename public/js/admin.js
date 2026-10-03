@@ -448,6 +448,36 @@ if (typeof window !== 'undefined') window.renderAdminMatchEntryNow = renderAdmin
 
 
 /**
+ * Shows login state on the division gate (Admin login button vs. Log out +
+ * "Signed in as …") and a small signed-in badge in the app header.
+ */
+function updateGateAdminUI(loggedIn) {
+    const btn = document.getElementById('gate-admin-btn');
+    const who = document.getElementById('gate-admin-who');
+    const badge = document.getElementById('header-staff-badge');
+    const badgeName = document.getElementById('header-staff-name');
+    const name = App.state.reporterName || 'Staff';
+    const role = App.state.isSuperAdmin ? 'Tournament manager'
+        : App.state.isAdmin ? `Court manager${App.state.selectedCourt ? ' · court ' + App.state.selectedCourt : ''}`
+        : 'Parent';
+
+    if (btn) {
+        btn.textContent = loggedIn ? 'Log out' : 'Admin login';
+        btn.onclick = loggedIn ? logoutAdmin : showAdminLoginModal;
+    }
+    if (who) {
+        who.classList.toggle('hidden', !loggedIn);
+        who.textContent = loggedIn ? `Signed in as ${name} · ${role}` : '';
+    }
+    if (badge) {
+        badge.classList.toggle('hidden', !loggedIn);
+        badge.classList.toggle('inline-flex', loggedIn);
+        if (badgeName) badgeName.textContent = loggedIn ? name : '';
+        badge.title = loggedIn ? `Signed in as ${name} · ${role}` : '';
+    }
+}
+
+/**
  * Updates the visual state of the Admin button and conditional UI elements.
  */
 function updateAdminUI() {
@@ -458,19 +488,14 @@ function updateAdminUI() {
     const setupGear = document.getElementById('admin-setup-gear');
     const chatSetupGear = document.getElementById('chat-setup-gear');
     const chatTab = document.getElementById('chat-tab');
-    const infoAdminLink = document.getElementById('info-admin-link');
     const scheduleTab = document.getElementById('schedule-tab');
 
     if (!adminButton || !adminStatusText || !adminEntryTab) return;
 
     const loggedIn = App.state.isAdmin || App.state.isParent;
 
-    if (infoAdminLink) {
-        infoAdminLink.querySelector('span').textContent = loggedIn ? 'Back to my admin view →' : 'Admin login →';
-        infoAdminLink.onclick = loggedIn
-            ? () => switchView(App.state.isAdmin ? 'admin-entry' : 'chat')
-            : showAdminLoginModal;
-    }
+    updateGateAdminUI(loggedIn);
+    window.syncChatRole?.();
 
     if (loggedIn) {
         adminStatusText.textContent = 'Logout';
@@ -562,8 +587,8 @@ function showAdminLoginModal() {
 
     renderLoginCourtPicker();
 
-    // Wait a short moment to ensure the modal is visible before focusing
-    setTimeout(() => nameInput.focus(), 50);
+    // Returning user (name remembered): skip straight to the password field.
+    setTimeout(() => (nameInput.value ? passwordInput : nameInput).focus(), 50);
 }
 
 /**
@@ -576,15 +601,19 @@ function renderLoginCourtPicker() {
     if (!wrap) return;
     wrap.innerHTML = '';
 
-    const selected = App.state.selectedCourt || '1';
+    if (!App.state.selectedCourt) App.state.selectedCourt = localStorage.getItem('lastAdminCourt') || '1';
+    const selected = App.state.selectedCourt;
     ['1', '2', '3', '4'].forEach(court => {
         const btn = document.createElement('button');
         btn.type = 'button';
         btn.textContent = 'C' + court;
         const isActive = court === selected;
-        // Light segmented picker on the modal sheet (design §3 "Your court").
-        btn.className = 'rounded-[14px] py-2.5 text-[13px] font-semibold leading-none transition-colors ' +
-            (isActive ? 'bg-white text-ink shadow-[0_2px_6px_rgba(0,0,0,.07)]' : 'text-mute');
+        btn.setAttribute('aria-pressed', isActive);
+        // Selected court is a solid maroon pill with white text; the rest stay flat/muted.
+        btn.className = 'rounded-[14px] py-2.5 text-[13px] leading-none transition-colors ' +
+            (isActive ? 'font-bold text-white shadow-[0_3px_10px_rgba(123,29,43,.45)] ring-2 ring-offset-1 ring-[#7B1D2B]'
+                : 'font-semibold text-mute hover:bg-white/60');
+        if (isActive) btn.style.background = 'linear-gradient(135deg,var(--mar-l) 0%,var(--mar) 100%)';
         btn.onclick = () => {
             App.state.selectedCourt = court;
             renderLoginCourtPicker();
@@ -653,6 +682,7 @@ async function loginAdmin() {
             App.state.reporterName = reporterName;
             localStorage.setItem('lastAdminName', reporterName);
             sessionStorage.setItem('reporterName', reporterName);
+            if (App.state.selectedCourt) localStorage.setItem('lastAdminCourt', App.state.selectedCourt);
 
             //store this for persitstance
             sessionStorage.setItem('isAdmin', 'true');

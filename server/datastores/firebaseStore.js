@@ -33,11 +33,7 @@ export async function getTimerState() {
   return { unsupported: true, reason: 'Timer state is managed client-side against Firebase RTDB in firebase mode.' };
 }
 
-export async function setTimerState() {
-  return { unsupported: true, reason: 'Timer state is managed client-side against Firebase RTDB in firebase mode.' };
-}
-
-export async function adjustTimer() {
+export async function mutateTimer() {
   return { unsupported: true, reason: 'Timer state is managed client-side against Firebase RTDB in firebase mode.' };
 }
 
@@ -86,6 +82,7 @@ export async function pruneDivisions(keepNames = []) {
 
 const ANNOUNCEMENTS_PATH = 'dodgeball-tournament/announcements';
 const CHAT_PATH = 'dodgeball-tournament/chat';
+const CHAT_LEAD_PATH = 'dodgeball-tournament/chatLeadership';
 
 // Reads go straight to the RTDB node from the browser too (a direct
 // `.on('value')` listener, same pattern as `watchDivision`), so these
@@ -129,25 +126,32 @@ export async function deleteAnnouncement(id) {
   return getAnnouncements();
 }
 
-export async function getChatMessages() {
-  const snap = await admin.database().ref(CHAT_PATH).once('value');
+// Leadership messages live under a separate node so they can't leak through
+// the crew node's direct browser listener; clients read them only through the
+// authenticated GET /api/chat/lead.
+function chatPath(channel) {
+  return channel === 'lead' ? CHAT_LEAD_PATH : CHAT_PATH;
+}
+
+export async function getChatMessages(channel = 'crew') {
+  const snap = await admin.database().ref(chatPath(channel)).once('value');
   const val = snap.val() || {};
   return Object.values(val).sort((a, b) => (a.ts || 0) - (b.ts || 0));
 }
 
-export async function postChatMessage({ who, mgr, text }) {
+export async function postChatMessage({ who, mgr, text, channel = 'crew' }) {
   const id = Date.now();
-  await admin.database().ref(CHAT_PATH).push({ id, who, mgr: !!mgr, text, ts: id });
-  return getChatMessages();
+  await admin.database().ref(chatPath(channel)).push({ id, who, mgr: !!mgr, text, ts: id });
+  return getChatMessages(channel);
 }
 
-export async function deleteChatMessage(id) {
+export async function deleteChatMessage(id, channel = 'crew') {
   const db = admin.database();
-  const snap = await db.ref(CHAT_PATH).orderByChild('id').equalTo(id).once('value');
+  const snap = await db.ref(chatPath(channel)).orderByChild('id').equalTo(id).once('value');
   const val = snap.val() || {};
   const key = Object.keys(val)[0] || null;
-  if (key) await db.ref(`${CHAT_PATH}/${key}`).remove();
-  return getChatMessages();
+  if (key) await db.ref(`${chatPath(channel)}/${key}`).remove();
+  return getChatMessages(channel);
 }
 
 export async function getSyncStatus() {

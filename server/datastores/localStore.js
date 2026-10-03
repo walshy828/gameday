@@ -3,7 +3,7 @@
 // DATA_BACKEND=local. Realtime push (replacing Firebase RTDB's built-in
 // listeners) is done via Socket.IO broadcasts after each write.
 import { pool } from '../db.js';
-import { broadcastDivisionUpdate, broadcastTimerUpdate, broadcastSyncStatus, broadcastAnnouncementUpdate, broadcastChatUpdate, broadcastFeatureSettingsUpdate } from '../socket.js';
+import { broadcastDivisionUpdate, broadcastTimerUpdate, broadcastSyncStatus, broadcastAnnouncementUpdate, broadcastChatUpdate, broadcastChatLeadPing, broadcastFeatureSettingsUpdate } from '../socket.js';
 
 export const backend = 'local';
 
@@ -12,7 +12,7 @@ const MAX_SYNC_LOG_ENTRIES = 100;
 // Self-heals and auto-provisions database tables if they do not exist.
 // This ensures any existing database or a freshly spawned local/Docker database
 // gets correctly set up with the full schema at server startup.
-(async function ensureFeatureTables() {
+export const schemaReady = (async function ensureFeatureTables() {
   try {
     await pool.query(`
       CREATE TABLE IF NOT EXISTS divisions (
@@ -91,9 +91,25 @@ const MAX_SYNC_LOG_ENTRIES = 100;
         currentRound VARCHAR(64) NULL,
         afterRoundDuration INT NOT NULL DEFAULT 60,
         startAfterRoundRunning BOOLEAN NOT NULL DEFAULT FALSE,
-        showClock BOOLEAN NOT NULL DEFAULT TRUE
+        showClock BOOLEAN NOT NULL DEFAULT TRUE,
+        afterRoundEnabled BOOLEAN NOT NULL DEFAULT FALSE,
+        controllerId VARCHAR(64) NULL,
+        controllerName VARCHAR(191) NULL
       )
     `);
+    // Clock-ownership / shared after-round columns were added after the table
+    // shipped — bring pre-existing databases forward.
+    for (const col of [
+      'afterRoundEnabled BOOLEAN NOT NULL DEFAULT FALSE',
+      'controllerId VARCHAR(64) NULL',
+      'controllerName VARCHAR(191) NULL'
+    ]) {
+      try {
+        await pool.query(`ALTER TABLE timer_state ADD COLUMN ${col}`);
+      } catch (e) {
+        if (e.code !== 'ER_DUP_FIELDNAME') throw e;
+      }
+    }
     await pool.query(`
       CREATE TABLE IF NOT EXISTS sync_settings (
         id INT PRIMARY KEY,
@@ -160,9 +176,15 @@ const MAX_SYNC_LOG_ENTRIES = 100;
         is_mgr BOOLEAN NOT NULL DEFAULT FALSE,
         text TEXT NOT NULL,
         ts BIGINT NOT NULL,
+        channel VARCHAR(16) NOT NULL DEFAULT 'crew',
         INDEX idx_chat_ts (ts)
       )
     `);
+    try {
+      await pool.query("ALTER TABLE chat_messages ADD COLUMN channel VARCHAR(16) NOT NULL DEFAULT 'crew'");
+    } catch (e) {
+      if (e.code !== 'ER_DUP_FIELDNAME') throw e;
+    }
     await pool.query(`
       CREATE TABLE IF NOT EXISTS sessions (
         session_id VARCHAR(64) PRIMARY KEY,
@@ -514,7 +536,10 @@ const DEFAULT_TIMER_STATE = {
   currentRound: null,
   afterRoundDuration: 60,
   startAfterRoundRunning: false,
-  showClock: true
+  showClock: true,
+  afterRoundEnabled: false,
+  controllerId: null,
+  controllerName: null
 };
 
 function mapTimerRow(row) {
@@ -527,7 +552,10 @@ function mapTimerRow(row) {
     currentRound: row.currentRound,
     afterRoundDuration: row.afterRoundDuration,
     startAfterRoundRunning: !!row.startAfterRoundRunning,
-    showClock: !!row.showClock
+    showClock: !!row.showClock,
+    afterRoundEnabled: !!row.afterRoundEnabled,
+    controllerId: row.controllerId || null,
+    controllerName: row.controllerName || null
   };
 }
 
@@ -544,27 +572,65 @@ export async function getTimerState(sheetName) {
   return { ...DEFAULT_TIMER_STATE };
 }
 
-export async function setTimerState(sheetName, patch) {
+const TIMER_COLUMNS = [
+  'duration', 'lastSetDuration', 'running', 'startTime', 'currentRound',
+  'afterRoundDuration', 'startAfterRoundRunning', 'showClock',
+  'afterRoundEnabled', 'controllerId', 'controllerName'
+];
+
+/**
+ * Atomically read-modify-write one division's timer row. The row is locked
+ * (SELECT ... FOR UPDATE) while `mutator(current)` decides what to change, so
+ * concurrent control requests serialize instead of overwriting each other, and
+ * only the columns in the returned patch are written (no full-row clobber).
+ * `mutator` must be synchronous; return a patch object, or null/{} for no-op,
+ * or throw to abort. Broadcasts only when something actually changed.
+ */
+export async function mutateTimer(sheetName, mutator) {
   if (!sheetName) throw new Error('sheetName is required');
 
-  // Ensure a row exists, then merge the patch onto current state.
-  const current = await getTimerState(sheetName);
-  const next = { ...current, ...patch };
+  // The row is created *outside* the transaction (autocommit): doing the
+  // INSERT inside it leaves a lock that concurrent transactions then deadlock
+  // on when they upgrade to SELECT ... FOR UPDATE.
+  await pool.query('INSERT IGNORE INTO timer_state (division) VALUES (?)', [sheetName]);
 
-  await pool.query(
-    `UPDATE timer_state SET
-       duration = ?, lastSetDuration = ?, running = ?, startTime = ?,
-       currentRound = ?, afterRoundDuration = ?, startAfterRoundRunning = ?, showClock = ?
-     WHERE division = ?`,
-    [
-      next.duration, next.lastSetDuration, next.running, next.startTime,
-      next.currentRound, next.afterRoundDuration, next.startAfterRoundRunning, next.showClock,
-      sheetName
-    ]
-  );
+  for (let attempt = 1; ; attempt++) {
+    const conn = await pool.getConnection();
+    let current;
+    let next = null;
+    try {
+      await conn.beginTransaction();
+      const [rows] = await conn.query('SELECT * FROM timer_state WHERE division = ? FOR UPDATE', [sheetName]);
+      current = mapTimerRow(rows[0]);
 
-  broadcastTimerUpdate(sheetName, next);
-  return next;
+      const patch = mutator(current);
+      const keys = patch ? Object.keys(patch).filter(k => TIMER_COLUMNS.includes(k)) : [];
+      if (keys.length) {
+        await conn.query(
+          `UPDATE timer_state SET ${keys.map(k => `${k} = ?`).join(', ')} WHERE division = ?`,
+          [...keys.map(k => patch[k]), sheetName]
+        );
+        next = { ...current, ...Object.fromEntries(keys.map(k => [k, patch[k]])) };
+      }
+      await conn.commit();
+    } catch (e) {
+      await conn.rollback().catch(() => {});
+      if (e.code === 'ER_LOCK_DEADLOCK' && attempt < 3) continue; // retry the whole transaction
+      throw e;
+    } finally {
+      conn.release();
+    }
+
+    if (!next) return { state: current, changed: false };
+    broadcastTimerUpdate(sheetName, next);
+    return { state: next, changed: true };
+  }
+}
+
+/** Every division whose clock is currently running (used to re-arm expiry timers on boot). */
+export async function listRunningTimers() {
+  const [rows] = await pool.query('SELECT * FROM timer_state WHERE running = TRUE');
+  return rows.map(r => ({ division: r.division, ...mapTimerRow(r) }));
 }
 
 export async function getAnnouncements() {
@@ -601,24 +667,31 @@ export async function deleteAnnouncement(id) {
   return list;
 }
 
-export async function getChatMessages() {
-  const [rows] = await pool.query('SELECT id, who, is_mgr AS mgr, text, ts FROM chat_messages ORDER BY ts ASC');
+// `channel` is 'crew' (everyone) or 'lead' (superadmin + parents). Crew
+// updates broadcast their full list; lead updates only broadcast a payload-free
+// ping, since a socket broadcast reaches referees too — authorized clients
+// refetch via the authenticated GET /api/chat/lead instead.
+export async function getChatMessages(channel = 'crew') {
+  const [rows] = await pool.query('SELECT id, who, is_mgr AS mgr, text, ts FROM chat_messages WHERE channel = ? ORDER BY ts ASC', [channel]);
   return rows.map(r => ({ id: Number(r.id), who: r.who, mgr: !!r.mgr, text: r.text, ts: Number(r.ts) }));
 }
 
-export async function postChatMessage({ who, mgr, text }) {
-  const id = Date.now();
-  await pool.query('INSERT INTO chat_messages (id, who, is_mgr, text, ts) VALUES (?, ?, ?, ?, ?)', [id, who, !!mgr, text, id]);
-  const list = await getChatMessages();
-  broadcastChatUpdate(list);
-  return list;
+async function broadcastChat(channel) {
+  if (channel === 'lead') return broadcastChatLeadPing();
+  broadcastChatUpdate(await getChatMessages('crew'));
 }
 
-export async function deleteChatMessage(id) {
-  await pool.query('DELETE FROM chat_messages WHERE id = ?', [id]);
-  const list = await getChatMessages();
-  broadcastChatUpdate(list);
-  return list;
+export async function postChatMessage({ who, mgr, text, channel = 'crew' }) {
+  const id = Date.now();
+  await pool.query('INSERT INTO chat_messages (id, who, is_mgr, text, ts, channel) VALUES (?, ?, ?, ?, ?, ?)', [id, who, !!mgr, text, id, channel]);
+  await broadcastChat(channel);
+  return getChatMessages(channel);
+}
+
+export async function deleteChatMessage(id, channel = 'crew') {
+  await pool.query('DELETE FROM chat_messages WHERE id = ? AND channel = ?', [id, channel]);
+  await broadcastChat(channel);
+  return getChatMessages(channel);
 }
 
 function mapSessionRow(row) {
@@ -679,37 +752,3 @@ export async function getLoginHistory(limit = 200) {
   return rows.map(mapSessionRow);
 }
 
-export async function adjustTimer(sheetName, deltaSeconds) {
-  if (!sheetName) throw new Error('sheetName is required');
-  const conn = await pool.getConnection();
-  let next;
-  try {
-    await conn.beginTransaction();
-    const [rows] = await conn.query('SELECT * FROM timer_state WHERE division = ? FOR UPDATE', [sheetName]);
-    const current = rows.length ? mapTimerRow(rows[0]) : { ...DEFAULT_TIMER_STATE };
-
-    if (current.running) {
-      // No-op while running, mirrors the client-side Firebase transaction guard.
-      await conn.commit();
-      return current;
-    }
-
-    let newDuration = Math.max(30, (current.duration || 0) + deltaSeconds);
-    newDuration = Math.round(newDuration / 30) * 30;
-    next = { ...current, duration: newDuration, lastSetDuration: newDuration, running: false };
-
-    await conn.query(
-      `UPDATE timer_state SET duration = ?, lastSetDuration = ?, running = FALSE WHERE division = ?`,
-      [next.duration, next.lastSetDuration, sheetName]
-    );
-    await conn.commit();
-  } catch (e) {
-    await conn.rollback();
-    throw e;
-  } finally {
-    conn.release();
-  }
-
-  broadcastTimerUpdate(sheetName, next);
-  return next;
-}

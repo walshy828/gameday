@@ -1,23 +1,31 @@
 // public/js/chat.js
-// Staff-only crew chat (CHAT tab). Backend-agnostic like announcements.js:
+// Staff-only crew chat (CHAT tab) with two channels:
+//   crew — everyone (referees, admins, parents)
+//   lead — superadmin + parents only; referees never see the tab, and the
+//          server refuses their tokens on both read and write.
+// Backend-agnostic like announcements.js:
 // writes go through POST /api/chat (server derives `who`/`mgr` from the
 // validated authToken — never trusted from the client); live reads use a
 // direct Firebase RTDB listener in firebase mode or a Socket.IO 'chatUpdate'
 // listener in local mode. The CHAT tab itself is only shown to signed-in
 // staff (see updateAdminUI in admin.js) — same UI-level gating the rest of
 // the app already uses for staff-only views.
-import { getChatMessages, postChatMessage, deleteChatMessage as apiDeleteChatMessage, getPresence } from './api.js';
+import { getChatMessages, getLeadChatMessages, postChatMessage, deleteChatMessage as apiDeleteChatMessage, getPresence } from './api.js';
 import { getSocket } from './socketClient.js';
 
 const IS_LOCAL_BACKEND = window.__DATA_BACKEND__ === 'local';
-const SEEN_KEY = 'chatSeen';
+const SEEN_KEYS = { crew: 'chatSeen', lead: 'chatSeenLead' };
+const LEAD_POLL_INTERVAL_MS = 5000; // firebase mode: lead messages aren't on a client-readable RTDB listener
 const AT_BOTTOM_THRESHOLD = 48; // px of slack before we consider the user "scrolled away"
 const PRESENCE_POLL_INTERVAL_MS = 15000;
 const ACTIVE_WINDOW_MS = 60 * 60 * 1000; // messages older than this age into the "history" fold
 const AGE_CHECK_INTERVAL_MS = 60 * 1000;
 
-let chat = [];
-let knownIds = new Set(); // message ids already rendered, used to detect genuinely-new arrivals
+const data = { crew: [], lead: [] };
+const known = { crew: new Set(), lead: new Set() }; // message ids already rendered, used to detect genuinely-new arrivals
+let active = 'crew'; // channel currently shown
+let leadStarted = false;
+let leadPollTimer = null;
 let pendingJumpCount = 0; // messages that arrived while the user was scrolled up
 let confirmDeleteId = null; // message currently showing its inline "delete this?" prompt
 let presence = new Map(); // "who" string (matches m.who) -> 'online' | 'offline'
@@ -27,12 +35,19 @@ let showHistory = false; // user clicked "Show earlier messages" this visit
 // The last-seen watermark as it stood the moment the CHAT tab was opened —
 // snapshotted so the "New messages" divider stays put for this visit even
 // as messages scroll into view and advance SEEN_KEY. null while off the tab.
-let chatOpenSeenSnapshot = null;
+let chatOpenSeenSnapshot = null; // for the active channel
 let seenObserver = null; // IntersectionObserver: marks a message read once it's actually on screen
 
 function authToken() {
   return sessionStorage.getItem('adminAuthToken');
 }
+
+/** Superadmins and parents may use the leadership channel; referees may not. */
+function canLead() {
+  return !!(App.state.isSuperAdmin || App.state.isParent);
+}
+
+const seenFor = (ch) => Number(localStorage.getItem(SEEN_KEYS[ch]) || 0);
 
 /** Must match the `who` string the server computes in POST /api/chat. */
 function meLabel() {
@@ -44,32 +59,72 @@ function meLabel() {
 
 async function init() {
   try {
-    chat = await getChatMessages();
+    data.crew = await getChatMessages();
   } catch (e) {
     console.error('Failed to load chat', e);
-    chat = [];
+    data.crew = [];
   }
   render();
 
   if (IS_LOCAL_BACKEND) {
     getSocket().off('chatUpdate');
     getSocket().on('chatUpdate', (list) => {
-      chat = list || [];
+      data.crew = list || [];
       render();
     });
   } else {
     firebase.database().ref('dodgeball-tournament/chat').on('value', (snap) => {
       const val = snap.val() || {};
-      chat = Object.values(val).sort((a, b) => (a.ts || 0) - (b.ts || 0));
+      data.crew = Object.values(val).sort((a, b) => (a.ts || 0) - (b.ts || 0));
       render();
     });
   }
+  syncChatRole();
 
   // Re-render periodically so messages age into history without new traffic.
   if (!ageTimer) ageTimer = setInterval(() => { if (hasAgedMessages()) renderMessages(); }, AGE_CHECK_INTERVAL_MS);
 
   refreshPresence();
   if (!presencePollTimer) presencePollTimer = setInterval(refreshPresence, PRESENCE_POLL_INTERVAL_MS);
+}
+
+async function loadLead() {
+  if (!canLead()) return;
+  try {
+    data.lead = await getLeadChatMessages(authToken());
+    render();
+  } catch (e) {
+    console.error('Failed to load leadership chat', e);
+  }
+}
+
+/**
+ * Called on login/logout and whenever the CHAT tab opens: starts (or tears
+ * down) the leadership channel to match the current role, so a referee's
+ * client never fetches or holds leadership messages.
+ */
+function syncChatRole() {
+  if (canLead() && !leadStarted) {
+    leadStarted = true;
+    loadLead();
+    if (IS_LOCAL_BACKEND) {
+      // Payload-free ping: the broadcast reaches every socket, so the data
+      // itself is only ever fetched through the authenticated endpoint.
+      getSocket().off('chatLeadPing');
+      getSocket().on('chatLeadPing', loadLead);
+    } else {
+      leadPollTimer = setInterval(loadLead, LEAD_POLL_INTERVAL_MS);
+    }
+  } else if (!canLead() && leadStarted) {
+    leadStarted = false;
+    if (leadPollTimer) { clearInterval(leadPollTimer); leadPollTimer = null; }
+    if (IS_LOCAL_BACKEND) getSocket().off('chatLeadPing');
+    data.lead = [];
+    known.lead = new Set();
+    active = 'crew';
+  }
+  renderChannelBar();
+  render();
 }
 
 /**
@@ -99,12 +154,76 @@ function isRecent(m) {
 }
 
 function hasAgedMessages() {
-  return chat.some(m => !isRecent(m));
+  return data[active].some(m => !isRecent(m));
 }
 
 function render() {
   renderMessages();
   renderUnreadDot();
+  renderChannelBar();
+}
+
+function unreadCount(ch) {
+  const seen = seenFor(ch);
+  const me = meLabel();
+  return data[ch].filter(m => m.id > seen && m.who !== me && isRecent(m)).length;
+}
+
+const CHANNEL_META = {
+  crew: {
+    label: 'Crew', sub: 'Everyone', icon: '👥',
+    banner: 'Everyone can read this — referees, admins &amp; parents.',
+    placeholder: 'Message the crew…'
+  },
+  lead: {
+    label: 'Leadership', sub: 'Admins &amp; parents', icon: '🔒',
+    banner: 'Private to admins &amp; parents. Referees can’t see this channel.',
+    placeholder: 'Message leadership only…'
+  }
+};
+
+/** Segmented channel switcher, context banner, composer hint and theme for the active channel. */
+function renderChannelBar() {
+  const view = document.getElementById('chat-view');
+  if (view) view.dataset.channel = active;
+
+  const bar = document.getElementById('chat-channel-bar');
+  const banner = document.getElementById('chat-channel-banner');
+  const kicker = document.getElementById('chat-kicker');
+  const input = document.getElementById('chat-composer-input');
+  const leader = canLead();
+
+  if (bar) {
+    bar.classList.toggle('hidden', !leader);
+    bar.innerHTML = leader ? ['crew', 'lead'].map(ch => {
+      const meta = CHANNEL_META[ch];
+      const unread = ch === active ? 0 : unreadCount(ch);
+      return `
+        <button onclick="switchChatChannel('${ch}')" data-ch="${ch}" aria-pressed="${ch === active}"
+                class="chat-seg ${ch === active ? 'chat-seg-on' : ''}">
+          <span class="chat-seg-title">${meta.icon} ${meta.label}${unread ? `<span class="chat-seg-badge">${unread}</span>` : ''}</span>
+          <span class="chat-seg-sub">${meta.sub}</span>
+        </button>`;
+    }).join('') : '';
+  }
+  if (banner) {
+    banner.classList.toggle('hidden', !leader);
+    banner.innerHTML = leader ? CHANNEL_META[active].banner : '';
+  }
+  if (kicker) kicker.textContent = leader ? CHANNEL_META[active].sub.replace('&amp;', '&') : 'Referees & parents';
+  if (input) input.placeholder = CHANNEL_META[active].placeholder;
+}
+
+function switchChatChannel(ch) {
+  if (!CHANNEL_META[ch] || (ch === 'lead' && !canLead()) || ch === active) return;
+  active = ch;
+  chatOpenSeenSnapshot = seenFor(ch);
+  showHistory = false;
+  confirmDeleteId = null;
+  pendingJumpCount = 0;
+  hideJumpButton();
+  render();
+  scrollChatToBottom();
 }
 
 function isAtBottom(scrollArea) {
@@ -120,9 +239,9 @@ function ensureSeenObserver() {
     for (const entry of entries) {
       if (!entry.isIntersecting) continue;
       const id = Number(entry.target.dataset.msgId);
-      const seen = Number(localStorage.getItem(SEEN_KEY) || 0);
+      const seen = seenFor(active);
       if (id > seen) {
-        localStorage.setItem(SEEN_KEY, String(id));
+        localStorage.setItem(SEEN_KEYS[active], String(id));
         advanced = true;
       }
       seenObserver.unobserve(entry.target);
@@ -139,8 +258,9 @@ function renderMessages() {
   const scrollArea = document.getElementById('chat-scroll-area');
   const wasAtBottom = scrollArea ? isAtBottom(scrollArea) : true;
   const me = meLabel();
+  const chat = data[active];
 
-  const newMessages = chat.filter(m => !knownIds.has(m.id));
+  const newMessages = chat.filter(m => !known[active].has(m.id));
   const newFromOthers = newMessages.filter(m => m.who !== me);
   const newFromMe = newMessages.length - newFromOthers.length;
 
@@ -170,15 +290,15 @@ function renderMessages() {
     const statusLabel = status === 'online' ? 'Online' : status === 'offline' ? 'Offline' : 'Signed out';
     const divider = firstUnread && m.id === firstUnread.id ? `
       <div class="flex items-center gap-2 my-1 select-none">
-        <div class="flex-1 h-px" style="background:var(--mar-l)"></div>
-        <span class="text-[10px] font-semibold uppercase tracking-wide" style="color:var(--mar-l)">New messages</span>
-        <div class="flex-1 h-px" style="background:var(--mar-l)"></div>
+        <div class="flex-1 h-px" style="background:var(--ch-a)"></div>
+        <span class="text-[10px] font-semibold uppercase tracking-wide" style="color:var(--ch-a)">New messages</span>
+        <div class="flex-1 h-px" style="background:var(--ch-a)"></div>
       </div>` : '';
     return `
       ${divider}
       <div class="flex ${mine ? 'justify-end' : 'justify-start'} group" data-msg-id="${m.id}">
         <div class="max-w-[86%] px-3.5 py-2.5 rounded-2xl relative ${mine ? 'rounded-br-md' : 'rounded-bl-md'}"
-             style="background:${mine ? 'linear-gradient(140deg,rgba(166,48,63,.42) 0%,rgba(123,29,43,.34) 100%)' : (m.mgr ? 'rgba(224,184,99,.12)' : 'rgba(255,255,255,.06)')}">
+             style="background:${mine ? 'var(--ch-mine)' : (m.mgr ? 'rgba(224,184,99,.12)' : 'rgba(255,255,255,.06)')}">
           <div class="flex justify-start gap-1.5 items-baseline">
             <span class="text-[10px] font-semibold ${m.mgr ? 'text-gold' : 'text-white/60'}">${escapeHtml(m.who)}</span>
             <span class="inline-block w-1.5 h-1.5 rounded-full flex-none" style="background:${statusColor}" title="${statusLabel}"></span>
@@ -212,12 +332,12 @@ function renderMessages() {
     `;
   }).join('');
 
-  knownIds = new Set(chat.map(m => m.id));
+  known[active] = new Set(chat.map(m => m.id));
 
   // Watch every not-yet-seen message; the observer advances SEEN_KEY (and
   // clears the tab's unread dot) the moment one actually scrolls into view.
   const observer = ensureSeenObserver();
-  const seenNow = Number(localStorage.getItem(SEEN_KEY) || 0);
+  const seenNow = seenFor(active);
   container.querySelectorAll('[data-msg-id]').forEach(el => {
     if (Number(el.dataset.msgId) > seenNow) observer.observe(el);
   });
@@ -283,7 +403,8 @@ async function confirmDeleteChatMessage(event, id) {
   event.stopPropagation();
   confirmDeleteId = null;
   try {
-    await apiDeleteChatMessage(authToken(), id);
+    const list = await apiDeleteChatMessage(authToken(), id, active);
+    if (active === 'lead' && list?.chat) data.lead = list.chat;
   } catch (e) {
     console.error('Failed to delete chat message', e);
     showStatus('Failed to delete: ' + e.message, true);
@@ -310,16 +431,15 @@ function renderUnreadDot() {
   const dot = document.getElementById('chat-unread-dot');
   if (!dot) return;
 
-  const seen = Number(localStorage.getItem(SEEN_KEY) || 0);
-  const me = meLabel();
-  const unread = chat.filter(m => m.id > seen && m.who !== me && isRecent(m));
-
-  if (!unread.length) {
+  const crewUnread = unreadCount('crew');
+  const leadUnread = canLead() ? unreadCount('lead') : 0;
+  if (!crewUnread && !leadUnread) {
     dot.classList.add('hidden');
     return;
   }
-  const isAdminUnread = unread.some(m => m.mgr);
-  dot.style.background = isAdminUnread ? 'var(--warn)' : 'var(--mar-l)';
+  // Leadership unread wins the dot color (violet) so it can't be mistaken for crew chatter.
+  const isAdminUnread = data.crew.some(m => m.mgr && m.id > seenFor('crew') && isRecent(m));
+  dot.style.background = leadUnread ? 'var(--lead-a)' : isAdminUnread ? 'var(--warn)' : 'var(--mar-l)';
   dot.classList.remove('hidden');
 }
 
@@ -328,7 +448,8 @@ function onChatTabOpened() {
   // Snapshot where "unread" ended before this visit, so the divider has a
   // fixed anchor for the whole visit instead of chasing SEEN_KEY as the
   // IntersectionObserver marks messages read one by one.
-  chatOpenSeenSnapshot = Number(localStorage.getItem(SEEN_KEY) || 0);
+  syncChatRole();
+  chatOpenSeenSnapshot = seenFor(active);
   showHistory = false;
   window.scrollTo(0, 0);
   sizeChatView();
@@ -357,7 +478,8 @@ async function sendChatMessage() {
   input.value = '';
   updateComposerButton();
   try {
-    await postChatMessage(authToken(), text, App.state.reporterName, App.state.selectedCourt, sessionStorage.getItem('sessionId'));
+    const res = await postChatMessage(authToken(), text, App.state.reporterName, App.state.selectedCourt, sessionStorage.getItem('sessionId'), active);
+    if (active === 'lead' && res?.chat) { data.lead = res.chat; render(); }
   } catch (e) {
     console.error('Failed to send chat message', e);
     showStatus('Failed to send: ' + e.message, true);
@@ -369,7 +491,7 @@ function updateComposerButton() {
   const btn = document.getElementById('chat-send-btn');
   if (!input || !btn) return;
   const hasText = !!input.value.trim();
-  btn.style.background = hasText ? 'linear-gradient(135deg,var(--mar-l) 0%,var(--mar) 100%)' : 'rgba(255,255,255,.12)';
+  btn.style.background = hasText ? 'linear-gradient(135deg,var(--ch-a) 0%,var(--ch-b) 100%)' : 'rgba(255,255,255,.12)';
 }
 
 document.addEventListener('DOMContentLoaded', () => {
@@ -385,6 +507,8 @@ document.addEventListener('DOMContentLoaded', () => {
 export {
   init as initChat,
   onChatTabOpened,
+  syncChatRole,
+  switchChatChannel,
   sendChatMessage,
   jumpToChatBottom,
   toggleChatHistory,

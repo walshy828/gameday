@@ -12,9 +12,16 @@ export function initSocket(httpServer) {
   });
 
   io.on('connection', (socket) => {
-    socket.on('joinDivision', (divisionName) => {
+    // A tab watches one division at a time: joining one leaves the others, and
+    // the ack tells the client it is now subscribed (so it can fetch current
+    // state without missing an update that lands between fetch and join).
+    socket.on('joinDivision', (divisionName, ack) => {
       if (!divisionName) return;
+      for (const room of socket.rooms) {
+        if (room.startsWith('division:') && room !== `division:${divisionName}`) socket.leave(room);
+      }
       socket.join(`division:${divisionName}`);
+      if (typeof ack === 'function') ack();
     });
   });
 
@@ -52,6 +59,14 @@ export function broadcastAnnouncementUpdate(announcements) {
 export function broadcastChatUpdate(chat) {
   if (!io) return;
   io.emit('chatUpdate', chat);
+}
+
+// Leadership-channel chat is superadmin/parent-only, so the broadcast carries
+// no message data (it would reach referees' sockets too) — it's just a nudge
+// for authorized clients to refetch GET /api/chat/lead.
+export function broadcastChatLeadPing() {
+  if (!io) return;
+  io.emit('chatLeadPing');
 }
 
 // Feature toggles (e.g. champion celebration) are tournament-wide, so they

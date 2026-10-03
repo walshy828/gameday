@@ -136,10 +136,15 @@ export async function getChatMessages() {
   return await apiGet(`/chat`);
 }
 
-export async function postChatMessage(authToken, text, reporterName, court, sessionId) {
-  return await apiPost(`/chat`, { authToken, text, reporterName, court, sessionId });
+// Superadmin/parent only — the server refuses referee tokens.
+export async function getLeadChatMessages(authToken) {
+  return await apiGet(`/chat/lead?authToken=${encodeURIComponent(authToken)}`);
 }
 
-export async function deleteChatMessage(authToken, id) {
-  return await apiDelete(`/chat/${id}`, { authToken });
+export async function postChatMessage(authToken, text, reporterName, court, sessionId, channel = 'crew') {
+  return await apiPost(`/chat`, { authToken, text, reporterName, court, sessionId, channel });
+}
+
+export async function deleteChatMessage(authToken, id, channel = 'crew') {
+  return await apiDelete(`/chat/${id}`, { authToken, channel });
 }

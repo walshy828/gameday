@@ -8,6 +8,7 @@ import * as SheetsMirror from './sheetsMirror.js';
 import * as SheetsSync from './sheetsSync.js';
 import { applySyncSettings, computeAutoSyncExpiry, initSyncScheduler, scheduleResultSync } from './syncScheduler.js';
 import { initSocket } from './socket.js';
+import { controlTimer, initTimerControl, TimerError, TIMER_ACTION_NAMES } from './timerControl.js';
 import crypto from 'crypto';
 import axios from 'axios';
 
@@ -298,7 +299,8 @@ app.post('/api/saveMatchResult', async (req, res) => {
 // --- Timer control endpoints (local mode only) ---
 // In firebase mode the browser talks to Firebase RTDB directly for all timer
 // state, so these endpoints exist purely for DATA_BACKEND=local, where the
-// server is the source of truth and pushes updates over Socket.IO.
+// server is the source of truth and pushes updates over Socket.IO. All
+// transitions (and clock expiry) live in server/timerControl.js.
 
 app.get('/api/timer', async (req, res) => {
   try {
@@ -310,122 +312,34 @@ app.get('/api/timer', async (req, res) => {
   }
 });
 
-function requireAdmin(req, res) {
-  const authToken = req.body?.authToken || req.query?.authToken;
-  if (!isValidToken(authToken)) {
-    res.status(401).json({ success: false, error: 'Authentication failed.' });
-    return false;
-  }
-  return true;
-}
+// Legacy route names from before setRound existed.
+const TIMER_ACTION_ALIASES = { nextRound: 'setRound', prevRound: 'setRound' };
 
-app.post('/api/timer/start', async (req, res) => {
-  if (!requireAdmin(req, res)) return;
+app.post('/api/timer/:action', async (req, res) => {
+  if (DATA_BACKEND !== 'local') {
+    return res.status(501).json({ success: false, error: 'Timer API is only available with DATA_BACKEND=local.' });
+  }
+  if (!requireSuperAdmin(req, res)) return;
+
+  const action = TIMER_ACTION_ALIASES[req.params.action] || req.params.action;
+  if (!TIMER_ACTION_NAMES.includes(action)) {
+    return res.status(404).json({ success: false, error: 'Unknown timer action.' });
+  }
+
+  const { sheetName, clientId, clientName, ...params } = req.body || {};
+  if (typeof clientId !== 'string' || clientId.length < 8 || clientId.length > 64) {
+    return res.status(400).json({ success: false, error: 'clientId is required.' });
+  }
+  const client = { id: clientId, name: String(clientName || 'Tournament manager').slice(0, 64) };
+
   try {
-    const { sheetName, afterRound } = req.body;
-    const current = await Store.getTimerState(sheetName);
-    const state = afterRound
-      ? await Store.setTimerState(sheetName, {
-          running: true,
-          startTime: Date.now(),
-          duration: current.afterRoundDuration || 60,
-          startAfterRoundRunning: true
-        })
-      : await Store.setTimerState(sheetName, {
-          running: true,
-          startTime: Date.now(),
-          duration: current.duration || current.lastSetDuration || 300
-        });
+    const { state } = await controlTimer(action, sheetName, client, params);
     res.json({ success: true, state });
   } catch (e) {
-    res.status(500).json({ success: false, error: e.toString() });
-  }
-});
-
-app.post('/api/timer/stop', async (req, res) => {
-  if (!requireAdmin(req, res)) return;
-  try {
-    const { sheetName } = req.body;
-    const current = await Store.getTimerState(sheetName);
-    let remaining = current.duration;
-    if (current.running && current.startTime) {
-      const elapsed = Math.floor((Date.now() - current.startTime) / 1000);
-      remaining = Math.max((current.duration || 0) - elapsed, 0);
+    if (e instanceof TimerError) {
+      return res.status(e.status).json({ success: false, error: e.code, ...e.extra });
     }
-    const state = await Store.setTimerState(sheetName, { running: false, duration: remaining });
-    res.json({ success: true, state });
-  } catch (e) {
-    res.status(500).json({ success: false, error: e.toString() });
-  }
-});
-
-app.post('/api/timer/reset', async (req, res) => {
-  if (!requireAdmin(req, res)) return;
-  try {
-    const { sheetName } = req.body;
-    const current = await Store.getTimerState(sheetName);
-    const state = await Store.setTimerState(sheetName, {
-      running: false,
-      duration: current.lastSetDuration || 300,
-      startAfterRoundRunning: false
-    });
-    res.json({ success: true, state });
-  } catch (e) {
-    res.status(500).json({ success: false, error: e.toString() });
-  }
-});
-
-app.post('/api/timer/adjust', async (req, res) => {
-  if (!requireAdmin(req, res)) return;
-  try {
-    const { sheetName, deltaSeconds } = req.body;
-    const state = await Store.adjustTimer(sheetName, Number(deltaSeconds) || 0);
-    res.json({ success: true, state });
-  } catch (e) {
-    res.status(500).json({ success: false, error: e.toString() });
-  }
-});
-
-app.post('/api/timer/nextRound', async (req, res) => {
-  if (!requireAdmin(req, res)) return;
-  try {
-    const { sheetName, round } = req.body;
-    const state = await Store.setTimerState(sheetName, { currentRound: round });
-    res.json({ success: true, state });
-  } catch (e) {
-    res.status(500).json({ success: false, error: e.toString() });
-  }
-});
-
-app.post('/api/timer/prevRound', async (req, res) => {
-  if (!requireAdmin(req, res)) return;
-  try {
-    const { sheetName, round } = req.body;
-    const state = await Store.setTimerState(sheetName, { currentRound: round });
-    res.json({ success: true, state });
-  } catch (e) {
-    res.status(500).json({ success: false, error: e.toString() });
-  }
-});
-
-app.post('/api/timer/afterRoundDuration', async (req, res) => {
-  if (!requireAdmin(req, res)) return;
-  try {
-    const { sheetName, afterRoundDuration } = req.body;
-    const state = await Store.setTimerState(sheetName, { afterRoundDuration: Number(afterRoundDuration) || 60 });
-    res.json({ success: true, state });
-  } catch (e) {
-    res.status(500).json({ success: false, error: e.toString() });
-  }
-});
-
-app.post('/api/timer/showClock', async (req, res) => {
-  if (!requireAdmin(req, res)) return;
-  try {
-    const { sheetName, showClock } = req.body;
-    const state = await Store.setTimerState(sheetName, { showClock: !!showClock });
-    res.json({ success: true, state });
-  } catch (e) {
+    console.error(`timer/${action} failed`, e);
     res.status(500).json({ success: false, error: e.toString() });
   }
 });
@@ -496,10 +410,42 @@ function requireChatAuth(req, res) {
   return true;
 }
 
+// Two channels: 'crew' (everyone — referees, superadmin, parents) and 'lead'
+// (superadmin + parents only; referees are refused on both read and write).
+const CHAT_CHANNELS = ['crew', 'lead'];
+
+function chatChannelOf(value) {
+  return CHAT_CHANNELS.includes(value) ? value : 'crew';
+}
+
+function chatRoleOf(authToken) {
+  if (!authToken || typeof authToken !== 'string') return null;
+  if (authToken === computeToken(process.env.SUPERADMIN_PASSWORD || '')) return 'superadmin';
+  if (process.env.PARENT_PASSWORD && authToken === computeToken(process.env.PARENT_PASSWORD)) return 'parent';
+  if (authToken === computeToken(process.env.ADMIN_PASSWORD || '')) return 'admin';
+  return null;
+}
+
+function canUseLeadChat(role) {
+  return role === 'superadmin' || role === 'parent';
+}
+
+// Crew channel stays readable without a token, same as before.
 app.get('/api/chat', async (_req, res) => {
   try {
-    const list = await Store.getChatMessages();
+    const list = await Store.getChatMessages('crew');
     res.json(list);
+  } catch (e) {
+    res.status(500).json({ error: e.toString() });
+  }
+});
+
+app.get('/api/chat/lead', async (req, res) => {
+  if (!canUseLeadChat(chatRoleOf(req.query?.authToken))) {
+    return res.status(403).json({ success: false, error: 'Leadership chat is restricted.' });
+  }
+  try {
+    res.json(await Store.getChatMessages('lead'));
   } catch (e) {
     res.status(500).json({ error: e.toString() });
   }
@@ -512,13 +458,18 @@ app.post('/api/chat', async (req, res) => {
     if (!text) return res.status(400).json({ success: false, error: 'text is required' });
 
     const authToken = req.body?.authToken;
-    const isMgr = authToken === computeToken(process.env.SUPERADMIN_PASSWORD || '');
-    const isParent = !!process.env.PARENT_PASSWORD && authToken === computeToken(process.env.PARENT_PASSWORD || '');
+    const role = chatRoleOf(authToken);
+    const channel = chatChannelOf(req.body?.channel);
+    if (channel === 'lead' && !canUseLeadChat(role)) {
+      return res.status(403).json({ success: false, error: 'Leadership chat is restricted.' });
+    }
+    const isMgr = role === 'superadmin';
+    const isParent = role === 'parent';
     const reporterName = (req.body?.reporterName || '').trim() || 'Staff';
     const court = req.body?.court;
     const who = isMgr ? `Admin · ${reporterName}` : isParent ? `Parent · ${reporterName}` : `Court ${court || '?'} · ${reporterName}`;
 
-    const chat = await Store.postChatMessage({ who, mgr: isMgr, text });
+    const chat = await Store.postChatMessage({ who, mgr: isMgr, text, channel });
     res.json({ success: true, chat });
 
     // Sending a message is itself proof of activity — refresh the session's
@@ -536,7 +487,7 @@ app.delete('/api/chat/:id', async (req, res) => {
   if (!requireSuperAdmin(req, res)) return;
   try {
     const id = Number(req.params.id);
-    const chat = await Store.deleteChatMessage(id);
+    const chat = await Store.deleteChatMessage(id, chatChannelOf(req.body?.channel));
     res.json({ success: true, chat });
   } catch (e) {
     res.status(500).json({ success: false, error: e.toString() });
@@ -796,7 +747,10 @@ httpServer.listen(PORT, () => console.log(`Server started at http://localhost:${
 
 // Firebase's realtime listener stub is only relevant (and only safely
 // importable) when running against Firebase RTDB.
-if (DATA_BACKEND !== 'local') {
+if (DATA_BACKEND === 'local') {
+  // Re-arm expiry for any clock that was running across a restart.
+  await initTimerControl();
+} else {
   const { initRealtimeListeners } = await import('./firebase-listener.js');
   initRealtimeListeners();
 }

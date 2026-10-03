@@ -62,7 +62,7 @@ import { initTimerOverlay } from './timerOverlay.js';
 import * as TimerFirebase from './timerFirebase.js';
 import * as TimerLocal from './timerLocal.js';
 import { initAnnouncements, dismissAnnouncementBanner, postAnnouncementFromSetup, cancelAnnouncementEdit } from './announcements.js';
-import { initChat, sendChatMessage, jumpToChatBottom, toggleChatHistory, requestDeleteChatMessage, cancelDeleteChatMessage, confirmDeleteChatMessage } from './chat.js';
+import { initChat, syncChatRole, switchChatChannel, sendChatMessage, jumpToChatBottom, toggleChatHistory, requestDeleteChatMessage, cancelDeleteChatMessage, confirmDeleteChatMessage } from './chat.js';
 import { renderPlayoffsView } from './playoffs.js';
 
 const IS_LOCAL_BACKEND = window.__DATA_BACKEND__ === 'local';
@@ -224,6 +224,8 @@ async function loadData(divisionName) {
           firebaseIndex: key
         }));
 
+    App.data.scheduleDivision = divisionName;
+
     // Update derived lists
     App.data.teamNames = getUniqueTeams();
     App.data.courtNames = getUniqueCourts();
@@ -357,6 +359,7 @@ async function loadData(divisionName) {
 
 let currentDivisionListener = null;
 let socketDivisionRoom = null;
+let socketRejoinHandler = null;
 
 // Shared by both the Firebase 'value' listener and the Socket.IO
 // 'divisionUpdate' handler — applies a fresh {standings, schedule} snapshot
@@ -372,6 +375,7 @@ function handleDivisionSnapshot(data, divisionName) {
     ...match,
     firebaseIndex: key
     }));
+  App.data.scheduleDivision = divisionName;
   renderStandings(App.data.standings);
   updateScheduleView();
   updateAdminMatchEntryView();
@@ -394,21 +398,30 @@ function handleDivisionSnapshot(data, divisionName) {
 function watchDivision(divisionName) {
   if (IS_LOCAL_BACKEND) {
     const socket = getSocket();
-    socket.emit('joinDivision', divisionName);
     socketDivisionRoom = divisionName;
+    // Subscribe, and only once the server confirms, pull the division's timer
+    // state (TimerModule.init() ran before currentSheetName was known, and an
+    // update landing between a fetch and the join would otherwise be missed).
+    const join = () => socket.emit('joinDivision', divisionName, () => {
+      if (socketDivisionRoom === divisionName) TimerModule.refreshState?.();
+    });
+    join();
+    // Rooms are lost when the socket reconnects — re-join (and re-sync) then.
+    if (socketRejoinHandler) socket.off('connect', socketRejoinHandler);
+    socketRejoinHandler = join;
+    socket.on('connect', join);
     // Re-registering avoids stacking listeners across division switches.
     socket.off('divisionUpdate');
     socket.on('divisionUpdate', (payload) => {
       if (payload.division !== divisionName) return;
       handleDivisionSnapshot(payload, divisionName);
     });
-    // Timer state is per-division and TimerModule.init() ran before
-    // currentSheetName was known, so pull the current state now — otherwise
-    // the display stays stale until the next timerUpdate broadcast (e.g. a
-    // superadmin stopping/starting the timer).
-    TimerModule.refreshState?.();
     return;
   }
+
+  // Firebase mode: re-point the per-division clock listeners at this division.
+  // (Local mode returned above after its own refreshState.)
+  TimerModule.refreshState?.();
 
   const divisionRef = firebase.database().ref(`dodgeball-tournament/divisions/${divisionName}`);
 
@@ -584,6 +597,8 @@ exposeGlobals({
   dismissAnnouncementBanner,
   postAnnouncementFromSetup,
   cancelAnnouncementEdit,
+  syncChatRole,
+  switchChatChannel,
   sendChatMessage,
   jumpToChatBottom,
   toggleChatHistory,

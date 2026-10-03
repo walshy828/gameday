@@ -69,7 +69,10 @@ CREATE TABLE IF NOT EXISTS timer_state (
   currentRound VARCHAR(64) NULL,
   afterRoundDuration INT NOT NULL DEFAULT 60,
   startAfterRoundRunning BOOLEAN NOT NULL DEFAULT FALSE,
-  showClock BOOLEAN NOT NULL DEFAULT TRUE
+  showClock BOOLEAN NOT NULL DEFAULT TRUE,
+  afterRoundEnabled BOOLEAN NOT NULL DEFAULT FALSE,
+  controllerId VARCHAR(64) NULL,
+  controllerName VARCHAR(191) NULL
 );
 
 -- Superadmin Settings page: Google Sheet sync toggle/interval/scope, single row.
@@ -120,7 +123,8 @@ CREATE TABLE IF NOT EXISTS announcements (
   INDEX idx_announcements_ts (ts)
 );
 
--- Tournament-wide staff-only crew chat. `mgr` marks a tournament-manager
+-- Tournament-wide crew chat. `channel` is 'crew' (everyone) or 'lead'
+-- (superadmin + parents only; referees never receive these rows). `mgr` marks a tournament-manager
 -- (superadmin) message — used client-side for the CHAT tab's unread-dot
 -- color rule (red if any unread message has mgr=true, maroon otherwise).
 CREATE TABLE IF NOT EXISTS chat_messages (
@@ -129,6 +133,7 @@ CREATE TABLE IF NOT EXISTS chat_messages (
   is_mgr BOOLEAN NOT NULL DEFAULT FALSE,
   text TEXT NOT NULL,
   ts BIGINT NOT NULL,
+  channel VARCHAR(16) NOT NULL DEFAULT 'crew',
   INDEX idx_chat_ts (ts)
 );
 
