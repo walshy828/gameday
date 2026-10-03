@@ -26,7 +26,8 @@ import {
     handleDivisionChange,
     initializeFilter,
     switchView,
-    goToGate
+    goToGate,
+    openSettingsFromGate
 } from './navigation.js';
 
 import {
@@ -572,6 +573,7 @@ exposeGlobals({
   showStatus,
   switchView,
   goToGate,
+  openSettingsFromGate,
   getCurrentFilteredTeam
 });
 

@@ -6,6 +6,8 @@
 
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=5.0">
     <title>Dodgeball Tournament Tracker</title>
+    <link rel="icon" type="image/png" href="/assets/algonquin-hockey.png">
+    <link rel="apple-touch-icon" href="/assets/algonquin-hockey.png">
     <link href="https://googleapis.com" rel="stylesheet">
 
     <!--
@@ -952,8 +954,12 @@
             <div class="flex-1 text-xs text-white/40">All proceeds support the Algonquin Regional High School Hockey
                 program..</div>
             <div class="flex-none flex flex-col items-end gap-1.5 max-w-[48%]">
-                <button id="gate-admin-btn" onclick="showAdminLoginModal()"
-                    class="pill-gold px-4 py-3 text-xs font-semibold">Admin login</button>
+                <div class="flex items-center gap-1.5">
+                    <button id="gate-settings-btn" onclick="openSettingsFromGate()"
+                        class="hidden rounded-full border border-white/20 bg-white/[.06] px-4 py-3 text-xs font-semibold text-white/75">Settings</button>
+                    <button id="gate-admin-btn" onclick="showAdminLoginModal()"
+                        class="pill-gold px-4 py-3 text-xs font-semibold">Admin login</button>
+                </div>
                 <div id="gate-admin-who" class="hidden text-[11px] leading-[1.35] text-right text-white/60 break-words"></div>
             </div>
         </div>

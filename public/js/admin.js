@@ -454,6 +454,7 @@ if (typeof window !== 'undefined') window.renderAdminMatchEntryNow = renderAdmin
 function updateGateAdminUI(loggedIn) {
     const btn = document.getElementById('gate-admin-btn');
     const who = document.getElementById('gate-admin-who');
+    const settingsBtn = document.getElementById('gate-settings-btn');
     const badge = document.getElementById('header-staff-badge');
     const badgeName = document.getElementById('header-staff-name');
     const name = App.state.reporterName || 'Staff';
@@ -465,6 +466,7 @@ function updateGateAdminUI(loggedIn) {
         btn.textContent = loggedIn ? 'Log out' : 'Admin login';
         btn.onclick = loggedIn ? logoutAdmin : showAdminLoginModal;
     }
+    if (settingsBtn) settingsBtn.classList.toggle('hidden', !(loggedIn && App.state.isSuperAdmin));
     if (who) {
         who.classList.toggle('hidden', !loggedIn);
         who.textContent = loggedIn ? `Signed in as ${name} · ${role}` : '';

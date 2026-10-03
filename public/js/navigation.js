@@ -77,6 +77,16 @@ function showGate() {
     document.getElementById('bottom-tab-bar')?.classList.add('hidden');
 }
 
+/** Superadmin shortcut from the Gate to the Setup page (initial configuration). */
+function openSettingsFromGate() {
+    if (!App.state.isSuperAdmin) return;
+    App.state.screen = 'app';
+    document.getElementById('gate-screen')?.classList.add('hidden');
+    document.getElementById('app-screen')?.classList.remove('hidden');
+    document.getElementById('bottom-tab-bar')?.classList.remove('hidden');
+    switchView('settings');
+}
+
 /** Returns to the Gate screen from within the app (the header "Change" chip). */
 function goToGate() {
     showGate();
@@ -560,5 +570,6 @@ export {
     switchView,
     showGate,
     goToGate,
+    openSettingsFromGate,
     enterApp
 };
