@@ -109,9 +109,9 @@ function renderStandings(data) {
 
         row.innerHTML = `
             <span class="flex-none w-[26px] h-[26px] rounded-[10px] text-center text-xs font-bold leading-[26px] tabular-nums bg-white/10 text-white/70">${esc(rank)}</span>
-            <span class="flex-1 min-w-0 truncate text-sm font-semibold leading-tight tracking-[-.01em] text-gray-50">${esc(item.team)}</span>
-            <span class="w-[58px] flex-none text-right text-xs font-medium leading-none text-white/45 tabular-nums">${esc(item.record || '0-0')}</span>
-            <span class="w-[52px] flex-none text-right text-[17px] font-bold leading-none tracking-[-.02em] tabular-nums text-gold-l">${esc(item.points ?? 0)}</span>
+            <span class="flex-1 min-w-0 break-words text-sm font-semibold leading-tight tracking-[-.01em] text-gray-50">${esc(item.team)}</span>
+            <span class="w-[58px] flex-none whitespace-nowrap text-right text-xs font-medium leading-none text-white/45 tabular-nums">${esc(item.record || '0-0')}</span>
+            <span class="w-[52px] flex-none whitespace-nowrap text-right text-[17px] font-bold leading-none tracking-[-.02em] tabular-nums text-gold-l">${esc(item.points ?? 0)}</span>
         `;
         fragment.appendChild(row);
     });

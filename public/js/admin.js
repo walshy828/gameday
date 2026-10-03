@@ -584,6 +584,11 @@ function showAdminLoginModal() {
 
     // Clear previous input and messages
     passwordInput.value = '';
+    try {
+        const saved = JSON.parse(localStorage.getItem('savedAdminPassword') || 'null');
+        if (saved && saved.p && Date.now() - saved.t < 24 * 60 * 60 * 1000) passwordInput.value = saved.p;
+        else if (saved) localStorage.removeItem('savedAdminPassword');
+    } catch (e) { /* ignore */ }
     nameInput.value = localStorage.getItem('lastAdminName') || '';
     message.classList.add('hidden');
 
@@ -662,6 +667,11 @@ async function loginAdmin() {
     try {
         // Use the API helper which returns the validation result
         const result = await validateAdmin(password, reporterName, App.state.selectedCourt, sessionId);
+
+        // One-day tournament: remember the password on this device (expires after 24h).
+        if (result && (result.isParent || result.isAdmin)) {
+            try { localStorage.setItem('savedAdminPassword', JSON.stringify({ p: password, t: Date.now() })); } catch (e) { /* storage unavailable */ }
+        }
 
         if (result && result.isParent) {
             App.state.isParent = true;
@@ -751,6 +761,7 @@ async function loginAdmin() {
             App.state.isParent = false;
             loginMessage.textContent = 'Invalid password.';
             sessionStorage.removeItem('adminAuthToken'); // Clear any old token
+            try { localStorage.removeItem('savedAdminPassword'); } catch (e) { /* ignore */ }
             loginMessage.classList.remove('hidden');
             gtag('event', 'login_failed', {
                 method: 'web',
