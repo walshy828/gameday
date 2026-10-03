@@ -321,7 +321,6 @@ function saveFilter(key, value) {
 
 let lastFilterDivision = null;
 
-const SUB_DIVISION_SELECT_IDS = ['sub-division-select', 'admin-sub-division-select'];
 
 /**
  * Populates the team and court filter dropdowns for both public and admin views.
@@ -392,6 +391,35 @@ function initializeFilter(retainedTeam = 'all', retainedCourt = 'all', retainedA
     if (division) lastFilterDivision = division;
 
     initializeSubDivisionFilter();
+    bindFilterHighlight();
+}
+
+const FILTER_SELECT_IDS = ['team-select', 'court-select', 'sub-division-select',
+    'admin-team-select', 'admin-court-select', 'admin-sub-division-select'];
+const FILTER_TOGGLE_IDS = ['hide-finished-toggle', 'hide-played-toggle'];
+
+/** Highlights every filter that is currently narrowing its list. */
+function updateFilterHighlights() {
+    FILTER_SELECT_IDS.forEach(id => {
+        const el = document.getElementById(id);
+        if (el) el.classList.toggle('filter-active', !!el.value && el.value !== 'all');
+    });
+    FILTER_TOGGLE_IDS.forEach(id => {
+        const el = document.getElementById(id);
+        const label = el && el.closest('label');
+        if (label) label.classList.toggle('filter-active', el.checked);
+    });
+}
+
+function bindFilterHighlight() {
+    [...FILTER_SELECT_IDS, ...FILTER_TOGGLE_IDS].forEach(id => {
+        const el = document.getElementById(id);
+        if (el && !el.dataset.highlightBound) {
+            el.dataset.highlightBound = '1';
+            el.addEventListener('change', updateFilterHighlights);
+        }
+    });
+    updateFilterHighlights();
 }
 
 /**
@@ -452,15 +480,21 @@ function setSelectedSubDivision(name, { auto = false } = {}) {
     syncSubDivisionSelects();
 }
 
-/** Points both Schedule/Admin sub-division selects at the shared selection. */
+/**
+ * Points the Schedule sub-division select at the shared (Standings/Playoffs)
+ * selection. The Admin select is deliberately independent — it keeps its own
+ * persisted `adminSub` filter and is never moved by the Standings toggle.
+ */
 function syncSubDivisionSelects() {
-    const value = getStoredFilters().subAll ? 'all' : (getSelectedSubDivision() || 'all');
-    SUB_DIVISION_SELECT_IDS.forEach(id => {
+    const setValue = (id, value) => {
         const select = document.getElementById(id);
         if (!select) return;
         const hasOption = [...select.options].some(o => o.value === value);
         select.value = hasOption ? value : 'all';
-    });
+    };
+    setValue('sub-division-select', getStoredFilters().subAll ? 'all' : (getSelectedSubDivision() || 'all'));
+    setValue('admin-sub-division-select', getStoredFilters().adminSub || 'all');
+    updateFilterHighlights();
 }
 
 function initializeSubDivisionFilter() {
@@ -493,6 +527,10 @@ function initializeSubDivisionFilter() {
         if (!select.dataset.persistBound) {
             select.dataset.persistBound = '1';
             select.addEventListener('change', () => {
+                if (selectId === 'admin-sub-division-select') {
+                    saveFilter('adminSub', select.value);
+                    return;
+                }
                 if (select.value === 'all') {
                     saveFilter('subAll', true);
                     syncSubDivisionSelects();

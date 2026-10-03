@@ -65,6 +65,13 @@
     background-position: right 15px center;
     padding-right: 38px;
   }
+  /* A filter that is narrowing the list (value != "all" / toggle on) */
+  .select-glass.filter-active,
+  label.filter-active {
+    border-color: rgba(224, 184, 99, 0.7);
+    background-color: rgba(224, 184, 99, 0.14);
+    color: #F3DCA9;
+  }
   .select-glass option {
     background: #18181A;
     color: #F1F1F2;
