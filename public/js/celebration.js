@@ -12,6 +12,8 @@ let confettiInterval = null;
 
 
 function championshipBanner() {
+    if (App.settings && App.settings.championCelebrationEnabled === false) return;
+
     // 1. Get the container for the champion message
     const championMessageContainer = document.getElementById('tournament-champion-message');
 

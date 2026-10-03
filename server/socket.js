@@ -53,3 +53,18 @@ export function broadcastChatUpdate(chat) {
   if (!io) return;
   io.emit('chatUpdate', chat);
 }
+
+// Feature toggles (e.g. champion celebration) are tournament-wide, so they
+// broadcast to every connected client rather than a division room.
+export function broadcastFeatureSettingsUpdate(settings) {
+  if (!io) return;
+  io.emit('featureSettingsUpdate', settings);
+}
+
+// Auto-sync switches itself off after a fixed run time (see
+// server/syncScheduler.js). Superadmin clients listen for this to warn
+// before it happens ({ type: 'warning' }) and when it has ({ type: 'expired' }).
+export function broadcastAutoSyncNotice(notice) {
+  if (!io) return;
+  io.emit('autoSyncNotice', notice);
+}

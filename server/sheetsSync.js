@@ -10,13 +10,12 @@
 import dotenv from 'dotenv';
 import { google } from 'googleapis';
 import { Store } from './datastores/index.js';
+import { readTabData } from './sheetConfig.js';
 dotenv.config();
-
-const SPREADSHEET_ID = process.env.SPREADSHEET_ID || null;
 
 let jwtClient = null;
 let sheetsApi = null;
-if (process.env.GOOGLE_CLIENT_EMAIL && process.env.GOOGLE_PRIVATE_KEY && SPREADSHEET_ID) {
+if (process.env.GOOGLE_CLIENT_EMAIL && process.env.GOOGLE_PRIVATE_KEY) {
   try {
     jwtClient = new google.auth.JWT({
       email: process.env.GOOGLE_CLIENT_EMAIL,
@@ -31,12 +30,29 @@ if (process.env.GOOGLE_CLIENT_EMAIL && process.env.GOOGLE_PRIVATE_KEY && SPREADS
   }
 }
 
-export function isConfigured() {
-  return !!(sheetsApi && jwtClient);
+/**
+ * The spreadsheet ID to sync against: the superadmin's configured value in
+ * Settings (`googleSheetId`) when set, otherwise the `.env` default. Read
+ * fresh each time (not cached at module load) so a Settings change takes
+ * effect on the very next sync without a server restart.
+ */
+export async function getEffectiveSpreadsheetId() {
+  try {
+    const { settings } = await Store.getSyncStatus();
+    return settings.googleSheetId || process.env.SPREADSHEET_ID || null;
+  } catch (e) {
+    return process.env.SPREADSHEET_ID || null;
+  }
 }
 
-export function getSpreadsheetUrl() {
-  return SPREADSHEET_ID ? `https://docs.google.com/spreadsheets/d/${SPREADSHEET_ID}/edit` : null;
+export async function isConfigured() {
+  if (!sheetsApi || !jwtClient) return false;
+  return !!(await getEffectiveSpreadsheetId());
+}
+
+export async function getSpreadsheetUrl() {
+  const id = await getEffectiveSpreadsheetId();
+  return id ? `https://docs.google.com/spreadsheets/d/${id}/edit` : null;
 }
 
 /**
@@ -45,59 +61,13 @@ export function getSpreadsheetUrl() {
  * tabs "all" actually means at sync time).
  */
 export async function getAvailableDivisions() {
-  if (!isConfigured()) return [];
+  if (!(await isConfigured())) return [];
   await jwtClient.authorize();
-  const meta = await sheetsApi.spreadsheets.get({ spreadsheetId: SPREADSHEET_ID });
+  const spreadsheetId = await getEffectiveSpreadsheetId();
+  const meta = await sheetsApi.spreadsheets.get({ spreadsheetId });
   return (meta.data.sheets || [])
     .filter(s => !s.properties.hidden)
     .map(s => s.properties.title);
-}
-
-async function readStandings(sheetName) {
-  const range = process.env.STANDINGS_RANGE || 'A2:D20';
-  const resp = await sheetsApi.spreadsheets.values.get({
-    spreadsheetId: SPREADSHEET_ID, range: `${sheetName}!${range}`
-  });
-  const values = resp.data.values || [];
-  return values.map(row => ({
-    rank: row[0] || '',
-    team: (row[1] || '').toString().trim(),
-    record: row[2] || '',
-    points: row[3] || ''
-  })).filter(s => s.team);
-}
-
-async function readSchedule(sheetName) {
-  const startRow = Number(process.env.SCHEDULE_START_ROW || 74);
-  const lastRowResp = await sheetsApi.spreadsheets.values.get({
-    spreadsheetId: SPREADSHEET_ID, range: `${sheetName}!A:A`
-  });
-  const lastRow = (lastRowResp.data.values || []).length;
-  const numRows = Math.max(0, lastRow - startRow + 1);
-  if (numRows <= 0) return [];
-
-  const range = `${sheetName}!A${startRow}:K${lastRow}`;
-  const resp = await sheetsApi.spreadsheets.values.get({ spreadsheetId: SPREADSHEET_ID, range });
-  const values = resp.data.values || [];
-
-  return values.map((row, idx) => {
-    const team1 = (row[1] || '').toString().trim();
-    const team2 = (row[2] || '').toString().trim();
-    if (!team1 && !team2) return null;
-    return {
-      match: row[0] || '',
-      rowIndex: startRow + idx,
-      team1, team2,
-      court: row[3] || '',
-      roundTime: row[4] || '',
-      winner: (row[5] || '').toString().trim(),
-      playersRemaining: (row[6] || '').toString().trim(),
-      adminName: (row[7] || '').toString().trim(),
-      adminWinner: (row[8] || '').toString().trim(),
-      adminPlayersRemaining: (row[9] || '').toString().trim(),
-      notes: (row[10] || '').toString().trim()
-    };
-  }).filter(Boolean);
 }
 
 /**
@@ -108,22 +78,101 @@ async function readSchedule(sheetName) {
  * this lets a superadmin limit auto-sync/"Sync Now" to only the
  * division(s) actively playing instead of pulling the whole sheet.
  */
-export async function syncAll(triggeredBy = 'manual') {
+// Syncs (timer, "Sync Now", post-save refresh, startup) all rewrite the same
+// store rows, so they run one at a time — an overlapping pair could otherwise
+// have the older read land last and overwrite fresher data. Callers queue
+// behind whatever is running; background 'auto' ticks are simply skipped when
+// busy since another tick is coming anyway.
+let syncChain = Promise.resolve();
+let pendingSyncs = 0;
+function exclusive(fn) {
+  pendingSyncs += 1;
+  const run = syncChain.then(fn).finally(() => { pendingSyncs -= 1; });
+  syncChain = run.catch(() => {});
+  return run;
+}
+
+export function syncAll(triggeredBy = 'manual') {
+  if (triggeredBy === 'auto' && pendingSyncs > 0) {
+    return Promise.resolve({ success: false, skipped: true, error: 'A sync is already running.' });
+  }
+  return exclusive(() => runSyncAll(triggeredBy));
+}
+
+/**
+ * Re-pull just the given division tabs (e.g. the ones that just had results
+ * reported) instead of every tab in scope — a fraction of the Sheets reads.
+ * Ignores the Settings sync scope: a division someone is reporting into is
+ * by definition in play.
+ */
+export function syncDivisions(names, triggeredBy = 'result') {
+  return exclusive(() => runSyncDivisions(names, triggeredBy));
+}
+
+async function runSyncDivisions(names, triggeredBy) {
   const startedAt = Date.now();
-  if (!isConfigured()) {
+  if (!(await isConfigured())) {
+    return { success: false, error: 'Google Sheets sync not configured.' };
+  }
+  try {
+    const spreadsheetId = await getEffectiveSpreadsheetId();
+    const divisionNames = [...new Set(names || [])].filter(Boolean);
+    const { standingsCount, matchesCount, legacyTabs, failedTabs, syncedCount } = await syncTabs(spreadsheetId, divisionNames);
+    return recordResult({
+      success: syncedCount > 0, triggeredBy, startedAt, scope: 'selected', divisionNames,
+      divisions: syncedCount, standingsCount, matchesCount, legacyTabs, failedTabs,
+      ...(failedTabs.length && !syncedCount ? { error: 'All divisions failed to sync — see failedTabs.' } : {})
+    });
+  } catch (e) {
+    console.error('sheetsSync.syncDivisions failed', e);
+    return recordResult({ success: false, error: e.toString(), triggeredBy, startedAt });
+  }
+}
+
+/**
+ * One malformed/incompatible tab (a non-division utility sheet, a one-off API
+ * hiccup, ...) must not take the rest down with it — each tab's read+write
+ * is isolated.
+ */
+async function syncTabs(spreadsheetId, divisionNames) {
+  let standingsCount = 0;
+  let matchesCount = 0;
+  const legacyTabs = [];
+  const failedTabs = [];
+  let syncedCount = 0;
+  for (const name of divisionNames) {
+    try {
+      const { standings, schedule, legacy } = await readTabData(sheetsApi, spreadsheetId, name);
+      await Store.writeDivisionData(name, { standings, schedule });
+      standingsCount += standings.length;
+      matchesCount += schedule.length;
+      syncedCount += 1;
+      if (legacy) legacyTabs.push(name);
+    } catch (e) {
+      console.error(`sheetsSync: failed to sync tab "${name}"`, e);
+      failedTabs.push({ name, error: e.message || e.toString() });
+    }
+  }
+  return { standingsCount, matchesCount, legacyTabs, failedTabs, syncedCount };
+}
+
+async function runSyncAll(triggeredBy) {
+  const startedAt = Date.now();
+  if (!(await isConfigured())) {
     return recordResult({ success: false, error: 'Google Sheets sync not configured.', triggeredBy, startedAt });
   }
   try {
+    const spreadsheetId = await getEffectiveSpreadsheetId();
     const { settings } = await Store.getSyncStatus();
     const allDivisionNames = await getAvailableDivisions();
 
-    // Spreadsheet swap: SPREADSHEET_ID in .env no longer matches the sheet
+    // Spreadsheet swap: the configured sheet ID no longer matches the sheet
     // the stored divisions came from, so anything not a tab in the new sheet
     // is left over from the old one and gets deleted. Only prune when the
     // new sheet actually returned tabs — an empty list means an API/permission
     // problem, and wiping every division over that would be destructive.
     let pruned = [];
-    if (settings.spreadsheetId !== SPREADSHEET_ID && allDivisionNames.length) {
+    if (settings.spreadsheetId !== spreadsheetId && allDivisionNames.length) {
       if (settings.spreadsheetId) {
         pruned = await Store.pruneDivisions(allDivisionNames);
         if (pruned.length) {
@@ -132,7 +181,7 @@ export async function syncAll(triggeredBy = 'manual') {
       }
       // Drop any selected-division picks that only existed in the old sheet,
       // otherwise a 'selected' scope can end up matching nothing.
-      const patch = { spreadsheetId: SPREADSHEET_ID };
+      const patch = { spreadsheetId };
       const keptSelections = (settings.selectedDivisions || []).filter(n => allDivisionNames.includes(n));
       if (keptSelections.length !== (settings.selectedDivisions || []).length) {
         patch.selectedDivisions = keptSelections;
@@ -156,19 +205,12 @@ export async function syncAll(triggeredBy = 'manual') {
       });
     }
 
-    let standingsCount = 0;
-    let matchesCount = 0;
-
-    for (const name of divisionNames) {
-      const [standings, schedule] = await Promise.all([readStandings(name), readSchedule(name)]);
-      await Store.writeDivisionData(name, { standings, schedule });
-      standingsCount += standings.length;
-      matchesCount += schedule.length;
-    }
+    const { standingsCount, matchesCount, legacyTabs, failedTabs, syncedCount } = await syncTabs(spreadsheetId, divisionNames);
 
     return recordResult({
-      success: true, triggeredBy, startedAt, scope, divisionNames, pruned,
-      divisions: divisionNames.length, standingsCount, matchesCount
+      success: syncedCount > 0, triggeredBy, startedAt, scope, divisionNames, pruned,
+      divisions: syncedCount, standingsCount, matchesCount, legacyTabs, failedTabs,
+      ...(failedTabs.length && !syncedCount ? { error: 'All divisions failed to sync — see failedTabs.' } : {})
     });
   } catch (e) {
     console.error('sheetsSync.syncAll failed', e);
@@ -176,19 +218,21 @@ export async function syncAll(triggeredBy = 'manual') {
   }
 }
 
-async function recordResult({ success, error, triggeredBy, startedAt, divisions, standingsCount, matchesCount, scope, divisionNames, pruned }) {
+async function recordResult({ success, error, triggeredBy, startedAt, divisions, standingsCount, matchesCount, scope, divisionNames, pruned, legacyTabs, failedTabs }) {
   const timestamp = Date.now();
   const durationMs = timestamp - startedAt;
   const entry = {
     timestamp,
-    status: success ? 'success' : 'error',
+    status: success ? (failedTabs && failedTabs.length ? 'partial' : 'success') : 'error',
     durationMs,
     triggeredBy,
     ...(error ? { error } : {}),
     ...(divisions != null ? { divisions, standingsCount, matchesCount } : {}),
     ...(scope ? { scope } : {}),
     ...(divisionNames && divisionNames.length ? { divisionNames } : {}),
-    ...(pruned && pruned.length ? { prunedDivisions: pruned } : {})
+    ...(pruned && pruned.length ? { prunedDivisions: pruned } : {}),
+    ...(legacyTabs && legacyTabs.length ? { legacyTabs } : {}),
+    ...(failedTabs && failedTabs.length ? { failedTabs } : {})
   };
 
   try {
@@ -202,22 +246,23 @@ async function recordResult({ success, error, triggeredBy, startedAt, divisions,
 
 /**
  * Delete every stored division that isn't a visible tab in the spreadsheet
- * SPREADSHEET_ID currently points at, and record that id as the one the
- * stored data came from. syncAll() does this on its own when it notices the
- * id changed; this is the manual entry point for cleaning up a swap that
- * happened before the id was being tracked.
+ * currently configured, and record that id as the one the stored data came
+ * from. syncAll() does this on its own when it notices the id changed; this
+ * is the manual entry point for cleaning up a swap that happened before the
+ * id was being tracked.
  */
 export async function pruneStaleDivisions() {
-  if (!isConfigured()) {
+  if (!(await isConfigured())) {
     return { success: false, error: 'Google Sheets sync not configured.', pruned: [] };
   }
   try {
+    const spreadsheetId = await getEffectiveSpreadsheetId();
     const allDivisionNames = await getAvailableDivisions();
     if (!allDivisionNames.length) {
       return { success: false, error: 'No divisions found in the sheet — refusing to prune.', pruned: [] };
     }
     const pruned = await Store.pruneDivisions(allDivisionNames);
-    await Store.updateSyncSettings({ spreadsheetId: SPREADSHEET_ID });
+    await Store.updateSyncSettings({ spreadsheetId });
     return { success: true, pruned, kept: allDivisionNames };
   } catch (e) {
     console.error('sheetsSync.pruneStaleDivisions failed', e);

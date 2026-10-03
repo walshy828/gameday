@@ -188,6 +188,29 @@
     @apply border-gold/40 bg-gold/[.14] text-gold-l;
   }
 
+  /* Icon buttons for the superadmin timer overlay popover (design §9 redesign):
+     a big centered icon carries the button, a 9px uppercase label underneath
+     just confirms it. Used for Start/Pause/Reset/±30s. */
+  .timer-icon-btn {
+    @apply flex w-full flex-col items-center justify-center gap-1.5 rounded-2xl border border-white/15
+           bg-white/[.07] py-3.5 text-[9px] font-semibold uppercase leading-none tracking-[.04em]
+           text-[#F1F1F2] transition-colors;
+  }
+  .timer-icon-btn:hover {
+    @apply bg-white/10;
+  }
+  .timer-icon-btn svg {
+    @apply h-7 w-7;
+  }
+  .timer-icon-btn-go {
+    @apply border-0 text-white;
+    background: linear-gradient(135deg, var(--ok) 0%, #21774a 100%);
+  }
+  .timer-icon-btn-stop {
+    @apply border-0 text-white;
+    background: linear-gradient(135deg, #e2604a 0%, var(--warn) 100%);
+  }
+
   /* Stepper (players-left) */
   .stepper-wrap {
     @apply flex items-center gap-[7px] rounded-[20px] p-1.5;
@@ -255,3 +278,33 @@
   from { opacity: 0; transform: translateY(18px) scale(.97); }
   to { opacity: 1; transform: none; }
 }
+
+/* Setup page: tap/hover tooltip (works on touch via :focus-within) and
+   "show more" disclosure links. */
+.tip { position: relative; display: inline-flex; }
+.tip-btn {
+  display: inline-flex; align-items: center; justify-content: center;
+  width: 22px; height: 22px; border-radius: 9999px;
+  font-size: 13px; line-height: 1; color: rgb(156 163 175);
+}
+.tip-btn:hover, .tip:focus-within .tip-btn { color: #fff; }
+.tip-body {
+  display: none; position: absolute; z-index: 30; top: calc(100% + 6px); left: 0;
+  width: min(280px, 72vw); padding: 10px 12px; border-radius: 10px;
+  font-size: 12px; line-height: 1.45; color: rgb(229 231 235);
+  background: rgb(17 24 39); border: 1px solid rgb(75 85 99);
+  box-shadow: 0 8px 24px rgb(0 0 0 / .45);
+}
+.tip.tip-right .tip-body { left: auto; right: 0; }
+/* backdrop-blur makes every card its own stacking context, which traps the
+   tooltip's z-index beneath later sibling cards. Lift the whole card while its
+   tooltip is open. */
+.card-dark:has(.tip:hover), .card-dark:has(.tip:focus-within),
+.card-light:has(.tip:hover), .card-light:has(.tip:focus-within) {
+  position: relative; z-index: 50;
+}
+.tip:hover .tip-body, .tip:focus-within .tip-body { display: block; }
+.setup-link { color: rgb(209 213 219); font-weight: 600; }
+.setup-link:hover { color: #fff; text-decoration: underline; }
+.setup-link .chev { display: inline-block; transition: transform .15s; }
+.setup-link.open .chev { transform: rotate(90deg); }

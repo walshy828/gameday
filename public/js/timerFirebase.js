@@ -209,6 +209,13 @@ function updateDisplay(timerData) {
   }, 250);
 }
 
+// Used by timerOverlay.js's round auto-sync (sets currentRound straight to a
+// computed value, unlike the Prev/Next buttons which step by one index).
+export function setCurrentRound(round) {
+  if (!roundsRef || !round) return;
+  roundsRef.set(round);
+}
+
 // --- Adjustment buttons ---
 function adjustTime(delta) {
   timerRef.transaction(current => {

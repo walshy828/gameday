@@ -336,6 +336,13 @@
             margin-right: auto;
         }
 
+        /* Chat tab: lock the page so only the message list scrolls. The wrapper's
+           min-h-screen and <main>'s pb-28 normally pad the page past the viewport,
+           which caused the second (page) scrollbar and the blank gap under the composer. */
+        html.chat-locked, html.chat-locked body { overflow: hidden; height: 100dvh; overscroll-behavior: none; }
+        html.chat-locked #main-wrapper { min-height: 0; }
+        html.chat-locked main { padding-bottom: 0; }
+
         /* Toggle switch — design tokens: 46×26 track, 22px knob, white on a
      rgba(255,255,255,.14) off-track. `.slider-ok` opts into the green ON fill
      used for "Show clock to everyone"; everything else uses maroon. */
@@ -919,7 +926,7 @@
     <div id="app-screen" class="hidden">
 
         <!-- App header: logo + title + division chip + round-clock box -->
-        <header class="app-header sticky top-0 z-50 flex items-center gap-3 px-4 pt-3.5 pb-5">
+        <header class="app-header sticky top-0 z-50 flex items-center gap-3 px-[max(0.875rem,calc((100%-42rem)/2+0.875rem))] pt-3 pb-2.5">
             <img src="/assets/algonquin-hockey.png" alt="Algonquin Hockey"
                 class="w-[38px] h-[38px] flex-none object-contain">
 
@@ -936,7 +943,7 @@
 
             <!-- TIMER WRAPPER -->
             <div id="timer-wrapper" class="relative flex-none">
-                <!-- ROUND CLOCK -->
+                <!-- ROUND CLOCK (tap to open timer controls — superadmin only, wired in timerOverlay.js) -->
                 <div id="scoreboard"
                     class="relative flex-col items-center text-center px-4 py-2 rounded-[18px] bg-black/[.34] border border-gold/30 backdrop-blur min-w-[92px] transition-colors">
                     <!-- Timer -->
@@ -954,6 +961,125 @@
                 <!-- Hidden legacy division-select containers (still populated by navigation.js, header chip above is the primary UI) -->
                 <div id="division-selector-wrapper" class="hidden"></div>
                 <div id="division-selector-wrapper-mobile" class="hidden"></div>
+
+                <!-- SUPERADMIN TIMER OVERLAY — popover anchored to the clock, reachable from
+                     any page. Shown/hidden by timerOverlay.js (click the clock to open).
+                     Same control IDs the timer backend modules (timerFirebase.js /
+                     timerLocal.js) bind to; they don't know or care that this moved here
+                     from the old Admin-page card. -->
+                <div id="timer-overlay-panel"
+                    class="hidden absolute right-0 top-[calc(100%+10px)] z-[60] w-[292px] max-w-[88vw] rounded-[26px] border border-white/[.12] p-[18px] shadow-[0_24px_60px_rgba(0,0,0,.55)] backdrop-blur-xl"
+                    style="background:linear-gradient(140deg,rgba(24,24,26,.94) 0%,rgba(58,23,28,.9) 100%)">
+
+                    <div class="flex items-start justify-between gap-2.5">
+                        <div>
+                            <div class="kicker text-gold">Timer controls</div>
+                            <div id="admin-round-kicker"
+                                class="mt-1 text-[10px] font-medium leading-none tracking-[.06em] text-white/45"></div>
+                        </div>
+                        <button id="timer-overlay-close" type="button" title="Close"
+                            class="flex-none w-7 h-7 rounded-full border border-white/20 bg-white/10 text-white/70 text-xs">✕</button>
+                    </div>
+
+                    <div id="admin-timer-display"
+                        class="my-3.5 text-center text-[46px] font-bold leading-none tracking-[-.04em] tabular-nums"
+                        style="color:var(--gold-l)">0:00</div>
+
+                    <!-- Primary controls: −30s / Start↔Pause / +30s↔Reset. Each button is
+                         pinned to an explicit grid column (not source-order auto-placement) so
+                         that hiding a sibling via display:none can't shift the visible ones —
+                         Pause always lands exactly where Start was, and when Reset appears
+                         alongside Start (paused mid-adjustment) it sits to Start's right, in
+                         the +30s slot, rather than the two swapping positions. -->
+                    <div class="grid gap-[7px]" style="grid-template-columns:1fr 1.25fr 1fr">
+                        <button id="minus-btn" type="button" class="timer-icon-btn col-start-1"
+                            title="Subtract 30 seconds" aria-label="Subtract 30 seconds">
+                            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4"
+                                stroke-linecap="round">
+                                <path d="M5 12h14" />
+                            </svg>
+                            <span>−30s</span>
+                        </button>
+                        <button id="start-btn" type="button" class="timer-icon-btn timer-icon-btn-go col-start-2"
+                            title="Start timer" aria-label="Start timer">
+                            <svg viewBox="0 0 24 24" fill="currentColor">
+                                <path d="M8.7 5v14l10-7z" />
+                            </svg>
+                            <span>Start</span>
+                        </button>
+                        <button id="stop-btn" type="button" class="timer-icon-btn timer-icon-btn-stop col-start-2"
+                            style="display:none" title="Pause timer" aria-label="Pause timer">
+                            <svg viewBox="0 0 24 24" fill="currentColor">
+                                <rect x="6" y="5" width="4" height="14" rx="1" />
+                                <rect x="14" y="5" width="4" height="14" rx="1" />
+                            </svg>
+                            <span>Pause</span>
+                        </button>
+                        <button id="reset-btn" type="button" class="timer-icon-btn col-start-3" style="display:none"
+                            title="Reset timer" aria-label="Reset timer">
+                            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
+                                stroke-linecap="round" stroke-linejoin="round">
+                                <path d="M3 12a9 9 0 1 0 3-6.7" />
+                                <path d="M3 4v5h5" />
+                            </svg>
+                            <span>Reset</span>
+                        </button>
+                        <button id="plus-btn" type="button" class="timer-icon-btn col-start-3" title="Add 30 seconds"
+                            aria-label="Add 30 seconds">
+                            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4"
+                                stroke-linecap="round">
+                                <path d="M12 5v14M5 12h14" />
+                            </svg>
+                            <span>+30s</span>
+                        </button>
+                    </div>
+
+                    <!-- Collapsible: after-round timer, round navigation, clock visibility -->
+                    <button id="timer-more-toggle" type="button"
+                        class="mt-3.5 flex w-full items-center justify-between gap-2 rounded-2xl border border-white/10 bg-white/[.04] px-3.5 py-2.5 text-[11px] font-semibold text-white/60">
+                        <span>More controls</span>
+                        <svg id="timer-more-chevron" class="w-3.5 h-3.5 transition-transform" viewBox="0 0 24 24"
+                            fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"
+                            stroke-linejoin="round">
+                            <path d="M6 9l6 6 6-6" />
+                        </svg>
+                    </button>
+
+                    <div id="timer-more-panel" class="hidden mt-3">
+                        <label class="flex cursor-pointer items-center justify-between gap-2.5">
+                            <span class="text-xs font-semibold leading-tight text-[#F1F1F2]">After-round
+                                timer</span>
+                            <span class="switch flex-none">
+                                <input id="after-round-toggle" type="checkbox">
+                                <span class="slider round"></span>
+                            </span>
+                        </label>
+                        <button id="after-round-settings-btn" class="hidden"></button>
+
+                        <div id="after-round-settings" class="mt-2.5 grid grid-cols-3 gap-[7px]">
+                            <button id="minus-after-btn" class="timer-btn !rounded-[14px] !py-3">−15s</button>
+                            <span id="after-round-duration"
+                                class="rounded-[14px] border border-gold/35 bg-gold/10 py-3 text-center text-xs font-semibold leading-none text-gold-l tabular-nums">60s</span>
+                            <button id="plus-after-btn" class="timer-btn !rounded-[14px] !py-3">+15s</button>
+                        </div>
+
+                        <div class="mt-2.5 grid grid-cols-2 gap-[7px]">
+                            <button id="prev-round-btn" class="timer-btn !py-3 !text-xs">Prev round</button>
+                            <button id="next-round-btn" class="timer-btn timer-btn-next !py-3 !text-xs">Next
+                                round</button>
+                        </div>
+
+                        <label for="toggle-display-switch" title="Toggle clock visibility for non-admins"
+                            class="mt-3.5 flex cursor-pointer items-center justify-between gap-2.5 border-t border-white/10 pt-3">
+                            <span class="text-xs font-semibold leading-tight text-[#F1F1F2]">Show clock to
+                                everyone</span>
+                            <span class="switch flex-none">
+                                <input id="toggle-display-switch" type="checkbox">
+                                <span class="slider round slider-ok"></span>
+                            </span>
+                        </label>
+                    </div>
+                </div>
 
             </div>
         </header>
@@ -1005,6 +1131,8 @@
                             <span id="playoffs-match-count" class="screen-kicker"></span>
                         </div>
 
+                        <div id="playoffs-subdivision-toggle" class="hidden mt-3.5 flex gap-2"></div>
+
                         <div class="card-dark mt-3.5 p-3.5">
                             <div id="playoffs-bracket-body"></div>
                         </div>
@@ -1017,6 +1145,9 @@
                         </div>
 
                         <!-- Admin Controls will be dynamically inserted here -->
+
+                        <!-- Sub-division toggle (populated/shown only when the division has 2+ sub divisions) -->
+                        <div id="standings-subdivision-toggle" class="hidden mt-3.5 flex gap-2"></div>
 
                         <div class="card-dark mt-3.5 p-3.5">
                             <div
@@ -1043,6 +1174,10 @@
                         <div class="mt-3.5">
                             <select id="team-select" aria-label="Filter by team" onchange="updateScheduleView()"
                                 class="select-glass w-full"></select>
+                        </div>
+                        <div id="sub-division-select-wrapper" class="hidden mt-2">
+                            <select id="sub-division-select" aria-label="Filter by sub division"
+                                onchange="updateScheduleView()" class="select-glass w-full"></select>
                         </div>
                         <div class="mt-2 grid gap-2 sm:grid-cols-2">
                             <select id="court-select" aria-label="Filter by court" onchange="updateScheduleView()"
@@ -1144,16 +1279,20 @@
                     </div>
 
                     <!-- CHAT VIEW -->
-                    <div id="chat-view" class="screen hidden flex-col" style="height:min(72vh,680px)">
+                    <div id="chat-view" class="screen hidden flex-col" style="height:calc(100dvh - 230px)">
                         <div class="screen-head">
-                            <h2 class="screen-title">Crew chat</h2>
-                            <span class="screen-kicker">Courts 1–4 + desk</span>
+                            <h2 class="screen-title">Referee chat</h2>
+                            <div class="flex items-center gap-2">
+                                <span class="screen-kicker">Referees &amp; parents</span>
+                                <button id="chat-setup-gear" onclick="switchView('settings')" title="Who's online"
+                                    class="hidden pill-gold w-7 h-7 flex-none items-center justify-center text-[13px] leading-none">⚙</button>
+                            </div>
                         </div>
-                        <p id="chat-sub" class="mx-1 mt-2 text-xs leading-[1.45] text-white/50">Every court manager sees
-                            this channel.</p>
 
-                        <div class="relative flex-1 min-h-0 mt-3.5">
+                        <div class="relative flex-1 min-h-0 mt-2.5">
                             <div id="chat-scroll-area" class="h-full overflow-y-auto no-scrollbar">
+                                <button id="chat-history-toggle" onclick="toggleChatHistory()"
+                                    class="hidden mx-auto mb-2 rounded-full border border-white/[.13] bg-white/[.07] px-3.5 py-1.5 text-[11px] font-semibold text-white/70 hover:bg-white/[.12]"></button>
                                 <div id="chat-messages" class="grid gap-2"></div>
                             </div>
                             <button id="chat-jump-btn" onclick="jumpToChatBottom()"
@@ -1165,22 +1304,20 @@
                         </div>
 
                         <div
-                            class="mt-3.5 flex items-center gap-2 rounded-full border border-white/[.13] bg-white/[.07] p-1.5 backdrop-blur-lg">
+                            class="mt-2.5 flex items-center gap-2 rounded-full border border-white/[.13] bg-white/[.07] p-1.5 backdrop-blur-lg">
                             <input id="chat-composer-input" type="text" placeholder="Message the crew…"
-                                class="min-w-0 flex-1 border-0 bg-transparent px-3.5 py-3 text-sm font-medium text-[#F1F1F2] outline-none placeholder:text-white/40">
+                                class="min-w-0 flex-1 border-0 bg-transparent px-3.5 py-2.5 text-sm font-medium text-[#F1F1F2] outline-none placeholder:text-white/40">
                             <button id="chat-send-btn" onclick="sendChatMessage()"
-                                class="flex-none rounded-full px-[18px] py-3 text-xs font-semibold text-white transition-colors"
+                                class="flex-none rounded-full px-[18px] py-2.5 text-xs font-semibold text-white transition-colors"
                                 style="background:rgba(255,255,255,.12)">Send</button>
                         </div>
-                        <p class="mx-1.5 mt-2.5 text-[11px] leading-[1.5] text-white/[.42]">Posting as <span
-                                id="chat-posting-as">—</span> — fans never see this channel.</p>
                     </div>
 
                     <!-- ADMIN MATCH ENTRY VIEW -->
                     <div id="admin-match-entry-view" class="screen hidden">
                         <div class="screen-head !items-start">
                             <div>
-                                <h2 id="admin-title" class="screen-title !text-2xl">Match admin</h2>
+                                <h2 id="admin-title" class="screen-title !text-2xl">Tournament admin</h2>
                                 <div id="admin-who" class="mt-1.5 text-[11px] leading-[1.4] font-medium text-white/50">
                                 </div>
                             </div>
@@ -1193,78 +1330,16 @@
                             </div>
                         </div>
 
-                        <!-- Admin Timer Control Panel (superadmin only) -->
-                        <div id="admin-panel"
-                            class="hidden mt-3.5 rounded-[26px] border border-white/[.12] p-[18px] shadow-[inset_0_1px_0_rgba(255,255,255,.09)] backdrop-blur-xl"
-                            style="background:linear-gradient(140deg,rgba(24,24,26,.6) 0%,rgba(58,23,28,.5) 100%)">
-
-                            <!-- TIMER CONTROLS (design §9). These are the same control IDs the
-                         timer modules bind to — they simply live inline on the Admin
-                         page now instead of in a popover under the header clock. -->
-                            <div id="timer-controls-overlay">
-                                <div class="flex items-baseline justify-between gap-2.5">
-                                    <div class="kicker text-gold">Timer controls</div>
-                                    <div id="admin-round-kicker"
-                                        class="text-[9px] font-medium leading-none tracking-[.08em] text-white/40 uppercase">
-                                    </div>
-                                </div>
-
-                                <div id="admin-timer-display"
-                                    class="my-3 text-[48px] font-bold leading-none tracking-[-.04em] tabular-nums"
-                                    style="color:var(--gold-l)">0:00</div>
-
-                                <div class="grid gap-[7px]" style="grid-template-columns:1fr 1.25fr 1fr">
-                                    <button id="minus-btn" class="timer-btn">−30s</button>
-                                    <span class="contents">
-                                        <button id="start-btn" class="timer-btn timer-btn-go">Start</button>
-                                        <button id="stop-btn" class="timer-btn timer-btn-stop"
-                                            style="display:none">Stop</button>
-                                        <button id="reset-btn" class="timer-btn" style="display:none">Reset</button>
-                                    </span>
-                                    <button id="plus-btn" class="timer-btn">+30s</button>
-                                </div>
-
-                                <div class="my-4 h-px bg-white/10"></div>
-
-                                <label class="flex cursor-pointer items-center justify-between gap-2.5">
-                                    <span class="text-xs font-semibold leading-tight text-[#F1F1F2]">After-round
-                                        timer</span>
-                                    <span class="switch flex-none">
-                                        <input id="after-round-toggle" type="checkbox">
-                                        <span class="slider round"></span>
-                                    </span>
-                                </label>
-                                <button id="after-round-settings-btn" class="hidden"></button>
-
-                                <div id="after-round-settings" class="mt-2.5 grid grid-cols-3 gap-[7px]">
-                                    <button id="minus-after-btn" class="timer-btn !rounded-[14px] !py-3">−15s</button>
-                                    <span id="after-round-duration"
-                                        class="rounded-[14px] border border-gold/35 bg-gold/10 py-3 text-center text-xs font-semibold leading-none text-gold-l tabular-nums">60s</span>
-                                    <button id="plus-after-btn" class="timer-btn !rounded-[14px] !py-3">+15s</button>
-                                </div>
-
-                                <div class="mt-2.5 grid grid-cols-2 gap-[7px]">
-                                    <button id="prev-round-btn" class="timer-btn !py-3.5 !text-xs">Prev round</button>
-                                    <button id="next-round-btn" class="timer-btn timer-btn-next !py-3.5 !text-xs">Next
-                                        round</button>
-                                </div>
-
-                                <label for="toggle-display-switch" title="Toggle clock visibility for non-admins"
-                                    class="mt-4 flex cursor-pointer items-center justify-between gap-2.5 border-t border-white/10 pt-3.5">
-                                    <span class="text-xs font-semibold leading-tight text-[#F1F1F2]">Show clock to
-                                        everyone</span>
-                                    <span class="switch flex-none">
-                                        <input id="toggle-display-switch" type="checkbox">
-                                        <span class="slider round slider-ok"></span>
-                                    </span>
-                                </label>
-
-                            </div>
-                        </div>
+                        <!-- Timer controls now live in the header-clock popover (any page,
+                             superadmin only) — see #timer-overlay-panel and timerOverlay.js. -->
 
                         <!-- Filters (reused from the schedule view) -->
                         <div class="mt-2.5">
                             <select id="admin-team-select" aria-label="Filter by team"
+                                onchange="updateAdminMatchEntryView()" class="select-glass w-full"></select>
+                        </div>
+                        <div id="admin-sub-division-select-wrapper" class="hidden mt-2">
+                            <select id="admin-sub-division-select" aria-label="Filter by sub division"
                                 onchange="updateAdminMatchEntryView()" class="select-glass w-full"></select>
                         </div>
                         <div class="mt-2 grid gap-2 sm:grid-cols-2">
@@ -1301,7 +1376,169 @@
                         </div>
 
                         <div class="mt-3.5 grid gap-2.5">
-                            <!-- Announcement manager -->
+                            <!-- 1. Auto-Update Official Results -->
+                            <section class="card-dark p-4">
+                                <div class="flex items-center justify-between gap-3">
+                                    <div class="flex items-center gap-2 min-w-0">
+                                        <h3 class="text-lg font-bold text-white">✅ Auto-Update Official Results</h3>
+                                        <span class="tip">
+                                            <button type="button" class="tip-btn" aria-label="About auto-update official results">ⓘ</button>
+                                            <span class="tip-body">When a game is reported, also set the official winner/players columns in the Google Sheet — but only for fields that don't already have a value. Existing official results are never overwritten; the unofficial (submitted) columns are always updated regardless.</span>
+                                        </span>
+                                    </div>
+                                    <label class="switch flex-none">
+                                        <input type="checkbox" id="auto-update-official-results-toggle"
+                                            onchange="toggleAutoUpdateOfficialResults(this.checked)">
+                                        <span class="slider round"></span>
+                                    </label>
+                                </div>
+                            </section>
+
+                            <!-- 2. Google Sheet Sync -->
+                            <section class="card-dark p-4 space-y-3">
+                                <div class="flex items-center justify-between flex-wrap gap-2">
+                                    <div class="flex items-center gap-2">
+                                        <h3 class="text-lg font-bold text-white">📄 Google Sheet Sync</h3>
+                                        <span id="sheet-sync-configured-status"
+                                            class="px-2 py-0.5 rounded text-xs font-semibold bg-gray-600 text-white">Checking…</span>
+                                    </div>
+                                    <a id="sheet-sync-link" href="#" target="_blank" rel="noopener noreferrer"
+                                        class="inline-flex items-center gap-1 text-sm font-medium text-gold-l hover:text-gold underline hidden">
+                                        Open Google Sheet ↗
+                                    </a>
+                                </div>
+
+                                <div class="flex flex-wrap items-center justify-between gap-x-4 gap-y-2">
+                                    <div class="flex flex-wrap items-center gap-x-3 gap-y-2">
+                                        <button id="sync-now-button" onclick="syncNow()"
+                                            class="btn-gold px-4 py-2 shadow transition-colors disabled:opacity-50 disabled:cursor-not-allowed">
+                                            🔄 Sync Now
+                                        </button>
+                                        <p class="text-sm text-gray-400">
+                                            Last sync: <span id="sync-last-time" class="text-gray-200 font-medium">Never</span>
+                                        </p>
+                                        <span id="auto-sync-chip" class="hidden px-2 py-0.5 rounded text-xs font-semibold bg-green-600 text-white"></span>
+                                    </div>
+                                    <div class="flex items-center gap-1.5">
+                                        <button id="prune-divisions-button" onclick="pruneDivisions()"
+                                            class="px-3 py-2 rounded border border-gray-700 text-sm text-gray-300 hover:text-white hover:border-gray-500 transition-colors disabled:opacity-50 disabled:cursor-not-allowed">
+                                            🧹 Remove Stale Divisions
+                                        </button>
+                                        <span class="tip tip-right">
+                                            <button type="button" class="tip-btn" aria-label="About removing stale divisions">ⓘ</button>
+                                            <span class="tip-body">Deletes any division that isn't a tab in the spreadsheet this app currently points at — use it after changing the Google Sheet ID. Click twice to confirm.</span>
+                                        </span>
+                                    </div>
+                                </div>
+
+                                <div class="flex flex-wrap gap-x-5 gap-y-1 text-sm">
+                                    <button type="button" class="setup-link" data-target="sync-settings-panel" onclick="toggleSetupPanel(this)">
+                                        <span class="chev">▸</span> Sync settings</button>
+                                    <button type="button" class="setup-link" data-target="sync-config-panel" onclick="toggleSetupPanel(this)">
+                                        <span class="chev">▸</span> Config</button>
+                                    <button type="button" class="setup-link" data-target="sync-history-panel" onclick="toggleSetupPanel(this)">
+                                        <span class="chev">▸</span> Sync history</button>
+                                </div>
+
+                                <!-- Sync settings: auto-sync, interval, scope -->
+                                <div id="sync-settings-panel" class="hidden space-y-4 pt-3 border-t border-gray-800">
+                                    <div class="space-y-3">
+                                        <div class="flex items-center gap-3">
+                                            <label class="switch">
+                                                <input type="checkbox" id="auto-sync-toggle"
+                                                    onchange="toggleAutoSync(this.checked)">
+                                                <span class="slider round"></span>
+                                            </label>
+                                            <label for="auto-sync-toggle"
+                                                class="text-sm font-medium text-gray-300 cursor-pointer">Enable
+                                                Auto-Sync</label>
+                                        </div>
+                                        <p id="auto-sync-expiry-note" class="text-xs text-gray-500">Auto-sync turns itself off after a few hours so it doesn't run indefinitely — you'll be notified beforehand.</p>
+
+                                        <div id="auto-sync-interval-controls" class="flex flex-wrap items-center gap-2">
+                                            <span class="text-sm text-gray-400 mr-1">Sync every:</span>
+                                            <button id="sync-interval-30" onclick="setSyncInterval(30)"
+                                                class="px-3 py-1.5 rounded-lg bg-gray-700 text-gray-300 text-sm font-semibold transition-colors">30s</button>
+                                            <button id="sync-interval-60" onclick="setSyncInterval(60)"
+                                                class="px-3 py-1.5 rounded-lg bg-gray-700 text-gray-300 text-sm font-semibold transition-colors">1
+                                                min</button>
+                                            <button id="sync-interval-300" onclick="setSyncInterval(300)"
+                                                class="px-3 py-1.5 rounded-lg bg-gray-700 text-gray-300 text-sm font-semibold transition-colors">5
+                                                min</button>
+
+                                            <button id="sync-interval-custom-btn" onclick="setCustomSyncInterval()"
+                                                class="px-3 py-1.5 rounded-lg bg-gray-700 text-gray-300 text-sm font-semibold transition-colors">Custom</button>
+                                            <input id="sync-interval-custom-input" type="number" min="10" step="1"
+                                                placeholder="seconds"
+                                                onkeypress="if(event.key==='Enter') setCustomSyncInterval()"
+                                                class="w-24 p-1.5 bg-gray-800 border border-gray-600 rounded-lg text-white text-sm shadow-sm focus:border-accent focus:ring focus:ring-accent/50">
+                                        </div>
+                                    </div>
+
+                                    <div class="pt-3 border-t border-gray-800 space-y-3">
+                                        <h4 class="text-sm font-bold text-gray-300">Sync Scope</h4>
+                                        <p class="text-xs text-gray-500">Limit syncing to just the division(s) currently
+                                            playing, instead of pulling the whole sheet every time.</p>
+                                        <div class="flex flex-wrap gap-4">
+                                            <label class="flex items-center gap-2 text-sm text-gray-300 cursor-pointer">
+                                                <input type="radio" name="sync-scope" id="sync-scope-all"
+                                                    onchange="setSyncScope('all')" checked>
+                                                All Divisions
+                                            </label>
+                                            <label class="flex items-center gap-2 text-sm text-gray-300 cursor-pointer">
+                                                <input type="radio" name="sync-scope" id="sync-scope-selected"
+                                                    onchange="setSyncScope('selected')">
+                                                Selected Divisions
+                                            </label>
+                                        </div>
+                                        <div id="sync-division-picker" class="flex flex-wrap gap-2 hidden">
+                                            <p class="text-sm text-gray-500">Loading divisions…</p>
+                                        </div>
+                                    </div>
+                                </div>
+
+                                <!-- Config: Google Sheet ID -->
+                                <div id="sync-config-panel" class="hidden space-y-1.5 pt-3 border-t border-gray-800">
+                                    <label for="google-sheet-id-input" class="text-xs font-semibold uppercase tracking-wider text-gray-400">Google Sheet ID</label>
+                                    <div class="flex flex-col sm:flex-row gap-2">
+                                        <input id="google-sheet-id-input" type="text" placeholder="Paste the ID from the sheet's URL"
+                                            class="flex-1 bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-sm text-gray-200 placeholder-gray-500 focus:outline-none focus:border-gold">
+                                        <button id="save-sheet-id-button" onclick="saveGoogleSheetId()"
+                                            class="btn-gold px-4 py-2 shadow transition-colors disabled:opacity-50 disabled:cursor-not-allowed">
+                                            Save
+                                        </button>
+                                    </div>
+                                    <p class="text-xs text-gray-500">The long id in the sheet's URL, between <code>/d/</code> and <code>/edit</code>. The Google Sheet is the document of record — match data is pulled from it into this app.</p>
+                                </div>
+
+                                <!-- Sync history (10 at a time) -->
+                                <div id="sync-history-panel" class="hidden pt-3 border-t border-gray-800 space-y-2">
+                                    <div class="overflow-x-auto rounded-lg border border-gray-800">
+                                        <table class="min-w-full divide-y divide-gray-800 text-sm">
+                                            <thead class="bg-gray-800/70">
+                                                <tr>
+                                                    <th class="px-3 py-2 text-left text-xs font-semibold uppercase tracking-wider text-gray-400">Time</th>
+                                                    <th class="px-3 py-2 text-left text-xs font-semibold uppercase tracking-wider text-gray-400">Status</th>
+                                                    <th class="px-3 py-2 text-left text-xs font-semibold uppercase tracking-wider text-gray-400">Duration</th>
+                                                    <th class="px-3 py-2 text-left text-xs font-semibold uppercase tracking-wider text-gray-400">Trigger</th>
+                                                    <th class="px-3 py-2 text-left text-xs font-semibold uppercase tracking-wider text-gray-400">Details</th>
+                                                </tr>
+                                            </thead>
+                                            <tbody id="sync-log-table-body" class="divide-y divide-gray-800">
+                                                <tr>
+                                                    <td colspan="5" class="text-center py-3 text-gray-500">Loading…</td>
+                                                </tr>
+                                            </tbody>
+                                        </table>
+                                    </div>
+                                    <div class="flex items-center justify-between text-xs text-gray-500">
+                                        <span id="sync-log-count"></span>
+                                        <button id="sync-log-more" type="button" onclick="loadMoreSyncLog()" class="hidden setup-link">Load 10 more</button>
+                                    </div>
+                                </div>
+                            </section>
+
+                            <!-- 3. Announcement manager -->
                             <section class="card-dark p-4 space-y-3">
                                 <h3 class="text-lg font-bold text-white">📣 Announcement manager</h3>
                                 <textarea id="announcement-draft" rows="3"
@@ -1318,127 +1555,77 @@
                                 </div>
                             </section>
 
-                            <!-- Google Sheet Sync -->
-                            <section class="card-dark p-4 space-y-4">
-                                <div class="flex items-center justify-between flex-wrap gap-2">
-                                    <h3 class="text-lg font-bold text-white">📄 Google Sheet Sync</h3>
-                                    <span id="sheet-sync-configured-status"
-                                        class="px-2 py-0.5 rounded text-xs font-semibold bg-gray-600 text-white">Checking…</span>
+                            <!-- 4. Signed-in users (active by default) -->
+                            <section class="card-dark p-4 space-y-3">
+                                <div class="flex items-center justify-between gap-2 flex-wrap">
+                                    <h3 class="text-lg font-bold text-white">🟢 Signed-in users</h3>
+                                    <button id="inactive-users-toggle" type="button" onclick="toggleInactiveUsers()" class="setup-link hidden text-sm"></button>
                                 </div>
-                                <p class="text-sm text-gray-400">The Google Sheet is the document of record. Match data
-                                    is pulled from the sheet into this app.</p>
-
-                                <a id="sheet-sync-link" href="#" target="_blank" rel="noopener noreferrer"
-                                    class="inline-flex items-center gap-1 text-sm font-medium text-gold-l hover:text-gold underline hidden">
-                                    Open Google Sheet ↗
-                                </a>
-
-                                <div
-                                    class="flex flex-col sm:flex-row sm:items-center gap-3 pt-2 border-t border-gray-800">
-                                    <button id="sync-now-button" onclick="syncNow()"
-                                        class="btn-gold px-4 py-2 shadow transition-colors disabled:opacity-50 disabled:cursor-not-allowed">
-                                        🔄 Sync Now
-                                    </button>
-                                    <button id="prune-divisions-button" onclick="pruneDivisions()"
-                                        class="px-4 py-2 rounded border border-gray-700 text-sm text-gray-300 hover:text-white hover:border-gray-500 transition-colors disabled:opacity-50 disabled:cursor-not-allowed">
-                                        🧹 Remove Stale Divisions
-                                    </button>
-                                    <p class="text-sm text-gray-400">
-                                        Last sync: <span id="sync-last-time"
-                                            class="text-gray-200 font-medium">Never</span>
-                                    </p>
-                                </div>
-                                <p class="text-xs text-gray-500 -mt-1">
-                                    "Remove Stale Divisions" deletes any division that isn't a tab in the spreadsheet
-                                    this app currently points at — use it after changing <code>SPREADSHEET_ID</code>.
-                                </p>
-
-                                <!-- Auto-sync toggle + interval -->
-                                <div class="pt-3 border-t border-gray-800 space-y-3">
-                                    <div class="flex items-center gap-3">
-                                        <label class="switch">
-                                            <input type="checkbox" id="auto-sync-toggle"
-                                                onchange="toggleAutoSync(this.checked)">
-                                            <span class="slider round"></span>
-                                        </label>
-                                        <label for="auto-sync-toggle"
-                                            class="text-sm font-medium text-gray-300 cursor-pointer">Enable
-                                            Auto-Sync</label>
-                                    </div>
-
-                                    <div id="auto-sync-interval-controls" class="flex flex-wrap items-center gap-2">
-                                        <span class="text-sm text-gray-400 mr-1">Sync every:</span>
-                                        <button id="sync-interval-30" onclick="setSyncInterval(30)"
-                                            class="px-3 py-1.5 rounded-lg bg-gray-700 text-gray-300 text-sm font-semibold transition-colors">30s</button>
-                                        <button id="sync-interval-60" onclick="setSyncInterval(60)"
-                                            class="px-3 py-1.5 rounded-lg bg-gray-700 text-gray-300 text-sm font-semibold transition-colors">1
-                                            min</button>
-                                        <button id="sync-interval-300" onclick="setSyncInterval(300)"
-                                            class="px-3 py-1.5 rounded-lg bg-gray-700 text-gray-300 text-sm font-semibold transition-colors">5
-                                            min</button>
-
-                                        <button id="sync-interval-custom-btn" onclick="setCustomSyncInterval()"
-                                            class="px-3 py-1.5 rounded-lg bg-gray-700 text-gray-300 text-sm font-semibold transition-colors">Custom</button>
-                                        <input id="sync-interval-custom-input" type="number" min="10" step="1"
-                                            placeholder="seconds"
-                                            onkeypress="if(event.key==='Enter') setCustomSyncInterval()"
-                                            class="w-24 p-1.5 bg-gray-800 border border-gray-600 rounded-lg text-white text-sm shadow-sm focus:border-accent focus:ring focus:ring-accent/50">
-                                    </div>
+                                <p class="text-sm text-gray-400">Active now across Referee, Tournament Admin, and
+                                    Parent logins. Refreshes every 15s.</p>
+                                <div class="overflow-x-auto rounded-lg border border-gray-800">
+                                    <table class="min-w-full divide-y divide-gray-800 text-sm">
+                                        <thead class="bg-gray-800/70">
+                                            <tr>
+                                                <th class="px-3 py-2 text-left text-xs font-semibold uppercase tracking-wider text-gray-400"></th>
+                                                <th class="px-3 py-2 text-left text-xs font-semibold uppercase tracking-wider text-gray-400">Name</th>
+                                                <th class="px-3 py-2 text-left text-xs font-semibold uppercase tracking-wider text-gray-400">Role</th>
+                                                <th class="px-3 py-2 text-left text-xs font-semibold uppercase tracking-wider text-gray-400">Court</th>
+                                                <th class="px-3 py-2 text-left text-xs font-semibold uppercase tracking-wider text-gray-400">Device</th>
+                                                <th class="px-3 py-2 text-left text-xs font-semibold uppercase tracking-wider text-gray-400">IP</th>
+                                                <th class="px-3 py-2 text-left text-xs font-semibold uppercase tracking-wider text-gray-400">Last active</th>
+                                            </tr>
+                                        </thead>
+                                        <tbody id="active-sessions-table-body" class="divide-y divide-gray-800">
+                                            <tr>
+                                                <td colspan="7" class="text-center py-3 text-gray-500">Loading…</td>
+                                            </tr>
+                                        </tbody>
+                                    </table>
                                 </div>
 
-                                <!-- Sync scope -->
-                                <div class="pt-3 border-t border-gray-800 space-y-3">
-                                    <h4 class="text-sm font-bold text-gray-300">Sync Scope</h4>
-                                    <p class="text-xs text-gray-500">Limit syncing to just the division(s) currently
-                                        playing, instead of pulling the whole sheet every time.</p>
-                                    <div class="flex flex-wrap gap-4">
-                                        <label class="flex items-center gap-2 text-sm text-gray-300 cursor-pointer">
-                                            <input type="radio" name="sync-scope" id="sync-scope-all"
-                                                onchange="setSyncScope('all')" checked>
-                                            All Divisions
-                                        </label>
-                                        <label class="flex items-center gap-2 text-sm text-gray-300 cursor-pointer">
-                                            <input type="radio" name="sync-scope" id="sync-scope-selected"
-                                                onchange="setSyncScope('selected')">
-                                            Selected Divisions
-                                        </label>
-                                    </div>
-                                    <div id="sync-division-picker" class="flex flex-wrap gap-2 hidden">
-                                        <p class="text-sm text-gray-500">Loading divisions…</p>
-                                    </div>
-                                </div>
-
-                                <!-- Sync log -->
-                                <div class="pt-3 border-t border-gray-800">
-                                    <h4 class="text-sm font-bold text-gray-300 mb-2">Recent Sync History</h4>
+                                <button type="button" class="setup-link text-sm" data-target="session-history-panel" onclick="toggleSetupPanel(this)">
+                                    <span class="chev">▸</span> Sign-in history</button>
+                                <div id="session-history-panel" class="hidden space-y-2">
+                                    <p class="text-sm text-gray-400">Recent logins across all roles, most recent first.</p>
                                     <div class="overflow-x-auto rounded-lg border border-gray-800">
                                         <table class="min-w-full divide-y divide-gray-800 text-sm">
                                             <thead class="bg-gray-800/70">
                                                 <tr>
-                                                    <th
-                                                        class="px-3 py-2 text-left text-xs font-semibold uppercase tracking-wider text-gray-400">
-                                                        Time</th>
-                                                    <th
-                                                        class="px-3 py-2 text-left text-xs font-semibold uppercase tracking-wider text-gray-400">
-                                                        Status</th>
-                                                    <th
-                                                        class="px-3 py-2 text-left text-xs font-semibold uppercase tracking-wider text-gray-400">
-                                                        Duration</th>
-                                                    <th
-                                                        class="px-3 py-2 text-left text-xs font-semibold uppercase tracking-wider text-gray-400">
-                                                        Trigger</th>
-                                                    <th
-                                                        class="px-3 py-2 text-left text-xs font-semibold uppercase tracking-wider text-gray-400">
-                                                        Details</th>
+                                                    <th class="px-3 py-2 text-left text-xs font-semibold uppercase tracking-wider text-gray-400">Time</th>
+                                                    <th class="px-3 py-2 text-left text-xs font-semibold uppercase tracking-wider text-gray-400">Name</th>
+                                                    <th class="px-3 py-2 text-left text-xs font-semibold uppercase tracking-wider text-gray-400">Role</th>
+                                                    <th class="px-3 py-2 text-left text-xs font-semibold uppercase tracking-wider text-gray-400">Court</th>
+                                                    <th class="px-3 py-2 text-left text-xs font-semibold uppercase tracking-wider text-gray-400">Device</th>
+                                                    <th class="px-3 py-2 text-left text-xs font-semibold uppercase tracking-wider text-gray-400">IP</th>
+                                                    <th class="px-3 py-2 text-left text-xs font-semibold uppercase tracking-wider text-gray-400">Status</th>
                                                 </tr>
                                             </thead>
-                                            <tbody id="sync-log-table-body" class="divide-y divide-gray-800">
+                                            <tbody id="session-history-table-body" class="divide-y divide-gray-800">
                                                 <tr>
-                                                    <td colspan="5" class="text-center py-3 text-gray-500">Loading…</td>
+                                                    <td colspan="7" class="text-center py-3 text-gray-500">Loading…</td>
                                                 </tr>
                                             </tbody>
                                         </table>
                                     </div>
+                                </div>
+                            </section>
+
+                            <!-- 5. Champion Celebration -->
+                            <section class="card-dark p-4">
+                                <div class="flex items-center justify-between gap-3">
+                                    <div class="flex items-center gap-2 min-w-0">
+                                        <h3 class="text-lg font-bold text-white">🎉 Champion Celebration</h3>
+                                        <span class="tip">
+                                            <button type="button" class="tip-btn" aria-label="About champion celebration">ⓘ</button>
+                                            <span class="tip-body">Show the tournament champion banner and confetti automatically when a division's playoff final is completed.</span>
+                                        </span>
+                                    </div>
+                                    <label class="switch flex-none">
+                                        <input type="checkbox" id="champion-celebration-toggle"
+                                            onchange="toggleChampionCelebration(this.checked)">
+                                        <span class="slider round"></span>
+                                    </label>
                                 </div>
                             </section>
                         </div>
@@ -1556,6 +1743,18 @@
                 </div>
 
                 <p id="modal-save-message" class="hidden text-[12px] font-semibold" style="color:var(--warn)"></p>
+
+                <!-- Tournament manager only: shown by showMatchEntryModal() -->
+                <div id="modal-official-toggle-wrap" class="hidden"><label class="flex cursor-pointer items-start gap-2.5 rounded-2xl border p-3"
+                    style="border-color:rgba(224,184,99,.5);background:rgba(224,184,99,.07)">
+                    <input type="checkbox" id="modal-official-toggle" class="mt-0.5 h-4 w-4 flex-none">
+                    <span class="text-[12px] leading-[1.45] text-white/80"><span class="font-semibold" style="color:var(--gold-l)">Also submit as official result</span><br>Overwrites the official result in the sheet with the winner and players above (no winner clears it), then refreshes standings.</span>
+                </label></div>
+
+                <div>
+                    <div class="kicker text-white/45 mb-2">Official result · read-only</div>
+                    <div id="modal-official-display" class="rounded-2xl px-3 py-2.5 text-[13px] font-semibold text-white/70" style="background:rgba(255,255,255,.05)"></div>
+                </div>
 
                 <div class="grid grid-cols-[1fr_1.7fr] gap-2">
                     <button onclick="hideMatchEntryModal()"

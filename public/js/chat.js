@@ -6,17 +6,29 @@
 // listener in local mode. The CHAT tab itself is only shown to signed-in
 // staff (see updateAdminUI in admin.js) — same UI-level gating the rest of
 // the app already uses for staff-only views.
-import { getChatMessages, postChatMessage, deleteChatMessage as apiDeleteChatMessage } from './api.js';
+import { getChatMessages, postChatMessage, deleteChatMessage as apiDeleteChatMessage, getPresence } from './api.js';
 import { getSocket } from './socketClient.js';
 
 const IS_LOCAL_BACKEND = window.__DATA_BACKEND__ === 'local';
 const SEEN_KEY = 'chatSeen';
 const AT_BOTTOM_THRESHOLD = 48; // px of slack before we consider the user "scrolled away"
+const PRESENCE_POLL_INTERVAL_MS = 15000;
+const ACTIVE_WINDOW_MS = 60 * 60 * 1000; // messages older than this age into the "history" fold
+const AGE_CHECK_INTERVAL_MS = 60 * 1000;
 
 let chat = [];
 let knownIds = new Set(); // message ids already rendered, used to detect genuinely-new arrivals
 let pendingJumpCount = 0; // messages that arrived while the user was scrolled up
 let confirmDeleteId = null; // message currently showing its inline "delete this?" prompt
+let presence = new Map(); // "who" string (matches m.who) -> 'online' | 'offline'
+let presencePollTimer = null;
+let ageTimer = null;
+let showHistory = false; // user clicked "Show earlier messages" this visit
+// The last-seen watermark as it stood the moment the CHAT tab was opened —
+// snapshotted so the "New messages" divider stays put for this visit even
+// as messages scroll into view and advance SEEN_KEY. null while off the tab.
+let chatOpenSeenSnapshot = null;
+let seenObserver = null; // IntersectionObserver: marks a message read once it's actually on screen
 
 function authToken() {
   return sessionStorage.getItem('adminAuthToken');
@@ -52,6 +64,42 @@ async function init() {
       render();
     });
   }
+
+  // Re-render periodically so messages age into history without new traffic.
+  if (!ageTimer) ageTimer = setInterval(() => { if (hasAgedMessages()) renderMessages(); }, AGE_CHECK_INTERVAL_MS);
+
+  refreshPresence();
+  if (!presencePollTimer) presencePollTimer = setInterval(refreshPresence, PRESENCE_POLL_INTERVAL_MS);
+}
+
+/**
+ * A message's sender is 'online' (green) if their session has heartbeated
+ * recently, 'offline' (yellow) if they're still signed in but the app has
+ * gone quiet (backgrounded/closed without logging out), or 'signed-out'
+ * (grey) if they have no active session at all — i.e. they logged out (or
+ * this message predates the presence feature).
+ */
+function presenceStatus(who) {
+  return presence.get(who) || 'signed-out';
+}
+
+async function refreshPresence() {
+  try {
+    const list = await getPresence(authToken());
+    presence = new Map(list.map(p => [p.who, p.online ? 'online' : 'offline']));
+  } catch (e) {
+    console.error('Failed to load presence', e);
+    return;
+  }
+  renderMessages();
+}
+
+function isRecent(m) {
+  return Date.now() - (m.ts || 0) < ACTIVE_WINDOW_MS;
+}
+
+function hasAgedMessages() {
+  return chat.some(m => !isRecent(m));
 }
 
 function render() {
@@ -61,6 +109,27 @@ function render() {
 
 function isAtBottom(scrollArea) {
   return scrollArea.scrollHeight - scrollArea.scrollTop - scrollArea.clientHeight < AT_BOTTOM_THRESHOLD;
+}
+
+/** Lazily creates the observer that marks a message read once it's actually visible in the scroll area. */
+function ensureSeenObserver() {
+  if (seenObserver) return seenObserver;
+  const root = document.getElementById('chat-scroll-area') || null;
+  seenObserver = new IntersectionObserver((entries) => {
+    let advanced = false;
+    for (const entry of entries) {
+      if (!entry.isIntersecting) continue;
+      const id = Number(entry.target.dataset.msgId);
+      const seen = Number(localStorage.getItem(SEEN_KEY) || 0);
+      if (id > seen) {
+        localStorage.setItem(SEEN_KEY, String(id));
+        advanced = true;
+      }
+      seenObserver.unobserve(entry.target);
+    }
+    if (advanced) renderUnreadDot();
+  }, { root, threshold: 0.6 });
+  return seenObserver;
 }
 
 function renderMessages() {
@@ -75,19 +144,47 @@ function renderMessages() {
   const newFromOthers = newMessages.filter(m => m.who !== me);
   const newFromMe = newMessages.length - newFromOthers.length;
 
-  container.innerHTML = chat.map(m => {
+  // Only meaningful while the CHAT tab is open (chatOpenSeenSnapshot is set
+  // in onChatTabOpened) — marks where the "New messages" divider goes.
+  const firstUnread = chatOpenSeenSnapshot != null
+    ? chat.filter(m => showHistory || isRecent(m)).find(m => m.id > chatOpenSeenSnapshot && m.who !== me)
+    : null;
+
+  const historyCount = chat.filter(m => !isRecent(m)).length;
+  const visible = showHistory ? chat : chat.filter(isRecent);
+  const toggle = document.getElementById('chat-history-toggle');
+  if (toggle) {
+    toggle.classList.toggle('hidden', historyCount === 0);
+    toggle.textContent = showHistory ? 'Hide earlier messages' : `Show earlier messages (${historyCount})`;
+  }
+  const emptyNote = !visible.length
+    ? `<p class="text-center text-xs text-white/40 mt-6">${historyCount ? 'No messages in the last hour.' : 'No messages yet.'}</p>`
+    : '';
+
+  container.innerHTML = emptyNote + visible.map(m => {
     const mine = m.who === me;
     const canDelete = !!App.state.isSuperAdmin;
     const confirming = confirmDeleteId === m.id;
+    const status = presenceStatus(m.who);
+    const statusColor = status === 'online' ? '#22c55e' : status === 'offline' ? '#eab308' : '#6b7280';
+    const statusLabel = status === 'online' ? 'Online' : status === 'offline' ? 'Offline' : 'Signed out';
+    const divider = firstUnread && m.id === firstUnread.id ? `
+      <div class="flex items-center gap-2 my-1 select-none">
+        <div class="flex-1 h-px" style="background:var(--mar-l)"></div>
+        <span class="text-[10px] font-semibold uppercase tracking-wide" style="color:var(--mar-l)">New messages</span>
+        <div class="flex-1 h-px" style="background:var(--mar-l)"></div>
+      </div>` : '';
     return `
-      <div class="flex ${mine ? 'justify-end' : 'justify-start'} group">
+      ${divider}
+      <div class="flex ${mine ? 'justify-end' : 'justify-start'} group" data-msg-id="${m.id}">
         <div class="max-w-[86%] px-3.5 py-2.5 rounded-2xl relative ${mine ? 'rounded-br-md' : 'rounded-bl-md'}"
              style="background:${mine ? 'linear-gradient(140deg,rgba(166,48,63,.42) 0%,rgba(123,29,43,.34) 100%)' : (m.mgr ? 'rgba(224,184,99,.12)' : 'rgba(255,255,255,.06)')}">
           <div class="flex justify-start gap-1.5 items-baseline">
             <span class="text-[10px] font-semibold ${m.mgr ? 'text-gold' : 'text-white/60'}">${escapeHtml(m.who)}</span>
+            <span class="inline-block w-1.5 h-1.5 rounded-full flex-none" style="background:${statusColor}" title="${statusLabel}"></span>
             <span class="text-[10px] text-white/35 flex-none">${new Date(m.ts).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' })}</span>
             ${canDelete ? `<button onclick="requestDeleteChatMessage(event, ${m.id})" title="Delete message"
-                class="ml-auto flex-none opacity-0 group-hover:opacity-100 transition-opacity text-white/40 hover:text-white/90">
+                class="ml-auto flex-none p-1 -m-1 text-white/50 hover:text-white/90">
                 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor"
                      stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="w-3 h-3">
                   <path d="M3 6h18"></path>
@@ -116,6 +213,14 @@ function renderMessages() {
   }).join('');
 
   knownIds = new Set(chat.map(m => m.id));
+
+  // Watch every not-yet-seen message; the observer advances SEEN_KEY (and
+  // clears the tab's unread dot) the moment one actually scrolls into view.
+  const observer = ensureSeenObserver();
+  const seenNow = Number(localStorage.getItem(SEEN_KEY) || 0);
+  container.querySelectorAll('[data-msg-id]').forEach(el => {
+    if (Number(el.dataset.msgId) > seenNow) observer.observe(el);
+  });
 
   if (!scrollArea) return;
 
@@ -146,6 +251,15 @@ function showJumpButton() {
 function hideJumpButton() {
   const btn = document.getElementById('chat-jump-btn');
   if (btn) btn.classList.add('hidden');
+}
+
+function toggleChatHistory() {
+  const scrollArea = document.getElementById('chat-scroll-area');
+  showHistory = !showHistory;
+  renderMessages();
+  // Expanding history: keep the reader at the top (where it appeared); collapsing: back to latest.
+  if (showHistory && scrollArea) scrollArea.scrollTop = 0;
+  else scrollChatToBottom();
 }
 
 function jumpToChatBottom() {
@@ -198,7 +312,7 @@ function renderUnreadDot() {
 
   const seen = Number(localStorage.getItem(SEEN_KEY) || 0);
   const me = meLabel();
-  const unread = chat.filter(m => m.id > seen && m.who !== me);
+  const unread = chat.filter(m => m.id > seen && m.who !== me && isRecent(m));
 
   if (!unread.length) {
     dot.classList.add('hidden');
@@ -211,17 +325,29 @@ function renderUnreadDot() {
 
 /** Called by navigation.js's switchView() when the CHAT tab is opened. */
 function onChatTabOpened() {
-  if (chat.length) {
-    localStorage.setItem(SEEN_KEY, String(chat[chat.length - 1].id));
-  }
-  renderUnreadDot();
+  // Snapshot where "unread" ended before this visit, so the divider has a
+  // fixed anchor for the whole visit instead of chasing SEEN_KEY as the
+  // IntersectionObserver marks messages read one by one.
+  chatOpenSeenSnapshot = Number(localStorage.getItem(SEEN_KEY) || 0);
+  showHistory = false;
+  window.scrollTo(0, 0);
+  sizeChatView();
+  renderMessages();
   scrollChatToBottom();
-
-  const sub = document.getElementById('chat-sub');
-  if (sub) sub.textContent = App.state.isSuperAdmin ? 'Every court manager and parent sees this channel.' : 'Court managers, admins, and parents.';
-  const postingAs = document.getElementById('chat-posting-as');
-  if (postingAs) postingAs.textContent = meLabel();
+  renderUnreadDot();
 }
+
+/** Stretch the chat so the composer sits just above the floating bottom tab bar. */
+function sizeChatView() {
+  const view = document.getElementById('chat-view');
+  const bar = document.getElementById('bottom-tab-bar');
+  if (!view || !bar || view.classList.contains('hidden')) return;
+  const top = view.getBoundingClientRect().top + window.scrollY;
+  const barTop = bar.getBoundingClientRect().top;
+  const h = Math.max(240, Math.floor(barTop - 12 - (top - window.scrollY)));
+  view.style.height = h + 'px';
+}
+window.addEventListener('resize', sizeChatView);
 
 async function sendChatMessage() {
   const input = document.getElementById('chat-composer-input');
@@ -231,7 +357,7 @@ async function sendChatMessage() {
   input.value = '';
   updateComposerButton();
   try {
-    await postChatMessage(authToken(), text, App.state.reporterName, App.state.selectedCourt);
+    await postChatMessage(authToken(), text, App.state.reporterName, App.state.selectedCourt, sessionStorage.getItem('sessionId'));
   } catch (e) {
     console.error('Failed to send chat message', e);
     showStatus('Failed to send: ' + e.message, true);
@@ -261,6 +387,7 @@ export {
   onChatTabOpened,
   sendChatMessage,
   jumpToChatBottom,
+  toggleChatHistory,
   requestDeleteChatMessage,
   cancelDeleteChatMessage,
   confirmDeleteChatMessage

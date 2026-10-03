@@ -2,6 +2,7 @@
  * Renders the standings data.
  */
 import { updateAdminUI } from './admin.js';
+import { getSelectedSubDivision, setSelectedSubDivision } from './navigation.js';
 
 /** Escapes a value for safe interpolation into a template-literal row. */
 function esc(str) {
@@ -10,11 +11,67 @@ function esc(str) {
     return d.innerHTML;
 }
 
+let lastRawStandingsData = [];
+
+/**
+ * Renders the sub-division toggle above the standings table and returns the
+ * rows that belong to the currently selected sub division. When the
+ * division has 0 or 1 distinct `subDivision` values the toggle stays
+ * hidden and every row is returned unchanged — this is what makes the
+ * toggle "appear" only for a v3 two-pool tab, with no version check needed.
+ *
+ * The selection itself is shared/persisted via navigation.js's
+ * get/setSelectedSubDivision — the same selection playoffs.js's toggle
+ * reads, so picking a sub division here is reflected there too, and
+ * remembered across reloads.
+ */
+function applySubDivisionToggle(data) {
+    lastRawStandingsData = data;
+    const toggle = document.getElementById('standings-subdivision-toggle');
+    const groups = [...new Set(data.map(item => item.subDivision).filter(Boolean))];
+
+    let selected = getSelectedSubDivision();
+    if (!groups.includes(selected)) {
+        selected = groups[0] || null;
+        setSelectedSubDivision(selected, { auto: true });
+    }
+
+    if (!toggle) return data;
+
+    if (groups.length < 2) {
+        toggle.classList.add('hidden');
+        toggle.innerHTML = '';
+        return data;
+    }
+
+    toggle.classList.remove('hidden');
+    toggle.innerHTML = '';
+    groups.forEach(name => {
+        const btn = document.createElement('button');
+        btn.type = 'button';
+        btn.textContent = name;
+        const isActive = name === selected;
+        btn.className = 'flex-1 rounded-full py-2 text-xs font-semibold leading-none transition-colors ' +
+            (isActive
+                ? 'bg-[var(--color-gold-light)] text-[var(--color-maroon-dark)]'
+                : 'bg-white/[.06] text-white/60 hover:bg-white/[.1]');
+        btn.onclick = () => {
+            setSelectedSubDivision(name);
+            renderStandings(lastRawStandingsData);
+        };
+        toggle.appendChild(btn);
+    });
+
+    return data.filter(item => item.subDivision === selected);
+}
+
 function renderStandings(data) {
     const list = document.getElementById('standings-list');
     const standingsView = document.getElementById('standings-view');
 
     if (!list || !standingsView) return;
+
+    data = applySubDivisionToggle(data || []);
 
     // 1. Ensure Admin Controls are present in the DOM
     let adminControls = document.getElementById('admin-controls');

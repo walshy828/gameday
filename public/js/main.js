@@ -45,10 +45,16 @@ import {
     syncNow,
     pruneDivisions,
     toggleAutoSync,
+    toggleChampionCelebration,
+    toggleAutoUpdateOfficialResults,
     setSyncInterval,
     setCustomSyncInterval,
     setSyncScope,
-    toggleSyncDivision
+    toggleSyncDivision,
+    saveGoogleSheetId,
+    toggleSetupPanel,
+    loadMoreSyncLog,
+    toggleInactiveUsers
 } from './settings.js';
 
 import { getSocket } from './socketClient.js';
@@ -56,7 +62,7 @@ import { initTimerOverlay } from './timerOverlay.js';
 import * as TimerFirebase from './timerFirebase.js';
 import * as TimerLocal from './timerLocal.js';
 import { initAnnouncements, dismissAnnouncementBanner, postAnnouncementFromSetup, cancelAnnouncementEdit } from './announcements.js';
-import { initChat, sendChatMessage, jumpToChatBottom, requestDeleteChatMessage, cancelDeleteChatMessage, confirmDeleteChatMessage } from './chat.js';
+import { initChat, sendChatMessage, jumpToChatBottom, toggleChatHistory, requestDeleteChatMessage, cancelDeleteChatMessage, confirmDeleteChatMessage } from './chat.js';
 import { renderPlayoffsView } from './playoffs.js';
 
 const IS_LOCAL_BACKEND = window.__DATA_BACKEND__ === 'local';
@@ -510,8 +516,10 @@ TimerModule.init();
 initAnnouncements();
 initChat();
 
-// expose for admin code to call after login
-window.initTimerOverlay = initTimerOverlay;
+// expose for admin code to call after login — wraps the backend-specific
+// setCurrentRound (Firebase RTDB write vs. REST POST) so timerOverlay.js
+// doesn't need to know which backend is active.
+window.initTimerOverlay = () => initTimerOverlay(TimerModule.setCurrentRound);
 
 
 
@@ -559,10 +567,16 @@ exposeGlobals({
   syncNow,
   pruneDivisions,
   toggleAutoSync,
+  toggleChampionCelebration,
+  toggleAutoUpdateOfficialResults,
   setSyncInterval,
   setCustomSyncInterval,
   setSyncScope,
-  toggleSyncDivision
+  toggleSyncDivision,
+  saveGoogleSheetId,
+  toggleSetupPanel,
+  loadMoreSyncLog,
+  toggleInactiveUsers
 });
 
 // Expose announcements + chat handlers (used by inline onclick handlers)
@@ -572,6 +586,7 @@ exposeGlobals({
   cancelAnnouncementEdit,
   sendChatMessage,
   jumpToChatBottom,
+  toggleChatHistory,
   requestDeleteChatMessage,
   cancelDeleteChatMessage,
   confirmDeleteChatMessage

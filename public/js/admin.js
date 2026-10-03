@@ -1,5 +1,5 @@
 // Avoid importing from main.js (circular). Use the api wrapper directly.
-import { validateAdmin, saveMatchResult as apiSaveMatchResult } from './api.js';
+import { validateAdmin, saveMatchResult as apiSaveMatchResult, sendSessionHeartbeat, endSession as apiEndSession, runSheetSync } from './api.js';
 import {
     getFilterableTeamName, parseRoundTime,
     getRoundOrder, getRosterTeams, getByeTeams,
@@ -22,15 +22,23 @@ function renderAdminMatchEntryViewImpl() {
 
     const teamSelect = document.getElementById('admin-team-select');
     const courtSelect = document.getElementById('admin-court-select');
+    const subDivisionSelect = document.getElementById('admin-sub-division-select');
     const hidePlayedToggle = document.getElementById('hide-played-toggle');
     const matchListDiv = document.getElementById('admin-match-list');
     const filterInfoDiv = document.getElementById('admin-filter-info');
 
     const selectedTeam = teamSelect?.value || 'all';
     const selectedCourt = courtSelect?.value || 'all';
+    const selectedSubDivision = subDivisionSelect?.value || 'all';
     const isHidingPlayed = hidePlayedToggle?.checked || false;
 
     if (!matchListDiv) return;
+
+    if (App.state.isSuperAdmin && (!App.data.allScheduleData || App.data.allScheduleData.length === 0)) {
+        renderEmptyScheduleSyncBanner(matchListDiv);
+        if (filterInfoDiv) filterInfoDiv.classList.add('hidden');
+        return;
+    }
 
     // Diagnostic logging to help identify why nothing is rendering
     try {
@@ -73,9 +81,11 @@ function renderAdminMatchEntryViewImpl() {
 
         const courtMatch = selectedCourt === 'all' || (game.court && game.court.trim() === selectedCourt);
 
+        const subDivisionMatch = selectedSubDivision === 'all' || game.subDivision === selectedSubDivision;
+
         const playedMatch = !isHidingPlayed || !roundsFullyReported.has(game.roundTime || 'TBD');
 
-        return teamMatch && courtMatch && playedMatch;
+        return teamMatch && courtMatch && subDivisionMatch && playedMatch;
     });
 
     filteredSchedule.sort((a, b) => {
@@ -114,14 +124,10 @@ function renderAdminMatchEntryViewImpl() {
 
     // ... (Filter Info rendering logic remains the same) ...
 
-    // Title + identity line (design §9: "Tournament control" for tournament
-    // managers, "Court n results" for court managers).
+    // Title is generic for every admin tier — the court filter is a view
+    // choice, so the court only appears in the identity line below.
     const titleEl = document.getElementById('admin-title');
-    if (titleEl) {
-        titleEl.textContent = App.state.isSuperAdmin
-            ? 'Tournament control'
-            : `Court ${App.state.selectedCourt || '?'} results`;
-    }
+    if (titleEl) titleEl.textContent = 'Tournament admin';
     const whoEl = document.getElementById('admin-who');
     if (whoEl) {
         const name = App.state.reporterName || 'Staff';
@@ -256,7 +262,10 @@ function renderAdminMatchEntryViewImpl() {
                     </button>
                 </div>
                 <div class="mt-1.5 flex items-center justify-between gap-2 pl-[34px]">
-                    <span class="text-[9px] font-semibold leading-none tracking-[.08em]" style="color:${dim}">${game.match ? `M${esc(game.match)}` : ''}</span>
+                    <span class="flex items-center gap-1.5 text-[9px] font-semibold leading-none tracking-[.08em]" style="color:${dim}">
+                        ${game.match ? esc(`M${game.match}`) : ''}
+                        ${game.subDivision ? `<span class="rounded-full px-1.5 py-0.5" style="background:rgba(255,255,255,.08);color:rgba(255,255,255,.6)">${esc(game.subDivision)}</span>` : ''}
+                    </span>
                     <span class="text-right text-[10px] font-medium leading-[1.3]" style="color:${updatedColor}">${updatedHtml}</span>
                 </div>
             `;
@@ -287,6 +296,56 @@ function renderAdminMatchEntryViewImpl() {
     });
 
     matchListDiv.appendChild(fragment);
+}
+
+/**
+ * Shown on the Admin tab in place of the match list when a superadmin picks
+ * a division that exists but has never been synced (or hasn't been synced
+ * since its tab was added to the sheet). Reuses the exact same sync
+ * mechanism as Settings → Sync Now (POST /api/sheetSync/run) so there's only
+ * one sync code path — this is just a closer-at-hand trigger for it.
+ */
+function renderEmptyScheduleSyncBanner(container) {
+    container.innerHTML = '';
+    const banner = document.createElement('div');
+    banner.className = 'rounded-2xl border p-4 text-center';
+    banner.style.background = 'rgba(224,184,99,.07)';
+    banner.style.borderColor = 'rgba(224,184,99,.4)';
+    banner.innerHTML = `
+        <p class="text-sm font-semibold" style="color:var(--gold-l)">No schedule data yet for ${esc(App.config.currentSheetName)}.</p>
+        <p class="mt-1 text-xs text-white/50">Pull the latest standings and schedule from the Google Sheet to get started.</p>
+    `;
+    const btn = document.createElement('button');
+    btn.type = 'button';
+    btn.className = 'mt-3 rounded-[13px] px-4 py-2 text-[12px] font-semibold leading-none';
+    btn.style.background = 'linear-gradient(135deg,var(--gold) 0%,var(--gold-d) 100%)';
+    btn.style.color = '#2A1B08';
+    btn.textContent = '🔄 Sync from Google Sheet';
+    btn.onclick = async () => {
+        const authToken = sessionStorage.getItem('adminAuthToken');
+        if (!authToken) return;
+        btn.disabled = true;
+        btn.textContent = 'Syncing…';
+        try {
+            const result = await runSheetSync(authToken);
+            if (result.success) {
+                showStatus(`Sync complete: ${result.divisions} divisions, ${result.matchesCount} matches.`, false);
+                setTimeout(() => showStatus(null), 4000);
+                await loadData(App.config.currentSheetName);
+            } else {
+                showStatus('Sync failed: ' + (result.error || 'Unknown error'), true);
+                btn.disabled = false;
+                btn.textContent = '🔄 Sync from Google Sheet';
+            }
+        } catch (e) {
+            console.error('Inline sync failed', e);
+            showStatus('Sync failed: ' + e.message, true);
+            btn.disabled = false;
+            btn.textContent = '🔄 Sync from Google Sheet';
+        }
+    };
+    banner.appendChild(btn);
+    container.appendChild(banner);
 }
 
 /**
@@ -396,8 +455,8 @@ function updateAdminUI() {
     const adminStatusText = document.getElementById('admin-status-text');
     const adminEntryTab = document.getElementById('admin-entry-tab');
     const adminControls = document.getElementById('admin-controls');
-    const adminTimerControls = document.getElementById('admin-panel');
     const setupGear = document.getElementById('admin-setup-gear');
+    const chatSetupGear = document.getElementById('chat-setup-gear');
     const chatTab = document.getElementById('chat-tab');
     const infoAdminLink = document.getElementById('info-admin-link');
     const scheduleTab = document.getElementById('schedule-tab');
@@ -432,8 +491,8 @@ function updateAdminUI() {
         }
         if (chatTab) chatTab.classList.remove('hidden'); // Show Chat Tab (staff + parents)
         if (App.state.isSuperAdmin) {
-            adminTimerControls.classList.remove('hidden');
             if (setupGear) setupGear.classList.remove('hidden');
+            if (chatSetupGear) chatSetupGear.classList.remove('hidden');
         }
     } else {
         adminStatusText.textContent = 'Admin';
@@ -443,9 +502,47 @@ function updateAdminUI() {
         adminEntryTab.classList.add('hidden'); // Hide Admin Tab
         if (scheduleTab) scheduleTab.classList.remove('hidden'); // Restore Games Tab
         if (adminControls) adminControls.classList.add('hidden');
-        if (adminTimerControls) adminTimerControls.classList.add('hidden');
         if (setupGear) setupGear.classList.add('hidden');
+        if (chatSetupGear) chatSetupGear.classList.add('hidden');
         if (chatTab) chatTab.classList.add('hidden');
+        window.closeTimerOverlay?.();
+    }
+}
+
+const SESSION_HEARTBEAT_INTERVAL_MS = 45000;
+
+/**
+ * Keeps the server's session record "online" for this login while the tab
+ * is open — see /api/session/heartbeat and the Setup page's "Signed-in
+ * users" module. Safe to call repeatedly; clears any previous interval.
+ */
+function startSessionHeartbeat() {
+    stopSessionHeartbeat();
+    const token = sessionStorage.getItem('adminAuthToken');
+    const sessionId = sessionStorage.getItem('sessionId');
+    if (!token || !sessionId) return;
+    const beat = () => sendSessionHeartbeat(token, sessionId).catch(err => console.error('Session heartbeat failed:', err));
+    beat();
+    App.state.sessionHeartbeatInterval = setInterval(beat, SESSION_HEARTBEAT_INTERVAL_MS);
+
+    // Mobile browsers throttle/suspend setInterval while a tab is
+    // backgrounded (screen locked, app switched away) — the next tick can
+    // land well past SESSION_HEARTBEAT_INTERVAL_MS after it resumes, during
+    // which the presence dot reads stale/offline even though the person is
+    // actively using the app again. Firing immediately on visibility regain
+    // closes that gap.
+    if (!App.state.sessionHeartbeatVisibilityListener) {
+        App.state.sessionHeartbeatVisibilityListener = () => {
+            if (document.visibilityState === 'visible' && App.state.sessionHeartbeatInterval) beat();
+        };
+        document.addEventListener('visibilitychange', App.state.sessionHeartbeatVisibilityListener);
+    }
+}
+
+function stopSessionHeartbeat() {
+    if (App.state.sessionHeartbeatInterval) {
+        clearInterval(App.state.sessionHeartbeatInterval);
+        App.state.sessionHeartbeatInterval = null;
     }
 }
 
@@ -529,9 +626,11 @@ async function loginAdmin() {
     loginButton.disabled = true;
     loginButton.textContent = 'Verifying…';
 
+    const sessionId = crypto.randomUUID();
+
     try {
         // Use the API helper which returns the validation result
-        const result = await validateAdmin(password);
+        const result = await validateAdmin(password, reporterName, App.state.selectedCourt, sessionId);
 
         if (result && result.isParent) {
             App.state.isParent = true;
@@ -540,6 +639,8 @@ async function loginAdmin() {
             sessionStorage.setItem('reporterName', reporterName);
             sessionStorage.setItem('isParent', 'true');
             sessionStorage.setItem('adminAuthToken', result.token);
+            sessionStorage.setItem('sessionId', sessionId);
+            startSessionHeartbeat();
 
             hideAdminLoginModal();
             updateAdminUI();
@@ -558,6 +659,8 @@ async function loginAdmin() {
             sessionStorage.setItem('isSuperAdmin', 'false');
             sessionStorage.setItem('isParent', 'false');
             sessionStorage.setItem('adminAuthToken', result.token);
+            sessionStorage.setItem('sessionId', sessionId);
+            startSessionHeartbeat();
             if (result.isSuperAdmin) {
                 // Firebase custom-token sign-in is only meaningful (and only
                 // returned by the server) when DATA_BACKEND=firebase — local
@@ -634,6 +737,13 @@ async function loginAdmin() {
 }
 
 function logoutAdmin() {
+    stopSessionHeartbeat();
+    const token = sessionStorage.getItem('adminAuthToken');
+    const sessionId = sessionStorage.getItem('sessionId');
+    if (token && sessionId) {
+        apiEndSession(token, sessionId).catch(err => console.error('Session logout failed:', err));
+    }
+
     App.state.isAdmin = false;
     App.state.isSuperAdmin = false;
     App.state.isParent = false;
@@ -647,11 +757,12 @@ function logoutAdmin() {
     sessionStorage.removeItem('reporterName');
     sessionStorage.removeItem('selectedCourt');
     sessionStorage.removeItem('adminAuthToken');
+    sessionStorage.removeItem('sessionId');
     if (window.__DATA_BACKEND__ !== 'local') {
         firebase.auth().signOut();
     }
-    // The timer controls live inside #admin-panel now, which updateAdminUI()
-    // hides for non-superadmins — no separate teardown needed.
+    // The timer controls live in the header-clock popover now; updateAdminUI()
+    // closes it for non-superadmins.
     updateAdminUI();
     // If the user was in a staff-only tab, switch them out
     if (['admin-entry', 'settings', 'chat'].includes(App.state.currentView)) {
@@ -698,6 +809,24 @@ function showMatchEntryModal(gameIndex) {
     // Default to the name captured at login (falls back to the last name
     // typed anywhere, for sessions that predate the login name field).
     adminNameInput.value = App.state.reporterName || localStorage.getItem('lastAdminName') || '';
+
+    // Read-only official result, for context while reporting.
+    const officialEl = document.getElementById('modal-official-display');
+    if (officialEl) {
+        const officialWinner = (game.winner || '').trim();
+        officialEl.textContent = officialWinner
+            ? `${officialWinner}${officialWinner === 'tie' ? '' : ` · ${game.playersRemaining || 0} left`}`
+            : 'Not official yet';
+    }
+
+    // Superadmin only: "also submit as official". Defaults to on when the
+    // auto-update setting is on (their report then flows to official), off
+    // otherwise (opt in per entry).
+    const officialToggleWrap = document.getElementById('modal-official-toggle-wrap');
+    if (officialToggleWrap) {
+        officialToggleWrap.classList.toggle('hidden', !App.state.isSuperAdmin);
+        document.getElementById('modal-official-toggle').checked = !!App.settings.autoUpdateOfficialResultsEnabled;
+    }
 
     // 4. Show the modal
     modal.classList.remove('hidden');
@@ -774,6 +903,9 @@ async function saveMatchResultFromModal() {
         return;
     }
 
+    const setOfficial = App.state.isSuperAdmin && !!document.getElementById('modal-official-toggle')?.checked;
+    if (setOfficial && winner === '—' && !confirm('No winner selected — this will clear the official result. Continue?')) return;
+
     // Store admin name locally for session convenience
     localStorage.setItem('lastAdminName', adminName);
 
@@ -807,7 +939,8 @@ async function saveMatchResultFromModal() {
         winner: winner === '—' ? '' : winner, // Clear winner if '—' is selected
         playersRemaining: playersRemaining,
         adminName: adminName, // NEW
-        notes: notes // NEW
+        notes: notes, // NEW
+        setOfficial // superadmin only; the server re-checks the token
     };
 
     const payload = {
@@ -825,6 +958,14 @@ async function saveMatchResultFromModal() {
             messageElement.textContent = 'Result saved!';
             messageElement.classList.remove('hidden');
             messageElement.style.color = 'var(--ok)';
+
+            // Best-effort sheet write failed: the result is saved in the app
+            // but the sheet (system of record) didn't get it.
+            if (result.sheetsMirror && !result.sheetsMirror.success && !result.sheetsMirror.skipped) {
+                // The modal closes right after, so surface this in the page-level status bar.
+                showStatus('Saved, but the Google Sheet update failed: ' + (result.sheetsMirror.error || 'unknown error') + ' — tell the tournament manager.', true);
+                setTimeout(() => showStatus(null), 10000);
+            }
 
             // Reload all data to refresh standings and schedule
             await loadData(App.config.currentSheetName);
@@ -908,6 +1049,10 @@ function checkLoginStatus() {
     App.state.isParent = (isParent === 'true');
     App.state.reporterName = sessionStorage.getItem('reporterName') || '';
     App.state.selectedCourt = sessionStorage.getItem('selectedCourt') || '';
+
+    // Resume the heartbeat after a page reload so the session doesn't go
+    // stale in the Setup page's "Signed-in users" view.
+    if (App.state.isAdmin || App.state.isParent) startSessionHeartbeat();
 
     // The updateAdminUI() call below will handle showing the correct buttons.
 }

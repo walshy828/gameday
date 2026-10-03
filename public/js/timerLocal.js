@@ -94,6 +94,13 @@ export async function initRounds() {
   };
 }
 
+// Used by timerOverlay.js's round auto-sync (sets currentRound straight to a
+// computed value, unlike the Prev/Next buttons which step by one index).
+export function setCurrentRound(round) {
+  if (!round) return;
+  postTimer('nextRound', { round }).catch(e => console.error('Failed to sync round', e));
+}
+
 // Redesign palette (design tokens, §5/§9): the clock is gold-light while it
 // runs, warm gold during the after-round breather, and --warn once it's
 // stopped/expired. No glow — the design uses flat tabular numerals.

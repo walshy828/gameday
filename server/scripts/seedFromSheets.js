@@ -5,12 +5,11 @@
 import dotenv from 'dotenv';
 import { google } from 'googleapis';
 import { pool } from '../db.js';
+import { readTabData } from '../sheetConfig.js';
 
 dotenv.config();
 
 const SPREADSHEET_ID = process.env.SPREADSHEET_ID || null;
-const STANDINGS_RANGE = process.env.STANDINGS_RANGE || 'A2:D20';
-const SCHEDULE_START_ROW = Number(process.env.SCHEDULE_START_ROW || 74);
 
 if (!SPREADSHEET_ID || !process.env.GOOGLE_CLIENT_EMAIL || !process.env.GOOGLE_PRIVATE_KEY) {
   console.error('seedFromSheets: SPREADSHEET_ID, GOOGLE_CLIENT_EMAIL, and GOOGLE_PRIVATE_KEY must all be set.');
@@ -34,64 +33,10 @@ async function getDivisionNames() {
     .map(s => s.properties.title);
 }
 
-async function readStandings(sheetName) {
-  const range = `${sheetName}!${STANDINGS_RANGE}`;
-  const resp = await sheetsApi.spreadsheets.values.get({ spreadsheetId: SPREADSHEET_ID, range });
-  const values = resp.data.values || [];
-  return values
-    .map(row => ({
-      rank: row[0] || '',
-      team: (row[1] || '').toString().trim(),
-      record: row[2] || '',
-      points: row[3] || ''
-    }))
-    .filter(s => s.team);
-}
-
-async function readSchedule(sheetName) {
-  const lastRowResp = await sheetsApi.spreadsheets.values.get({
-    spreadsheetId: SPREADSHEET_ID,
-    range: `${sheetName}!A:A`
-  });
-  const lastRow = (lastRowResp.data.values || []).length;
-  const numRows = Math.max(0, lastRow - SCHEDULE_START_ROW + 1);
-  if (numRows <= 0) return [];
-
-  const range = `${sheetName}!A${SCHEDULE_START_ROW}:K${lastRow}`;
-  const resp = await sheetsApi.spreadsheets.values.get({ spreadsheetId: SPREADSHEET_ID, range });
-  const values = resp.data.values || [];
-
-  return values
-    .map((row, idx) => {
-      const rowIndex = SCHEDULE_START_ROW + idx;
-      const team1 = (row[1] || '').toString().trim();
-      const team2 = (row[2] || '').toString().trim();
-      if (!team1 && !team2) return null;
-      return {
-        rowIndex,
-        match: (row[0] || '').toString().trim(),
-        team1,
-        team2,
-        isBye: !team1 || !team2,
-        court: row[3] || '',
-        roundTime: row[4] || '',
-        winner: (row[5] || '').toString().trim(),
-        playersRemaining: (row[6] || '').toString().trim(),
-        adminName: (row[7] || '').toString().trim(),
-        adminWinner: (row[8] || '').toString().trim(),
-        adminPlayersRemaining: (row[9] || '').toString().trim(),
-        notes: (row[10] || '').toString().trim()
-      };
-    })
-    .filter(Boolean)
-    .map((match, matchIndex) => ({ ...match, matchIndex }));
-}
-
 async function seedDivision(sheetName, sortOrder) {
-  const [standings, schedule] = await Promise.all([
-    readStandings(sheetName),
-    readSchedule(sheetName)
-  ]);
+  const { standings, schedule: scheduleRaw, legacy } = await readTabData(sheetsApi, SPREADSHEET_ID, sheetName);
+  if (legacy) console.log(`  ${sheetName}: no GONK_SHEET_CONFIG block found — using legacy fallback ranges`);
+  const schedule = scheduleRaw.map((m, matchIndex) => ({ ...m, isBye: !m.team1 || !m.team2, matchIndex }));
 
   const conn = await pool.getConnection();
   try {
@@ -105,8 +50,8 @@ async function seedDivision(sheetName, sortOrder) {
     await conn.query('DELETE FROM standings WHERE division = ?', [sheetName]);
     for (const [i, s] of standings.entries()) {
       await conn.query(
-        'INSERT INTO standings (division, rnk, team, record, points, sort_order) VALUES (?, ?, ?, ?, ?, ?)',
-        [sheetName, s.rank, s.team, s.record, s.points, i]
+        'INSERT INTO standings (division, rnk, team, record, points, sort_order, sub_division) VALUES (?, ?, ?, ?, ?, ?, ?)',
+        [sheetName, s.rank, s.team, s.record, s.points, i, s.subDivision || '']
       );
     }
 
@@ -115,11 +60,12 @@ async function seedDivision(sheetName, sortOrder) {
       await conn.query(
         `INSERT INTO schedule
            (division, match_index, round_time, court, match_number, team1, team2, is_bye,
-            winner, players_remaining, row_index, adminName, adminWinner, adminPlayersRemaining, notes)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+            winner, players_remaining, row_index, adminName, adminWinner, adminPlayersRemaining, notes, sub_division)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
         [
           sheetName, m.matchIndex, m.roundTime, m.court, m.match, m.team1, m.team2, m.isBye,
-          m.winner, m.playersRemaining, m.rowIndex, m.adminName, m.adminWinner, m.adminPlayersRemaining, m.notes
+          m.winner, m.playersRemaining, m.rowIndex, m.adminName, m.adminWinner, m.adminPlayersRemaining, m.notes,
+          m.subDivision || ''
         ]
       );
     }

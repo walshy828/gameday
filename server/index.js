@@ -6,7 +6,7 @@ import { fileURLToPath } from 'url';
 import { Store } from './datastores/index.js';
 import * as SheetsMirror from './sheetsMirror.js';
 import * as SheetsSync from './sheetsSync.js';
-import { applySyncSettings, initSyncScheduler } from './syncScheduler.js';
+import { applySyncSettings, computeAutoSyncExpiry, initSyncScheduler, scheduleResultSync } from './syncScheduler.js';
 import { initSocket } from './socket.js';
 import crypto from 'crypto';
 import axios from 'axios';
@@ -18,6 +18,7 @@ dotenv.config();
 const DATA_BACKEND = (process.env.DATA_BACKEND || 'firebase').toLowerCase();
 
 const app = express();
+app.set('trust proxy', true);
 app.use(express.json());
 
 const __filename = fileURLToPath(import.meta.url);
@@ -59,9 +60,12 @@ const SECRET_SALT = process.env.SECRET_SALT || 'secret-salt';
 app.get('/api/allData', async (req, res) => {
   try {
     const sheetName = req.query.sheetName || 'Sheet1';
+    const featureSettings = await Store.getFeatureSettings();
     const settings = {
       is_tie_allowed: (process.env.ALLOW_MATCH_TIE === 'true') || false,
-      ga_measurement_id: process.env.GA_MEASUREMENT_ID || null
+      ga_measurement_id: process.env.GA_MEASUREMENT_ID || null,
+      championCelebrationEnabled: featureSettings.championCelebrationEnabled,
+      autoUpdateOfficialResultsEnabled: featureSettings.autoUpdateOfficialResultsEnabled
     };
     const standings = await Store.getStandings(sheetName);
     const schedule = await Store.getSchedule(sheetName);
@@ -94,11 +98,60 @@ app.get('/api/standings', async (req, res) => {
   }
 });
 
+// Lightweight User-Agent parsing for session tracking — no dependency needed
+// for the granularity we want (OS/device family + browser family).
+function parseUserAgent(ua = '') {
+  let os = 'Other';
+  if (/iPad/i.test(ua)) os = 'iPad';
+  else if (/iPhone/i.test(ua)) os = 'iPhone';
+  else if (/Android/i.test(ua)) os = 'Android';
+  else if (/Macintosh/i.test(ua)) os = 'Mac';
+  else if (/Windows/i.test(ua)) os = 'Windows';
+  else if (/Linux/i.test(ua)) os = 'Linux';
+
+  let browser = 'Other';
+  if (/Edg\//i.test(ua)) browser = 'Edge';
+  else if (/CriOS/i.test(ua) || (/Chrome\//i.test(ua) && !/Chromium/i.test(ua))) browser = 'Chrome';
+  else if (/Firefox\//i.test(ua)) browser = 'Firefox';
+  else if (/Safari\//i.test(ua) && !/Chrome/i.test(ua)) browser = 'Safari';
+
+  const device = (os === 'iPhone' || os === 'iPad' || os === 'Android') ? 'Mobile' : 'Desktop';
+
+  return { os, browser, device };
+}
+
+function clientIp(req) {
+  return (req.headers['x-forwarded-for'] || '').split(',')[0].trim() || req.ip || req.socket.remoteAddress || '';
+}
+
 // route: validateAdminPassword
 app.post('/api/validateAdmin', async (req, res) => {
-  const { password } = req.body || {};
+  const { password, reporterName, court, sessionId } = req.body || {};
+
+  async function recordLoginIfPossible(role) {
+    if (!sessionId) return;
+    try {
+      const ua = req.headers['user-agent'] || '';
+      const { os, browser, device } = parseUserAgent(ua);
+      await Store.recordLogin({
+        sessionId,
+        role,
+        name: (reporterName || '').trim() || 'Unknown',
+        court: role === 'admin' ? (court || null) : null,
+        ip: clientIp(req),
+        userAgent: ua,
+        os,
+        browser,
+        device
+      });
+    } catch (e) {
+      console.error('recordLogin failed', e);
+    }
+  }
+
   if (password === ADMIN_PASSWORD) {
     const token = computeToken(ADMIN_PASSWORD);
+    await recordLoginIfPossible('admin');
     return res.json({ isAdmin: true, isSuperAdmin: false, token });
   }
   if (password === SUPERADMIN_PASSWORD) {
@@ -109,12 +162,14 @@ app.post('/api/validateAdmin', async (req, res) => {
     const firebaseToken = DATA_BACKEND !== 'local'
       ? await Store.createCustomToken('adminUser', { admin: true })
       : undefined;
+    await recordLoginIfPossible('superadmin');
     return res.json({ isAdmin: true, isSuperAdmin: true, token, firebaseToken });
   }
   if (PARENT_PASSWORD && password === PARENT_PASSWORD) {
     const token = computeToken(PARENT_PASSWORD);
     // Parents can post in the crew chat (identified as "Parent") but get no
     // match-entry, timer, or superadmin privileges — see requireChatAuth.
+    await recordLoginIfPossible('parent');
     return res.json({ isAdmin: false, isSuperAdmin: false, isParent: true, token });
   }
   res.json({ isAdmin: false, isSuperAdmin: false, isParent: false, error: 'Invalid password.' });
@@ -149,6 +204,21 @@ app.post('/api/saveMatchResult', async (req, res) => {
     const startTs = Date.now();
     console.log(`[${requestId}] /api/saveMatchResult START`, { sheetName: matchData?.sheetName, firebaseIndex: matchData?.firebaseIndex, rowIndex: matchData?.rowIndex, adminName: matchData?.adminName });
 
+    // Superadmin ticked "also submit as official result": the sheet's official
+    // columns get overwritten (not just filled when blank). Honored only for
+    // the superadmin token, and only for a winner that's actually in the match.
+    const forceOfficial = matchData?.setOfficial === true && authToken === computeToken(process.env.SUPERADMIN_PASSWORD || '');
+    if (forceOfficial) {
+      const winner = (matchData.winner || '').trim();
+      const game = Number.isInteger(matchData.rowIndex)
+        ? (await Store.getSchedule(matchData.sheetName)).find(m => m.rowIndex === matchData.rowIndex)
+        : null;
+      if (!game) return res.status(404).json({ success: false, error: 'Match not found for official result — run a sync.' });
+      if (![(game.team1 || '').trim(), (game.team2 || '').trim(), 'tie', ''].includes(winner)) {
+        return res.status(400).json({ success: false, error: 'Winner must be one of the match teams, "tie", or blank.' });
+      }
+    }
+
     // Primary write — Firebase RTDB or local MariaDB, depending on DATA_BACKEND.
     let storeResult = null;
     try {
@@ -181,7 +251,23 @@ app.post('/api/saveMatchResult', async (req, res) => {
     let sheetsMirrorResult = null;
     try {
       const t0 = Date.now();
-      sheetsMirrorResult = await SheetsMirror.saveMatchResult(matchData);
+      const featureSettings = await Store.getFeatureSettings();
+      sheetsMirrorResult = await SheetsMirror.saveMatchResult({
+        ...matchData,
+        autoUpdateOfficialResults: !!featureSettings.autoUpdateOfficialResultsEnabled,
+        forceOfficial
+      });
+      // The sheet recalculates official results/standings; pull them back
+      // once the round's submissions settle (debounced, divisions only).
+      if (sheetsMirrorResult.success) {
+        if (forceOfficial) {
+          // The superadmin is waiting on this — pull now so the response (and
+          // the client's reload) already carries the official result/standings.
+          await SheetsSync.syncDivisions([matchData.sheetName], 'override');
+        } else if (featureSettings.autoUpdateOfficialResultsEnabled) {
+          scheduleResultSync(matchData.sheetName);
+        }
+      }
       console.log(`[${requestId}] SheetsMirror.saveMatchResult`, { durationMs: Date.now() - t0, sheetsMirrorResult });
     } catch (e) {
       console.error(`[${requestId}] SheetsMirror.saveMatchResult FAILED`, e);
@@ -191,8 +277,18 @@ app.post('/api/saveMatchResult', async (req, res) => {
     const totalMs = Date.now() - startTs;
     console.log(`[${requestId}] /api/saveMatchResult COMPLETE`, { totalMs, storeResult, dbResult, sheetsMirrorResult });
 
-    // Return the primary store's result to the client for compatibility.
-    res.json(storeResult);
+    // Return the primary store's result to the client, plus whether the sheet
+    // write landed — it's best-effort, so a failure doesn't fail the save,
+    // but the client should warn (the official result never reaches the sheet
+    // and a later pull would never bring it back). `skipped` = no sheet set up.
+    res.json({
+      ...storeResult,
+      sheetsMirror: {
+        success: !!sheetsMirrorResult?.success,
+        ...(sheetsMirrorResult?.skipped ? { skipped: true } : {}),
+        ...(sheetsMirrorResult?.error ? { error: sheetsMirrorResult.error } : {})
+      }
+    });
   } catch (e) {
     console.error('saveMatchResult error', e);
     res.status(500).json({ success: false, error: e.toString() });
@@ -424,6 +520,13 @@ app.post('/api/chat', async (req, res) => {
 
     const chat = await Store.postChatMessage({ who, mgr: isMgr, text });
     res.json({ success: true, chat });
+
+    // Sending a message is itself proof of activity — refresh the session's
+    // presence watermark so it doesn't wait on the client's separate 45s
+    // heartbeat interval, which can stall for a while after a backgrounded
+    // mobile tab resumes (see the chat presence dot / ONLINE_THRESHOLD_MS).
+    const sessionId = req.body?.sessionId;
+    if (sessionId) Store.touchSession(sessionId).catch(err => console.error('Failed to touch session on chat send:', err));
   } catch (e) {
     res.status(500).json({ success: false, error: e.toString() });
   }
@@ -437,6 +540,99 @@ app.delete('/api/chat/:id', async (req, res) => {
     res.json({ success: true, chat });
   } catch (e) {
     res.status(500).json({ success: false, error: e.toString() });
+  }
+});
+
+// How long since a session's last heartbeat before we consider it "offline"
+// rather than "online" — shared by the chat presence bubbles and the Setup
+// page's Signed-in users table.
+const ONLINE_THRESHOLD_MS = 90 * 1000;
+
+// Must match the `who` string POST /api/chat computes, so a chat message's
+// sender lines up with their live session for the presence dot.
+function presenceWho({ role, name, court }) {
+  const label = (name || '').trim() || 'Staff';
+  if (role === 'superadmin') return `Admin · ${label}`;
+  if (role === 'parent') return `Parent · ${label}`;
+  return `Court ${court || '?'} · ${label}`;
+}
+
+// Lightweight presence feed for the chat view (any signed-in staff/parent,
+// not just superadmins) — just enough to color a status dot next to each
+// sender's name, without exposing IP/device details like /api/session/active
+// does for the superadmin-only Setup page.
+app.get('/api/presence', async (req, res) => {
+  if (!requireChatAuth(req, res)) return;
+  try {
+    const sessions = await Store.getActiveSessions();
+    const now = Date.now();
+    const byWho = new Map();
+    for (const s of sessions) {
+      const who = presenceWho(s);
+      const online = (now - (s.lastActivityAt || 0)) < ONLINE_THRESHOLD_MS;
+      const existing = byWho.get(who);
+      // A person can have more than one active session (e.g. two tabs); if
+      // any of them is online, show them as online.
+      if (!existing || (online && !existing.online)) byWho.set(who, { who, online });
+    }
+    res.json(Array.from(byWho.values()));
+  } catch (e) {
+    res.status(500).json({ error: e.toString() });
+  }
+});
+
+// --- Session tracking (who's signed in, sign-in history) ---
+// Sessions are created by /api/validateAdmin (see recordLoginIfPossible
+// above) and kept alive by a client-side heartbeat while logged in. "Online"
+// is derived by the client/superadmin view from lastActivityAt rather than
+// stored — a session that stops heartbeating just goes stale until it's
+// explicitly ended by logout.
+
+app.post('/api/session/heartbeat', async (req, res) => {
+  if (!requireChatAuth(req, res)) return;
+  try {
+    const { sessionId } = req.body || {};
+    if (!sessionId) return res.status(400).json({ success: false, error: 'sessionId is required' });
+    await Store.touchSession(sessionId);
+    res.json({ success: true });
+  } catch (e) {
+    res.status(500).json({ success: false, error: e.toString() });
+  }
+});
+
+app.post('/api/session/logout', async (req, res) => {
+  if (!requireChatAuth(req, res)) return;
+  try {
+    const { sessionId } = req.body || {};
+    if (!sessionId) return res.status(400).json({ success: false, error: 'sessionId is required' });
+    await Store.endSession(sessionId);
+    res.json({ success: true });
+  } catch (e) {
+    res.status(500).json({ success: false, error: e.toString() });
+  }
+});
+
+app.get('/api/session/active', async (req, res) => {
+  if (!requireSuperAdmin(req, res)) return;
+  try {
+    const sessions = await Store.getActiveSessions();
+    const now = Date.now();
+    const withOnline = sessions
+      .map(s => ({ ...s, online: (now - (s.lastActivityAt || 0)) < ONLINE_THRESHOLD_MS }))
+      .sort((a, b) => (b.lastActivityAt || 0) - (a.lastActivityAt || 0));
+    res.json(withOnline);
+  } catch (e) {
+    res.status(500).json({ error: e.toString() });
+  }
+});
+
+app.get('/api/session/history', async (req, res) => {
+  if (!requireSuperAdmin(req, res)) return;
+  try {
+    const history = await Store.getLoginHistory();
+    res.json(history);
+  } catch (e) {
+    res.status(500).json({ error: e.toString() });
   }
 });
 
@@ -460,11 +656,11 @@ function requireSuperAdmin(req, res) {
 app.get('/api/sheetSync/config', async (req, res) => {
   if (!requireSuperAdmin(req, res)) return;
   try {
-    const configured = SheetsSync.isConfigured();
+    const configured = await SheetsSync.isConfigured();
     const availableDivisions = configured ? await SheetsSync.getAvailableDivisions() : [];
     res.json({
       configured,
-      spreadsheetUrl: SheetsSync.getSpreadsheetUrl(),
+      spreadsheetUrl: await SheetsSync.getSpreadsheetUrl(),
       availableDivisions
     });
   } catch (e) {
@@ -514,18 +710,39 @@ app.get('/api/sheetSync/status', async (req, res) => {
 app.post('/api/sheetSync/settings', async (req, res) => {
   if (!requireSuperAdmin(req, res)) return;
   try {
-    const { autoSyncEnabled, intervalSeconds, syncScope, selectedDivisions } = req.body || {};
+    const { autoSyncEnabled, intervalSeconds, syncScope, selectedDivisions, googleSheetId } = req.body || {};
     const patch = {};
-    if (typeof autoSyncEnabled === 'boolean') patch.autoSyncEnabled = autoSyncEnabled;
+    if (typeof autoSyncEnabled === 'boolean') {
+      patch.autoSyncEnabled = autoSyncEnabled;
+      // Turning auto-sync on starts a fresh time-limit window; off clears it.
+      patch.autoSyncExpiresAt = autoSyncEnabled ? computeAutoSyncExpiry() : null;
+    }
     if (intervalSeconds != null) patch.intervalSeconds = Math.max(Number(intervalSeconds) || 300, 10);
     if (syncScope === 'all' || syncScope === 'selected') patch.syncScope = syncScope;
     if (Array.isArray(selectedDivisions)) patch.selectedDivisions = selectedDivisions.filter(d => typeof d === 'string' && d.trim()).map(d => d.trim());
+    if (typeof googleSheetId === 'string' && googleSheetId.trim()) patch.googleSheetId = googleSheetId.trim();
 
     const status = await SheetsSync.updateSettings(patch);
-    applySyncSettings(status.settings);
+    await applySyncSettings(status.settings);
     res.json(status);
   } catch (e) {
     console.error('sheetSync/settings error', e);
+    res.status(500).json({ success: false, error: e.toString() });
+  }
+});
+
+app.post('/api/featureSettings', async (req, res) => {
+  if (!requireSuperAdmin(req, res)) return;
+  try {
+    const { championCelebrationEnabled, autoUpdateOfficialResultsEnabled } = req.body || {};
+    const patch = {};
+    if (typeof championCelebrationEnabled === 'boolean') patch.championCelebrationEnabled = championCelebrationEnabled;
+    if (typeof autoUpdateOfficialResultsEnabled === 'boolean') patch.autoUpdateOfficialResultsEnabled = autoUpdateOfficialResultsEnabled;
+
+    const settings = await Store.updateFeatureSettings(patch);
+    res.json(settings);
+  } catch (e) {
+    console.error('featureSettings error', e);
     res.status(500).json({ success: false, error: e.toString() });
   }
 });

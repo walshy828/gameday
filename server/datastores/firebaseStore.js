@@ -7,10 +7,11 @@
 // unused by the frontend and exist only to satisfy the shared Store interface.
 import * as Sheets from '../sheets.js';
 import admin, { createCustomToken as fbCreateCustomToken } from '../firebase.js';
-import { broadcastSyncStatus } from '../socket.js';
+import { broadcastSyncStatus, broadcastFeatureSettingsUpdate } from '../socket.js';
 
 const SYNC_SETTINGS_PATH = 'dodgeball-tournament/settings/sheetSync';
-const MAX_SYNC_LOG_ENTRIES = 25;
+const MAX_SYNC_LOG_ENTRIES = 100;
+const FEATURE_SETTINGS_PATH = 'dodgeball-tournament/settings/features';
 
 export async function getDivisionNames() {
   return Sheets.getDivisionNames();
@@ -160,8 +161,13 @@ export async function getSyncStatus() {
       syncScope: val.syncScope || 'all',
       selectedDivisions: Array.isArray(val.selectedDivisions) ? val.selectedDivisions : [],
       // Spreadsheet the stored divisions were last pulled from; sheetsSync
-      // compares this against SPREADSHEET_ID to detect a sheet swap.
-      spreadsheetId: val.spreadsheetId || null
+      // compares this against the effective configured id to detect a swap.
+      spreadsheetId: val.spreadsheetId || null,
+      // Superadmin-configured sync target (Settings page); falls back to the
+      // SPREADSHEET_ID env var when unset — see server/sheetsSync.js.
+      googleSheetId: val.googleSheetId || null,
+      // Epoch ms when auto-sync switches itself off (see server/syncScheduler.js).
+      autoSyncExpiresAt: Number(val.autoSyncExpiresAt) || null
     },
     lastSync: val.lastSync || null,
     log
@@ -173,6 +179,22 @@ export async function updateSyncSettings(patch) {
   const status = await getSyncStatus();
   broadcastSyncStatus(status);
   return status;
+}
+
+export async function getFeatureSettings() {
+  const snap = await admin.database().ref(FEATURE_SETTINGS_PATH).once('value');
+  const val = snap.val() || {};
+  return {
+    championCelebrationEnabled: val.championCelebrationEnabled !== false,
+    autoUpdateOfficialResultsEnabled: val.autoUpdateOfficialResultsEnabled === true
+  };
+}
+
+export async function updateFeatureSettings(patch) {
+  await admin.database().ref(FEATURE_SETTINGS_PATH).update(patch || {});
+  const settings = await getFeatureSettings();
+  broadcastFeatureSettingsUpdate(settings);
+  return settings;
 }
 
 export async function recordSyncLog(entry) {
@@ -193,6 +215,51 @@ export async function recordSyncLog(entry) {
   const status = await getSyncStatus();
   broadcastSyncStatus(status);
   return status;
+}
+
+const SESSIONS_PATH = 'dodgeball-tournament/sessions';
+const MAX_SESSION_ENTRIES = 500;
+
+export async function recordLogin({ sessionId, role, name, court, ip, userAgent, os, browser, device }) {
+  const now = Date.now();
+  const db = admin.database();
+  await db.ref(`${SESSIONS_PATH}/${sessionId}`).set({
+    sessionId, role, name, court: court || null, ip, userAgent, os, browser, device,
+    loginAt: now, lastActivityAt: now, logoutAt: null, active: true
+  });
+
+  // Prune oldest ended sessions once history grows past the cap — never
+  // removes an active session.
+  const snap = await db.ref(SESSIONS_PATH).once('value');
+  const val = snap.val() || {};
+  const keys = Object.keys(val);
+  if (keys.length > MAX_SESSION_ENTRIES) {
+    const removable = keys.filter(k => !val[k].active).sort((a, b) => (val[a].loginAt || 0) - (val[b].loginAt || 0));
+    const excess = keys.length - MAX_SESSION_ENTRIES;
+    const removals = {};
+    removable.slice(0, excess).forEach(k => { removals[k] = null; });
+    if (Object.keys(removals).length) await db.ref(SESSIONS_PATH).update(removals);
+  }
+}
+
+export async function touchSession(sessionId) {
+  await admin.database().ref(`${SESSIONS_PATH}/${sessionId}/lastActivityAt`).set(Date.now());
+}
+
+export async function endSession(sessionId) {
+  await admin.database().ref(`${SESSIONS_PATH}/${sessionId}`).update({ active: false, logoutAt: Date.now() });
+}
+
+export async function getActiveSessions() {
+  const snap = await admin.database().ref(SESSIONS_PATH).orderByChild('active').equalTo(true).once('value');
+  const val = snap.val() || {};
+  return Object.values(val);
+}
+
+export async function getLoginHistory(limit = 200) {
+  const snap = await admin.database().ref(SESSIONS_PATH).once('value');
+  const val = snap.val() || {};
+  return Object.values(val).sort((a, b) => (b.loginAt || 0) - (a.loginAt || 0)).slice(0, limit);
 }
 
 export const backend = 'firebase';

@@ -4,12 +4,14 @@
 function updateScheduleView() {
     const teamSelect = document.getElementById('team-select');
     const courtSelect = document.getElementById('court-select');
-    
+    const subDivisionSelect = document.getElementById('sub-division-select');
+
     const selectedTeam = teamSelect?.value || 'all';
     const selectedCourt = courtSelect?.value || 'all';
-    
-    
-    
+    const selectedSubDivision = subDivisionSelect?.value || 'all';
+
+
+
     const allRoundTimes = new Set(App.data.allScheduleData.map(g => g.roundTime).filter(t => t));
     let chronologicalRounds = Array.from(allRoundTimes).sort(compareRoundTimes);
 
@@ -23,6 +25,7 @@ function updateScheduleView() {
 
     const courtFilteredSchedule = App.data.allScheduleData.filter(game =>
         (selectedCourt === 'all' || (game.court && game.court.trim() === selectedCourt)) &&
+        (selectedSubDivision === 'all' || game.subDivision === selectedSubDivision) &&
         !(hideFinished && isReported(game))
     );
 
@@ -57,7 +60,7 @@ function updateScheduleView() {
         for (const roundTime of chronologicalRounds) {
             if (hideFinished && chronologicalRounds.indexOf(roundTime) < liveIndex) continue;
 
-            if (!teamPlayedRoundTimes.has(roundTime) && !roundTime.startsWith('P')) {
+            if (!teamPlayedRoundTimes.has(roundTime) && !isPlayoffRound(roundTime)) {
                 const gamesInRound = App.data.allScheduleData.filter(g => g.roundTime === roundTime);
                 const gameIsOnFilteredCourt = selectedCourt === 'all' || gamesInRound.some(g => g.court && g.court.trim() === selectedCourt);
 
@@ -325,7 +328,7 @@ function getRosterTeams() {
  * Playoff rounds ('P…') sit most of the field out by design, so they're skipped.
  */
 function getByeTeams(roundTime, allTeams) {
-    if (typeof roundTime === 'string' && roundTime.startsWith('P')) return [];
+    if (isPlayoffRound(roundTime)) return [];
 
     const playing = new Set();
     App.data.allScheduleData.forEach(g => {
@@ -339,6 +342,19 @@ function getByeTeams(roundTime, allTeams) {
     return [...allTeams]
         .filter(t => !playing.has(t) && !/\(#\d+\)\s*$/.test(t))
         .sort((a, b) => a.localeCompare(b));
+}
+
+/**
+ * True once any game in a round is a playoff match. Keyed off the `match`
+ * field (playoff games are always 'P1', 'P2', ...) rather than `roundTime`
+ * text — the V3 sheet template labels playoff rounds like
+ * 'Round of 16 · 12:25 PM', which doesn't start with 'P', so a roundTime-only
+ * check misses them.
+ */
+function isPlayoffRound(roundTime) {
+    return App.data.allScheduleData.some(g =>
+        (g.roundTime || 'TBD') === roundTime && /^P\s*\d/i.test((g.match || '').trim())
+    );
 }
 
 /** A game counts as played once it carries a real winner value. */
@@ -360,20 +376,21 @@ function esc(str) {
 function parseRoundTime(timeStr) {
         if (!timeStr || typeof timeStr !== 'string') {
             // Treat null/empty strings as text that sorts last
-            return { isTime: false, sortValue: 'Zz' }; 
+            return { isTime: false, sortValue: 'Zz' };
         }
 
-        // Check if it looks like a time (starts with a digit and has a colon)
-        const isTimeFormat = /^\d.*:.*\s*(AM|PM)?/i.test(timeStr);
+        // Look for a time ANYWHERE in the string, not just at the start. The V3
+        // sheet template labels playoff rounds like 'Round of 16 · 12:25 PM' —
+        // round name first, time embedded after a separator — so anchoring the
+        // check to the start of the string (the old behavior) never matched
+        // playoff rows and they fell back to a plain alphabetical sort, which
+        // puts "Final"/"Quarterfinal" ahead of "Round of 16"/"Semifinal"
+        // regardless of when they're actually played. Matching the time
+        // wherever it appears lets playoff rounds sort chronologically
+        // alongside pool-play rounds, which is also correct bracket order.
+        const parts = timeStr.match(/(\d{1,2}):(\d{2})\s*(AM|PM)?/i);
 
-        if (isTimeFormat) {
-            const parts = timeStr.match(/(\d+):(\d+)\s*(AM|PM)?/i);
-            
-            if (!parts) {
-                // Failed to parse, treat as text
-                return { isTime: false, sortValue: timeStr };
-            }
-
+        if (parts) {
             let hour = parseInt(parts[1]);
             const minute = parts[2];
             const ampm = parts[3] ? parts[3].toUpperCase() : '';
@@ -387,10 +404,19 @@ function parseRoundTime(timeStr) {
 
             const hourStr = String(hour).padStart(2, '0');
             // Return a key for chronological sorting (e.g., "09:05")
-            return { isTime: true, sortValue: `${hourStr}:${minute}` }; 
+            return { isTime: true, sortValue: `${hourStr}:${minute}` };
         }
 
-        // If it's not a time (e.g., 'P1.Round 1'), treat it as text
+        // No embedded time — e.g. a bare 'P1'/'P10' match reference (legacy
+        // format/the round-timer's own round list). Sort by match number so
+        // "P10" doesn't come before "P2" as plain text.
+        const playoffMatch = /^P\s*(\d+)/i.exec(timeStr);
+        if (playoffMatch) {
+            const num = String(playoffMatch[1]).padStart(5, '0');
+            return { isTime: false, sortValue: `P${num}` };
+        }
+
+        // Otherwise it's free-form text with no ordering signal — sort as text.
         return { isTime: false, sortValue: timeStr };
     }
 

@@ -238,34 +238,91 @@
 
     @media (min-width: 1200px) {
       .module-grid {
-        grid-template-columns: 360px 360px 360px 1fr;
-        grid-template-rows: auto 1fr;
+        grid-template-columns: 360px 360px 1fr;
+        align-items: stretch;
       }
-      #module-current {
-        grid-column: 1;
-        grid-row: 1;
-      }
-      #module-announcements {
-        grid-column: 1;
-        grid-row: 2;
-        align-self: stretch;
-      }
-      #module-next {
-        grid-column: 2;
-        grid-row: 1 / span 2;
-        align-self: stretch;
-      }
-      #module-standings {
-        grid-column: 3;
-        grid-row: 1 / span 2;
-        align-self: start;
-      }
-      #module-bracket {
-        grid-column: 4;
-        grid-row: 1 / span 2;
-        align-self: stretch;
-      }
+      #module-next      { grid-column: 1; grid-row: 1; }
+      #module-standings { grid-column: 2; grid-row: 1; align-self: start; }
+      #module-bracket   { grid-column: 3; grid-row: 1; }
     }
+
+    /* Announcement banner (fades through announcements) */
+    .ann-banner {
+      position: relative;
+      display: flex; align-items: center; gap: 14px;
+      min-height: 58px;
+      margin-bottom: 16px;
+      padding: 10px 20px;
+      border-radius: 16px;
+      border: 1px solid rgba(224,184,99,.3);
+      background: linear-gradient(135deg, rgba(224,184,99,.16) 0%, rgba(166,48,63,.14) 100%);
+      overflow: hidden;
+    }
+    .ann-banner.hidden { display: none !important; }
+    .ann-banner-icon { font-size: 22px; flex-shrink: 0; }
+    .ann-banner-stage { position: relative; flex: 1; min-width: 0; }
+    .ann-banner-item {
+      transition: opacity .6s ease;
+      opacity: 1;
+    }
+    .ann-banner-item.fading { opacity: 0; }
+    .ann-banner-time {
+      font-size: 10px; font-weight: 700; letter-spacing: .1em;
+      text-transform: uppercase; color: var(--gold);
+      margin-bottom: 2px;
+    }
+    .ann-banner-text {
+      font-size: 20px; font-weight: 700; line-height: 1.25;
+      color: #F5F5F6;
+    }
+    .ann-banner-count {
+      font-size: 10px; font-weight: 700; letter-spacing: .08em;
+      color: rgba(255,255,255,.4); flex-shrink: 0;
+      font-variant-numeric: tabular-nums;
+    }
+
+    /* Subdivision chips (standings + bracket) */
+    .subdiv-bar {
+      display: flex; flex-wrap: wrap; gap: 6px; align-items: center;
+      padding: 8px 14px;
+      border-bottom: 1px solid rgba(255,255,255,.08);
+    }
+    .subdiv-bar.hidden { display: none !important; }
+    .subdiv-chip {
+      padding: 4px 12px; border-radius: 999px;
+      font-size: 11px; font-weight: 700; letter-spacing: .04em;
+      border: 1.5px solid rgba(255,255,255,.14);
+      background: rgba(255,255,255,.05);
+      color: rgba(255,255,255,.6);
+      cursor: pointer; font-family: inherit;
+      transition: all .15s;
+    }
+    .subdiv-chip:hover { color: #fff; border-color: rgba(255,255,255,.28); }
+    .subdiv-chip.active {
+      background: linear-gradient(135deg, var(--gold) 0%, var(--gold-d) 100%);
+      border-color: transparent; color: #2A1B08;
+    }
+    .subdiv-auto {
+      margin-left: auto; font-size: 9px; font-weight: 700;
+      letter-spacing: .1em; text-transform: uppercase;
+      color: rgba(255,255,255,.35);
+    }
+
+    /* Header subdivision-cycle setting */
+    .sb-cycle {
+      display: flex; align-items: center; gap: 6px;
+      font-size: 9px; font-weight: 700; letter-spacing: .1em;
+      text-transform: uppercase; color: rgba(255,255,255,.4);
+    }
+    .sb-cycle select {
+      background: rgba(255,255,255,.07);
+      border: 1.5px solid rgba(255,255,255,.18);
+      color: rgba(255,255,255,.8);
+      border-radius: 999px; padding: 4px 10px;
+      font-size: 11px; font-weight: 700; font-family: inherit;
+      cursor: pointer; outline: none;
+    }
+    .sb-cycle select option { background: #1C1C1E; }
 
     /* Division switch animation */
     @keyframes fadeSlideRight {
@@ -383,48 +440,6 @@
 
     #module-next .module-body {
       max-height: 800px;
-    }
-
-    #module-current .module-body {
-      max-height: 380px;
-    }
-
-    #module-announcements .module-body {
-      max-height: 480px;
-    }
-
-    /* Announcement card details */
-    .ann-list {
-      display: flex;
-      flex-direction: column;
-      gap: 10px;
-    }
-
-    .ann-row {
-      padding: 12px 14px;
-      border-radius: 12px;
-      background: rgba(255, 255, 255, 0.05);
-      border: 1px solid rgba(255, 255, 255, 0.08);
-      font-size: 13px;
-      line-height: 1.4;
-    }
-
-    .ann-row.newest {
-      background: linear-gradient(135deg, rgba(224, 184, 99, 0.16) 0%, rgba(166, 48, 63, 0.14) 100%);
-      border-color: rgba(224, 184, 99, 0.3);
-    }
-
-    .ann-time {
-      font-size: 9px;
-      font-weight: 700;
-      letter-spacing: .08em;
-      text-transform: uppercase;
-      color: var(--gold);
-      margin-bottom: 4px;
-    }
-
-    .ann-text {
-      color: rgba(255, 255, 255, 0.85);
     }
 
     /* Bracket module stretches nicely */
@@ -1231,6 +1246,16 @@
 
   <div class="sb-spacer"></div>
 
+  <!-- Subdivision auto-cycle interval (standings + bracket) -->
+  <label class="sb-cycle" id="subdiv-cycle-wrap" title="Auto-cycle subdivisions in Standings and Playoff Bracket">
+    Sub-div
+    <select id="subdiv-cycle-select" onchange="setSubCycle(this.value)">
+      <option value="0">Manual</option>
+      <option value="5">5 s</option>
+      <option value="10">10 s</option>
+    </select>
+  </label>
+
   <!-- Rotate controls (shown when 2 divisions + rotate on) -->
   <div class="sb-rotate-ctrl hidden" id="rotate-controls">
     <div class="live-dot" id="live-dot"></div>
@@ -1265,6 +1290,18 @@
      MAIN CONTENT
 ============================================================== -->
 <main class="sb-main">
+  <!-- ANNOUNCEMENT BANNER -->
+  <div class="ann-banner hidden" id="ann-banner">
+    <span class="ann-banner-icon">📢</span>
+    <div class="ann-banner-stage">
+      <div class="ann-banner-item" id="ann-banner-item">
+        <div class="ann-banner-time" id="ann-banner-time"></div>
+        <div class="ann-banner-text" id="ann-banner-text"></div>
+      </div>
+    </div>
+    <span class="ann-banner-count" id="ann-banner-count"></span>
+  </div>
+
   <div class="module-grid" id="module-grid">
 
     <!-- STANDINGS -->
@@ -1278,40 +1315,9 @@
           <button class="mod-btn expand-btn" onclick="toggleExpand('module-standings')" title="Expand popup">⛶</button>
         </div>
       </div>
+      <div class="subdiv-bar hidden" id="subdiv-bar-standings"></div>
       <div class="module-body" id="body-standings">
         <div class="empty-state">Loading standings…</div>
-      </div>
-    </div>
-
-    <!-- CURRENT GAMES -->
-    <div class="module-card" id="module-current">
-      <div class="module-header">
-        <span class="mod-icon">🏟️</span>
-        <span class="mod-title">Current Games</span>
-        <span class="mod-badge" id="badge-current"
-              style="background:rgba(46,158,99,.2);color:var(--ok)"></span>
-        <div class="mod-actions">
-          <button class="mod-btn expand-btn" onclick="toggleExpand('module-current')" title="Expand popup">⛶</button>
-        </div>
-      </div>
-      <div class="module-body" id="body-current">
-        <div class="empty-state">Loading…</div>
-      </div>
-    </div>
-
-    <!-- ANNOUNCEMENTS -->
-    <div class="module-card" id="module-announcements">
-      <div class="module-header">
-        <span class="mod-icon">📢</span>
-        <span class="mod-title">Announcements</span>
-        <span class="mod-badge" id="badge-announcements"
-              style="background:rgba(224,184,99,.15);color:var(--gold)"></span>
-        <div class="mod-actions">
-          <button class="mod-btn expand-btn" onclick="toggleExpand('module-announcements')" title="Expand popup">⛶</button>
-        </div>
-      </div>
-      <div class="module-body" id="body-announcements">
-        <div class="empty-state">No announcements.</div>
       </div>
     </div>
 
@@ -1342,6 +1348,7 @@
           <button class="mod-btn expand-btn" onclick="toggleExpand('module-bracket')" title="Expand popup">⛶</button>
         </div>
       </div>
+      <div class="subdiv-bar hidden" id="subdiv-bar-bracket"></div>
       <div class="module-body" id="body-bracket">
         <div class="empty-state">Bracket appears here once playoffs begin.</div>
       </div>
@@ -1385,7 +1392,12 @@ const SB = {
   rotateTimer:       null,
   lastDirection:     1,    // 1 = forward, -1 = backward
   announcements:     [],
+  subCycleSecs:      0,    // 0 = manual, else seconds between subdivision flips
+  subSel:            {},   // { divName: selected subdivision name }
+  subTimer:          null,
   socket:            null,
+  timers:            {},   // { divName: timerState } (local mode is per-division)
+  resyncTimer:       null,
   timerState: {
     running: false,
     duration: 300,
@@ -1397,20 +1409,16 @@ const SB = {
   timerIntervalId:   null,
 };
 
-const MODULES = ['standings', 'current', 'next', 'bracket', 'announcements'];
+const MODULES = ['standings', 'next', 'bracket'];
 const MODULE_LABELS = {
   standings: '📊 Standings',
-  current:   '🏟️ Current Games',
   next:      '⏭️ Next Up',
   bracket:   '🏆 Playoff Bracket',
-  announcements: '📢 Announcements',
 };
 const DEFAULT_MODULE_STATES = {
   standings: 'visible',
-  current:   'visible',
   next:      'visible',
   bracket:   'visible',
-  announcements: 'visible',
 };
 
 // ================================================================
@@ -1583,6 +1591,15 @@ function renderDivSwitcher() {
   `).join('');
 }
 
+// Point the match clock at the active division's timer. Firebase mode has a
+// single global timer node, so there's nothing to swap there.
+function applyActiveTimer() {
+  if (window.__DATA_BACKEND__ !== 'local') return;
+  const div = SB.divisions[SB.activeIndex];
+  if (SB.timers[div]) SB.timerState = SB.timers[div];
+  fetchTimerState(div).catch(console.error);
+}
+
 function switchDiv(index, animate = true) {
   if (index === SB.activeIndex) return;
   SB.lastDirection = index > SB.activeIndex ? 1 : -1;
@@ -1590,6 +1607,7 @@ function switchDiv(index, animate = true) {
   renderDivSwitcher();
   renderAll(SB.divisions[index], animate);
   resetRotateCountdown();
+  applyActiveTimer();
 }
 
 // ================================================================
@@ -1710,15 +1728,82 @@ function renderAll(divName, animate = false) {
     }, { once: true });
   }
 
+  renderSubdivBars(divName);
   renderStandings(standings);
-
-  const liveRound = getLiveRound(schedule);
-
-  renderCurrentGames(schedule, liveRound);
   renderNextUp(schedule);
   renderBracket(schedule);
   renderAnnouncements();
 }
+
+// ================================================================
+// SUBDIVISIONS — shared selection for Standings + Playoff Bracket,
+// auto-cycled on a timer (header setting) or picked manually.
+// ================================================================
+function subDivisionNames(divName) {
+  const c = SB.cache[divName];
+  if (!c) return [];
+  const names = [];
+  const add = n => { if (n && !names.includes(n)) names.push(n); };
+  (c.standings || []).forEach(r => add(r.subDivision));
+  (c.schedule  || []).forEach(g => add(g.subDivision));
+  return names.length > 1 ? names : [];
+}
+
+// Selected subdivision for the active division ('' = no filtering).
+function currentSubDivision() {
+  const div = SB.divisions[SB.activeIndex];
+  const names = subDivisionNames(div);
+  if (!names.length) return '';
+  if (!names.includes(SB.subSel[div])) SB.subSel[div] = names[0];
+  return SB.subSel[div];
+}
+
+function renderSubdivBars(divName) {
+  const names = subDivisionNames(divName);
+  const sel = currentSubDivision();
+  ['standings', 'bracket'].forEach(mod => {
+    const bar = document.getElementById(`subdiv-bar-${mod}`);
+    if (!bar) return;
+    bar.classList.toggle('hidden', names.length === 0);
+    bar.innerHTML = names.map(n =>
+      `<button class="subdiv-chip ${n === sel ? 'active' : ''}" data-sub="${esc(n)}">${esc(n)}</button>`
+    ).join('') + (SB.subCycleSecs > 0 ? `<span class="subdiv-auto">auto · ${SB.subCycleSecs}s</span>` : '');
+  });
+}
+
+function selectSubDivision(name) {
+  const div = SB.divisions[SB.activeIndex];
+  SB.subSel[div] = name;
+  startSubCycle();           // restart the countdown so a manual pick sticks for a full interval
+  renderAll(div, false);
+}
+
+function cycleSubDivision() {
+  const div = SB.divisions[SB.activeIndex];
+  const names = subDivisionNames(div);
+  if (names.length < 2) return;
+  const i = names.indexOf(SB.subSel[div]);
+  SB.subSel[div] = names[(i + 1) % names.length];
+  renderAll(div, false);
+}
+
+function startSubCycle() {
+  if (SB.subTimer) { clearInterval(SB.subTimer); SB.subTimer = null; }
+  if (SB.subCycleSecs > 0) SB.subTimer = setInterval(cycleSubDivision, SB.subCycleSecs * 1000);
+}
+
+function setSubCycle(val) {
+  SB.subCycleSecs = parseInt(val) || 0;
+  try { localStorage.setItem('sb_subcycle', String(SB.subCycleSecs)); } catch (e) {}
+  startSubCycle();
+  renderSubdivBars(SB.divisions[SB.activeIndex]);
+}
+
+// Chip clicks (delegated — the bars are re-rendered constantly)
+document.addEventListener('click', e => {
+  const chip = e.target.closest?.('.subdiv-chip');
+  if (chip) selectSubDivision(chip.dataset.sub);
+});
 
 // ================================================================
 // STANDINGS
@@ -1728,7 +1813,9 @@ function renderStandings(data) {
   const badge = document.getElementById('badge-standings');
   if (!body) return;
 
-  const rows = (data || []).filter(item => item.team && item.team.trim());
+  let rows = (data || []).filter(item => item.team && item.team.trim());
+  const sel = currentSubDivision();
+  if (sel) rows = rows.filter(item => item.subDivision === sel);
 
   if (rows.length === 0) {
     body.innerHTML = '<div class="empty-state">No standings data available.</div>';
@@ -1759,31 +1846,6 @@ function renderStandings(data) {
   }).join('');
 
   body.innerHTML = hdr + html;
-}
-
-// ================================================================
-// CURRENT GAMES
-// ================================================================
-function renderCurrentGames(schedule, liveRound) {
-  const body  = document.getElementById('body-current');
-  const badge = document.getElementById('badge-current');
-  if (!body) return;
-
-  if (!liveRound) {
-    badge.textContent = '';
-    body.innerHTML = '<div class="empty-state">No round currently in progress.</div>';
-    return;
-  }
-
-  const games = schedule.filter(g => g.roundTime === liveRound);
-  badge.textContent = `${games.length} ON COURT`;
-
-  body.innerHTML = `
-    <div style="margin-bottom:10px">
-      <span class="round-chip live">Round ${esc(liveRound)}</span>
-    </div>
-    <div class="games-list-stack">${games.map(g => gameCardHTML(g, 'live')).join('')}</div>
-  `;
 }
 
 // ================================================================
@@ -2100,7 +2162,11 @@ function renderBracket(schedule) {
   const badge = document.getElementById('badge-bracket');
   if (!body) return;
 
-  const tree = buildBracketTree(schedule.filter(isPlayoff));
+  const sub = currentSubDivision();
+  const pGames = schedule.filter(isPlayoff);
+  // Only filter when playoff rows are actually tagged with a subdivision.
+  const tagged = pGames.some(g => g.subDivision);
+  const tree = buildBracketTree(sub && tagged ? pGames.filter(g => g.subDivision === sub) : pGames);
   if (!tree) {
     badge.textContent = '';
     body.innerHTML = '<div class="empty-state">Bracket will appear here once playoffs begin.</div>';
@@ -2434,21 +2500,31 @@ async function openSetupFromCtrl() {
 // ================================================================
 // MATCH CLOCK ENGINE
 // ================================================================
+function normalizeTimer(p, serverOffset = 0) {
+  return {
+    running:                !!p.running,
+    duration:               p.duration ?? 300,
+    startTime:              p.startTime || 0,
+    startAfterRoundRunning: !!p.startAfterRoundRunning,
+    lastSetDuration:        p.lastSetDuration || 300,
+    serverOffset,
+  };
+}
+
+// Local mode: timers are per-division and the server stamps startTime with
+// its own clock, so offset the countdown by (server clock - this clock),
+// read from the HTTP Date header, rather than trusting the display PC.
 async function fetchTimerState(divName) {
-  if (window.__DATA_BACKEND__ !== 'local') return; // Firebase uses realtime listener
+  if (window.__DATA_BACKEND__ !== 'local' || !divName) return;
   try {
-    const r = await fetch(`${API}/api/timer?sheetName=${encodeURIComponent(divName)}`);
-    if (r.ok) {
-      const payload = await r.json();
-      SB.timerState = {
-        running:               payload.running || false,
-        duration:              payload.duration ?? 300,
-        startTime:             payload.startTime || 0,
-        startAfterRoundRunning: payload.startAfterRoundRunning || false,
-        lastSetDuration:       payload.lastSetDuration || 300,
-        serverOffset:          0,
-      };
-    }
+    const t0 = Date.now();
+    const r = await fetch(`${API}/api/timer?sheetName=${encodeURIComponent(divName)}`, { cache: 'no-store' });
+    if (!r.ok) return;
+    const payload = await r.json();
+    const dateHdr = r.headers.get('Date');
+    const offset = dateHdr ? new Date(dateHdr).getTime() - (t0 + Date.now()) / 2 : 0;
+    SB.timers[divName] = normalizeTimer(payload, Number.isFinite(offset) ? offset : 0);
+    if (SB.divisions[SB.activeIndex] === divName) SB.timerState = SB.timers[divName];
   } catch(e) {
     console.error('[timer] Failed to fetch timer state', e);
   }
@@ -2466,7 +2542,8 @@ function startMatchClockTicker() {
 
     if (state.running && state.startTime) {
       const now = Date.now() + (state.serverOffset || 0);
-      remaining = Math.max(0, state.duration - Math.floor((now - state.startTime) / 1000));
+      const elapsed = Math.max(0, Math.floor((now - state.startTime) / 1000));
+      remaining = Math.max(0, Math.min(state.duration, state.duration - elapsed));
     }
 
     const m = String(Math.floor(remaining / 60));
@@ -2502,32 +2579,96 @@ async function fetchAnnouncements() {
   }
 }
 
-function renderAnnouncements() {
-  const body = document.getElementById('body-announcements');
-  const badge = document.getElementById('badge-announcements');
-  if (!body) return;
+// ── Division time window ─────────────────────────────────────────
+// Derived from the division's schedule: first round time → last timed
+// round + one round length (median gap between rounds), plus one slot per
+// playoff round after that. Returns { start, end } in epoch ms for today,
+// or null when the schedule carries no parseable times.
+function parseRoundMinutes(rt) {
+  const m = /^\s*(\d{1,2}):(\d{2})\s*([AP]M)?/i.exec(rt || '');
+  if (!m) return null;
+  let h = +m[1];
+  const ap = (m[3] || '').toUpperCase();
+  if (ap === 'PM' && h !== 12) h += 12;
+  if (ap === 'AM' && h === 12) h = 0;
+  return h * 60 + +m[2];
+}
 
+function divisionWindow(divName) {
+  const schedule = SB.cache[divName]?.schedule || [];
+  const times = [...new Set(schedule.filter(g => !isPlayoff(g)).map(g => parseRoundMinutes(g.roundTime)).filter(t => t !== null))]
+    .sort((a, b) => a - b);
+  if (!times.length) return null;
+
+  const gaps = times.slice(1).map((t, i) => t - times[i]).sort((a, b) => a - b);
+  const step = gaps.length ? gaps[Math.floor(gaps.length / 2)] : 15;
+  const playoffRounds = new Set(schedule.filter(isPlayoff).map(g => (g.roundTime || '').trim())).size;
+
+  const day = new Date(); day.setHours(0, 0, 0, 0);
+  const startMin = times[0];
+  const endMin = times[times.length - 1] + step * (1 + playoffRounds);
+  return { start: day.getTime() + startMin * 60000, end: day.getTime() + endMin * 60000 };
+}
+
+// ≤3 active → show them all (latest three). >3 → only those posted inside
+// the running division's window.
+function bannerAnnouncements() {
   const active = (SB.announcements || [])
-    .filter(a => a.on)
+    .filter(a => a && a.on)
     .sort((a, b) => (b.ts || 0) - (a.ts || 0));
+  if (active.length <= 3) return active;
+  const win = divisionWindow(SB.divisions[SB.activeIndex]);
+  if (!win) return active.slice(0, 3);
+  return active.filter(a => a.ts >= win.start && a.ts <= win.end);
+}
 
-  badge.textContent = active.length ? `${active.length} ACTIVE` : '';
+const ANN_ROTATE_MS = 6000;
+let annIndex = 0;
+let annTimer = null;
+let annKey = '';
 
-  if (active.length === 0) {
-    body.innerHTML = '<div class="empty-state">No announcements.</div>';
+function showAnnouncement(list) {
+  const item = document.getElementById('ann-banner-item');
+  const a = list[annIndex % list.length];
+  document.getElementById('ann-banner-time').textContent =
+    new Date(a.ts).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' });
+  document.getElementById('ann-banner-text').textContent = a.text;
+  document.getElementById('ann-banner-count').textContent =
+    list.length > 1 ? `${(annIndex % list.length) + 1} / ${list.length}` : '';
+  item.classList.remove('fading');
+}
+
+function renderAnnouncements() {
+  const banner = document.getElementById('ann-banner');
+  if (!banner) return;
+  const list = bannerAnnouncements();
+
+  if (list.length === 0) {
+    banner.classList.add('hidden');
+    if (annTimer) { clearInterval(annTimer); annTimer = null; }
+    annKey = '';
     return;
   }
+  banner.classList.remove('hidden');
 
-  body.innerHTML = `
-    <div class="ann-list">
-      ${active.map((a, i) => `
-        <div class="ann-row ${i === 0 ? 'newest' : ''}">
-          <div class="ann-time">${new Date(a.ts).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' })}</div>
-          <div class="ann-text">${esc(a.text)}</div>
-        </div>
-      `).join('')}
-    </div>
-  `;
+  // Re-renders happen on every data push; only restart the cycle when the
+  // set of announcements actually changed.
+  const key = list.map(a => `${a.id ?? a.ts}:${a.text}`).join('|');
+  if (key === annKey && annTimer) return;
+  annKey = key;
+  annIndex = 0;
+  showAnnouncement(list);
+
+  if (annTimer) clearInterval(annTimer);
+  annTimer = null;
+  if (list.length < 2) return;
+  annTimer = setInterval(() => {
+    const cur = bannerAnnouncements();
+    if (!cur.length) return renderAnnouncements();
+    const item = document.getElementById('ann-banner-item');
+    item.classList.add('fading');
+    setTimeout(() => { annIndex++; showAnnouncement(cur); }, 600);
+  }, ANN_ROTATE_MS);
 }
 
 // ================================================================
@@ -2673,17 +2814,21 @@ function launch() {
         });
 
         SB.socket.on('timerUpdate', (payload) => {
-          // Timer is per-division; only apply if it's for the active division
-          if (payload.division && payload.division !== SB.divisions[SB.activeIndex]) return;
-          console.log('[Websocket Timer Sync]', payload);
-          SB.timerState = {
-            running:               payload.running || false,
-            duration:              payload.duration ?? 300,
-            startTime:             payload.startTime || 0,
-            startAfterRoundRunning: payload.startAfterRoundRunning || false,
-            lastSetDuration:       payload.lastSetDuration || 300,
-            serverOffset:          0,
-          };
+          if (!payload.division) return;
+          const prev = SB.timers[payload.division];
+          SB.timers[payload.division] = normalizeTimer(payload, prev ? prev.serverOffset : 0);
+          if (payload.division === SB.divisions[SB.activeIndex]) SB.timerState = SB.timers[payload.division];
+        });
+
+        // Rooms are lost on a dropped connection — rejoin and resync
+        // everything, or the board silently goes stale after a blip.
+        SB.socket.on('connect', () => {
+          SB.divisions.forEach(div => {
+            SB.socket.emit('joinDivision', div);
+            fetchAndCache(div).catch(console.error);
+          });
+          fetchTimerState(SB.divisions[SB.activeIndex]).catch(console.error);
+          fetchAnnouncements().catch(console.error);
         });
       }
       SB.divisions.forEach(div => {
@@ -2699,11 +2844,56 @@ function launch() {
     }
   }
 
+  // Safety-net resync: sockets/listeners can silently die on a long-running
+  // display, so re-pull the timer, announcements and divisions regularly.
+  if (SB.resyncTimer) clearInterval(SB.resyncTimer);
+  SB.resyncTimer = setInterval(() => {
+    if (window.__DATA_BACKEND__ === 'local') {
+      fetchTimerState(SB.divisions[SB.activeIndex]).catch(console.error);
+      SB.divisions.forEach(d => fetchAndCache(d).catch(console.error));
+      fetchAnnouncements().catch(console.error);
+    }
+    refreshDivisionList().catch(console.error);
+  }, 30_000);
+
+  startSubCycle();
+
   // Start auto-rotate
   if (showRotate) startRotate();
 
   // Start match clock ticker (runs continuously, updates from timerState)
   startMatchClockTicker();
+}
+
+// ================================================================
+// DIVISION LIST SYNC — the division set comes from the app's spreadsheet
+// sync. A saved/URL config can name divisions that a spreadsheet swap has
+// since removed, so reconcile against /api/divisions.
+// ================================================================
+async function refreshDivisionList() {
+  if (!SB.divisions.length) return;
+  const names = await apiFetchDivisions();
+  if (!Array.isArray(names)) return;
+  const still = SB.divisions.filter(d => names.includes(d));
+  if (still.length === SB.divisions.length) return;
+
+  console.warn('[divisions] dropped missing divisions:', SB.divisions.filter(d => !names.includes(d)));
+  setupAvailableDivs = names;
+  if (still.length === 0) {
+    try { localStorage.removeItem('sb_cfg'); } catch (e) {}
+    SB.divisions = [];
+    setupSelected = [];
+    renderSetupDivs();
+    updateSetupState();
+    document.getElementById('setup-overlay').classList.remove('hidden');
+    return;
+  }
+  SB.divisions = still;
+  if (still.length < 2) SB.rotateIntervalSecs = 0;
+  try {
+    localStorage.setItem('sb_cfg', JSON.stringify({ divisions: SB.divisions, rotateIntervalSecs: SB.rotateIntervalSecs }));
+  } catch (e) {}
+  launch();
 }
 
 // ================================================================
@@ -2756,6 +2946,11 @@ document.addEventListener('visibilitychange', () => {
 document.addEventListener('DOMContentLoaded', async () => {
   startClock();
 
+  try {
+    SB.subCycleSecs = parseInt(localStorage.getItem('sb_subcycle')) || 0;
+  } catch (e) {}
+  document.getElementById('subdiv-cycle-select').value = String(SB.subCycleSecs);
+
   // 1. URL params override everything
   const urlCfg = parseURLConfig();
   if (urlCfg) {
@@ -2763,6 +2958,7 @@ document.addEventListener('DOMContentLoaded', async () => {
     SB.rotateIntervalSecs = urlCfg.rotateIntervalSecs;
     document.getElementById('setup-overlay').classList.add('hidden');
     launch();
+    refreshDivisionList().catch(console.error);
     return;
   }
 
@@ -2776,6 +2972,7 @@ document.addEventListener('DOMContentLoaded', async () => {
         SB.rotateIntervalSecs = cfg.rotateIntervalSecs || 0;
         document.getElementById('setup-overlay').classList.add('hidden');
         launch();
+        refreshDivisionList().catch(console.error);
         return;
       }
     }

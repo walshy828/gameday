@@ -2,6 +2,7 @@
 // Renders the PLAYOFFS tab's bracket, ported from the bracket widget built
 // for scoreboard.html (see public/scoreboard.html's "PLAYOFF BRACKET"
 // section). Reuses App.data.allScheduleData — no new data source.
+import { getSubDivisionNames, getSelectedSubDivision, setSelectedSubDivision } from './navigation.js';
 
 const BRK = {
   BOX_H:  46,   // match card height (2 team rows)
@@ -272,12 +273,63 @@ function fitBracket() {
   canvas.style.zoom = String(scale);
 }
 
+/**
+ * Renders the sub-division toggle above the bracket. Returns the schedule
+ * rows that belong to the currently selected sub division (or every row
+ * when the division has 0 or 1 distinct `subDivision` values, in which case
+ * the toggle stays hidden and the bracket behaves exactly as before this
+ * feature existed).
+ *
+ * The selection itself is shared/persisted via navigation.js's
+ * get/setSelectedSubDivision — the same selection standings.js's toggle
+ * reads, so picking a sub division here is reflected there too, and
+ * remembered across reloads.
+ */
+function applySubDivisionToggle(schedule) {
+  const toggle = document.getElementById('playoffs-subdivision-toggle');
+  const groups = getSubDivisionNames();
+
+  let selected = getSelectedSubDivision();
+  if (!groups.includes(selected)) {
+    selected = groups[0] || null;
+    setSelectedSubDivision(selected, { auto: true });
+  }
+
+  if (!toggle) return schedule;
+
+  if (groups.length < 2) {
+    toggle.classList.add('hidden');
+    toggle.innerHTML = '';
+    return schedule;
+  }
+
+  toggle.classList.remove('hidden');
+  toggle.innerHTML = '';
+  groups.forEach(name => {
+    const btn = document.createElement('button');
+    btn.type = 'button';
+    btn.textContent = name;
+    const isActive = name === selected;
+    btn.className = 'flex-1 rounded-full py-2 text-xs font-semibold leading-none transition-colors ' +
+      (isActive
+        ? 'bg-[var(--color-gold-light)] text-[var(--color-maroon-dark)]'
+        : 'bg-white/[.06] text-white/60 hover:bg-white/[.1]');
+    btn.onclick = () => {
+      setSelectedSubDivision(name);
+      renderPlayoffsView();
+    };
+    toggle.appendChild(btn);
+  });
+
+  return schedule.filter(g => g.subDivision === selected);
+}
+
 function renderPlayoffsView() {
   const body  = document.getElementById('playoffs-bracket-body');
   const badge = document.getElementById('playoffs-match-count');
   if (!body) return;
 
-  const schedule = App.data.allScheduleData || [];
+  const schedule = applySubDivisionToggle(App.data.allScheduleData || []);
   const tree = buildBracketTree(schedule.filter(isPlayoff));
   if (!tree) {
     if (badge) badge.textContent = '';

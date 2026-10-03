@@ -3,11 +3,11 @@
 // DATA_BACKEND=local. Realtime push (replacing Firebase RTDB's built-in
 // listeners) is done via Socket.IO broadcasts after each write.
 import { pool } from '../db.js';
-import { broadcastDivisionUpdate, broadcastTimerUpdate, broadcastSyncStatus, broadcastAnnouncementUpdate, broadcastChatUpdate } from '../socket.js';
+import { broadcastDivisionUpdate, broadcastTimerUpdate, broadcastSyncStatus, broadcastAnnouncementUpdate, broadcastChatUpdate, broadcastFeatureSettingsUpdate } from '../socket.js';
 
 export const backend = 'local';
 
-const MAX_SYNC_LOG_ENTRIES = 25;
+const MAX_SYNC_LOG_ENTRIES = 100;
 
 // Self-heals and auto-provisions database tables if they do not exist.
 // This ensures any existing database or a freshly spawned local/Docker database
@@ -30,9 +30,15 @@ const MAX_SYNC_LOG_ENTRIES = 25;
         record VARCHAR(64),
         points VARCHAR(64),
         sort_order INT NOT NULL DEFAULT 0,
+        sub_division VARCHAR(191) NULL,
         INDEX idx_standings_division (division)
       )
     `);
+    try {
+      await pool.query('ALTER TABLE standings ADD COLUMN sub_division VARCHAR(191) NULL');
+    } catch (e) {
+      if (e.code !== 'ER_DUP_FIELDNAME') throw e;
+    }
     await pool.query(`
       CREATE TABLE IF NOT EXISTS schedule (
         id INT AUTO_INCREMENT PRIMARY KEY,
@@ -52,10 +58,16 @@ const MAX_SYNC_LOG_ENTRIES = 25;
         adminPlayersRemaining VARCHAR(64),
         notes TEXT,
         lastUpdated DATETIME NULL,
+        sub_division VARCHAR(191) NULL,
         UNIQUE KEY uq_schedule_div_idx (division, match_index),
         INDEX idx_schedule_division (division)
       )
     `);
+    try {
+      await pool.query('ALTER TABLE schedule ADD COLUMN sub_division VARCHAR(191) NULL');
+    } catch (e) {
+      if (e.code !== 'ER_DUP_FIELDNAME') throw e;
+    }
     await pool.query(`
       CREATE TABLE IF NOT EXISTS match_history (
         id INT AUTO_INCREMENT PRIMARY KEY,
@@ -89,12 +101,24 @@ const MAX_SYNC_LOG_ENTRIES = 25;
         interval_seconds INT NOT NULL DEFAULT 300,
         sync_scope VARCHAR(16) NOT NULL DEFAULT 'all',
         selected_divisions TEXT NULL,
-        spreadsheet_id VARCHAR(191) NULL
+        spreadsheet_id VARCHAR(191) NULL,
+        google_sheet_id VARCHAR(191) NULL,
+        auto_sync_expires_at BIGINT NULL
       )
     `);
     // Added after the table shipped — bring pre-existing databases forward.
     try {
       await pool.query('ALTER TABLE sync_settings ADD COLUMN spreadsheet_id VARCHAR(191) NULL');
+    } catch (e) {
+      if (e.code !== 'ER_DUP_FIELDNAME') throw e;
+    }
+    try {
+      await pool.query('ALTER TABLE sync_settings ADD COLUMN google_sheet_id VARCHAR(191) NULL');
+    } catch (e) {
+      if (e.code !== 'ER_DUP_FIELDNAME') throw e;
+    }
+    try {
+      await pool.query('ALTER TABLE sync_settings ADD COLUMN auto_sync_expires_at BIGINT NULL');
     } catch (e) {
       if (e.code !== 'ER_DUP_FIELDNAME') throw e;
     }
@@ -111,9 +135,15 @@ const MAX_SYNC_LOG_ENTRIES = 25;
         matches_count INT,
         scope VARCHAR(16),
         division_names TEXT,
+        failed_tabs TEXT,
         INDEX idx_sync_log_timestamp (timestamp)
       )
     `);
+    try {
+      await pool.query('ALTER TABLE sync_log ADD COLUMN failed_tabs TEXT');
+    } catch (e) {
+      if (e.code !== 'ER_DUP_FIELDNAME') throw e;
+    }
     await pool.query(`
       CREATE TABLE IF NOT EXISTS announcements (
         id BIGINT PRIMARY KEY,
@@ -133,6 +163,37 @@ const MAX_SYNC_LOG_ENTRIES = 25;
         INDEX idx_chat_ts (ts)
       )
     `);
+    await pool.query(`
+      CREATE TABLE IF NOT EXISTS sessions (
+        session_id VARCHAR(64) PRIMARY KEY,
+        role VARCHAR(16) NOT NULL,
+        name VARCHAR(191),
+        court VARCHAR(64) NULL,
+        ip VARCHAR(64),
+        user_agent VARCHAR(512),
+        os VARCHAR(32),
+        browser VARCHAR(32),
+        device VARCHAR(16),
+        login_at BIGINT NOT NULL,
+        last_activity_at BIGINT NOT NULL,
+        logout_at BIGINT NULL,
+        active BOOLEAN NOT NULL DEFAULT TRUE,
+        INDEX idx_sessions_active (active),
+        INDEX idx_sessions_login_at (login_at)
+      )
+    `);
+    await pool.query(`
+      CREATE TABLE IF NOT EXISTS feature_settings (
+        id INT PRIMARY KEY,
+        champion_celebration_enabled BOOLEAN NOT NULL DEFAULT TRUE,
+        auto_update_official_results_enabled BOOLEAN NOT NULL DEFAULT FALSE
+      )
+    `);
+    try {
+      await pool.query('ALTER TABLE feature_settings ADD COLUMN auto_update_official_results_enabled BOOLEAN NOT NULL DEFAULT FALSE');
+    } catch (e) {
+      if (e.code !== 'ER_DUP_FIELDNAME') throw e;
+    }
     await pool.query(`
       CREATE TABLE IF NOT EXISTS gameday_submissions (
         id INT AUTO_INCREMENT PRIMARY KEY,
@@ -155,7 +216,8 @@ function mapStandingsRow(row) {
     rank: row.rnk || '',
     team: row.team || '',
     record: row.record || '',
-    points: row.points || ''
+    points: row.points || '',
+    subDivision: row.sub_division || ''
   };
 }
 
@@ -175,7 +237,8 @@ function mapScheduleRow(row) {
     adminWinner: row.adminWinner,
     adminPlayersRemaining: row.adminPlayersRemaining,
     notes: row.notes,
-    lastUpdated: row.lastUpdated
+    lastUpdated: row.lastUpdated,
+    subDivision: row.sub_division || ''
   };
 }
 
@@ -187,7 +250,7 @@ export async function getDivisionNames() {
 export async function getStandings(sheetName) {
   if (!sheetName) return [];
   const [rows] = await pool.query(
-    'SELECT rnk, team, record, points FROM standings WHERE division = ? ORDER BY sort_order, rnk',
+    'SELECT rnk, team, record, points, sub_division FROM standings WHERE division = ? ORDER BY sort_order, rnk',
     [sheetName]
   );
   return rows.map(mapStandingsRow).filter(s => s.team);
@@ -262,23 +325,24 @@ export async function writeDivisionData(name, { standings, schedule } = {}) {
 
     await conn.query('DELETE FROM standings WHERE division = ?', [name]);
     if (standings && standings.length) {
-      const values = standings.map((s, idx) => [name, s.rank || '', s.team, s.record || '', s.points || '', idx]);
+      const values = standings.map((s, idx) => [name, s.rank || '', s.team, s.record || '', s.points || '', idx, s.subDivision || '']);
       await conn.query(
-        'INSERT INTO standings (division, rnk, team, record, points, sort_order) VALUES ?',
+        'INSERT INTO standings (division, rnk, team, record, points, sort_order, sub_division) VALUES ?',
         [values]
       );
     }
 
     for (const [idx, m] of (schedule || []).entries()) {
       await conn.query(
-        `INSERT INTO schedule (division, match_index, round_time, court, match_number, team1, team2, winner, players_remaining, row_index)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        `INSERT INTO schedule (division, match_index, round_time, court, match_number, team1, team2, winner, players_remaining, row_index, sub_division)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
          ON DUPLICATE KEY UPDATE
            round_time = VALUES(round_time), court = VALUES(court), match_number = VALUES(match_number),
            team1 = VALUES(team1), team2 = VALUES(team2), winner = VALUES(winner),
-           players_remaining = VALUES(players_remaining), row_index = VALUES(row_index)`,
+           players_remaining = VALUES(players_remaining), row_index = VALUES(row_index),
+           sub_division = VALUES(sub_division)`,
         [name, idx, m.roundTime || '', m.court || '', m.match || '', m.team1 || '', m.team2 || '',
-          m.winner || '', m.playersRemaining || '', m.rowIndex ?? null]
+          m.winner || '', m.playersRemaining || '', m.rowIndex ?? null, m.subDivision || '']
       );
     }
 
@@ -335,6 +399,10 @@ function mapSyncLogRow(row) {
   if (row.division_names) {
     try { divisionNames = JSON.parse(row.division_names); } catch (e) { divisionNames = undefined; }
   }
+  let failedTabs;
+  if (row.failed_tabs) {
+    try { failedTabs = JSON.parse(row.failed_tabs); } catch (e) { failedTabs = undefined; }
+  }
   return {
     timestamp: Number(row.timestamp),
     status: row.status,
@@ -343,12 +411,13 @@ function mapSyncLogRow(row) {
     ...(row.error ? { error: row.error } : {}),
     ...(row.divisions != null ? { divisions: row.divisions, standingsCount: row.standings_count, matchesCount: row.matches_count } : {}),
     ...(row.scope ? { scope: row.scope } : {}),
-    ...(divisionNames ? { divisionNames } : {})
+    ...(divisionNames ? { divisionNames } : {}),
+    ...(failedTabs && failedTabs.length ? { failedTabs } : {})
   };
 }
 
 function mapSyncSettingsRow(row) {
-  if (!row) return { autoSyncEnabled: false, intervalSeconds: 300, syncScope: 'all', selectedDivisions: [], spreadsheetId: null };
+  if (!row) return { autoSyncEnabled: false, intervalSeconds: 300, syncScope: 'all', selectedDivisions: [], spreadsheetId: null, googleSheetId: null, autoSyncExpiresAt: null };
   let selectedDivisions = [];
   if (row.selected_divisions) {
     try { selectedDivisions = JSON.parse(row.selected_divisions); if (!Array.isArray(selectedDivisions)) selectedDivisions = []; } catch (e) { selectedDivisions = []; }
@@ -359,14 +428,19 @@ function mapSyncSettingsRow(row) {
     syncScope: row.sync_scope || 'all',
     selectedDivisions,
     // Spreadsheet the stored divisions were last pulled from; sheetsSync
-    // compares this against SPREADSHEET_ID to detect a sheet swap.
-    spreadsheetId: row.spreadsheet_id || null
+    // compares this against the effective configured id to detect a swap.
+    spreadsheetId: row.spreadsheet_id || null,
+    // Superadmin-configured sync target (Settings page); falls back to the
+    // SPREADSHEET_ID env var when unset — see server/sheetsSync.js.
+    googleSheetId: row.google_sheet_id || null,
+    // Epoch ms when auto-sync switches itself off (see server/syncScheduler.js).
+    autoSyncExpiresAt: row.auto_sync_expires_at != null ? Number(row.auto_sync_expires_at) : null
   };
 }
 
 export async function getSyncStatus() {
   const [settingsRows] = await pool.query(
-    'SELECT auto_sync_enabled, interval_seconds, sync_scope, selected_divisions, spreadsheet_id FROM sync_settings WHERE id = 1'
+    'SELECT auto_sync_enabled, interval_seconds, sync_scope, selected_divisions, spreadsheet_id, google_sheet_id, auto_sync_expires_at FROM sync_settings WHERE id = 1'
   );
   const settings = mapSyncSettingsRow(settingsRows[0]);
 
@@ -379,24 +453,49 @@ export async function updateSyncSettings(patch) {
   const current = (await getSyncStatus()).settings;
   const next = { ...current, ...patch };
   await pool.query(
-    `INSERT INTO sync_settings (id, auto_sync_enabled, interval_seconds, sync_scope, selected_divisions, spreadsheet_id) VALUES (1, ?, ?, ?, ?, ?)
+    `INSERT INTO sync_settings (id, auto_sync_enabled, interval_seconds, sync_scope, selected_divisions, spreadsheet_id, google_sheet_id, auto_sync_expires_at) VALUES (1, ?, ?, ?, ?, ?, ?, ?)
      ON DUPLICATE KEY UPDATE auto_sync_enabled = VALUES(auto_sync_enabled), interval_seconds = VALUES(interval_seconds),
        sync_scope = VALUES(sync_scope), selected_divisions = VALUES(selected_divisions),
-       spreadsheet_id = VALUES(spreadsheet_id)`,
-    [next.autoSyncEnabled, next.intervalSeconds, next.syncScope, JSON.stringify(next.selectedDivisions || []), next.spreadsheetId || null]
+       spreadsheet_id = VALUES(spreadsheet_id), google_sheet_id = VALUES(google_sheet_id),
+       auto_sync_expires_at = VALUES(auto_sync_expires_at)`,
+    [next.autoSyncEnabled, next.intervalSeconds, next.syncScope, JSON.stringify(next.selectedDivisions || []), next.spreadsheetId || null, next.googleSheetId || null, next.autoSyncExpiresAt || null]
   );
   const status = await getSyncStatus();
   broadcastSyncStatus(status);
   return status;
 }
 
+export async function getFeatureSettings() {
+  const [rows] = await pool.query('SELECT champion_celebration_enabled, auto_update_official_results_enabled FROM feature_settings WHERE id = 1');
+  const row = rows[0];
+  return {
+    championCelebrationEnabled: row ? !!row.champion_celebration_enabled : true,
+    autoUpdateOfficialResultsEnabled: row ? !!row.auto_update_official_results_enabled : false
+  };
+}
+
+export async function updateFeatureSettings(patch) {
+  const current = await getFeatureSettings();
+  const next = { ...current, ...patch };
+  await pool.query(
+    `INSERT INTO feature_settings (id, champion_celebration_enabled, auto_update_official_results_enabled) VALUES (1, ?, ?)
+     ON DUPLICATE KEY UPDATE champion_celebration_enabled = VALUES(champion_celebration_enabled),
+       auto_update_official_results_enabled = VALUES(auto_update_official_results_enabled)`,
+    [next.championCelebrationEnabled, next.autoUpdateOfficialResultsEnabled]
+  );
+  const settings = await getFeatureSettings();
+  broadcastFeatureSettingsUpdate(settings);
+  return settings;
+}
+
 export async function recordSyncLog(entry) {
   await pool.query(
-    `INSERT INTO sync_log (timestamp, status, duration_ms, triggered_by, error, divisions, standings_count, matches_count, scope, division_names)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+    `INSERT INTO sync_log (timestamp, status, duration_ms, triggered_by, error, divisions, standings_count, matches_count, scope, division_names, failed_tabs)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
     [entry.timestamp, entry.status, entry.durationMs, entry.triggeredBy, entry.error || null,
       entry.divisions ?? null, entry.standingsCount ?? null, entry.matchesCount ?? null,
-      entry.scope || null, entry.divisionNames ? JSON.stringify(entry.divisionNames) : null]
+      entry.scope || null, entry.divisionNames ? JSON.stringify(entry.divisionNames) : null,
+      entry.failedTabs && entry.failedTabs.length ? JSON.stringify(entry.failedTabs) : null]
   );
   await pool.query(
     `DELETE FROM sync_log WHERE id NOT IN (SELECT id FROM (SELECT id FROM sync_log ORDER BY timestamp DESC LIMIT ?) keep)`,
@@ -520,6 +619,64 @@ export async function deleteChatMessage(id) {
   const list = await getChatMessages();
   broadcastChatUpdate(list);
   return list;
+}
+
+function mapSessionRow(row) {
+  return {
+    sessionId: row.session_id,
+    role: row.role,
+    name: row.name,
+    court: row.court,
+    ip: row.ip,
+    userAgent: row.user_agent,
+    os: row.os,
+    browser: row.browser,
+    device: row.device,
+    loginAt: Number(row.login_at),
+    lastActivityAt: Number(row.last_activity_at),
+    logoutAt: row.logout_at === null ? null : Number(row.logout_at),
+    active: !!row.active
+  };
+}
+
+const MAX_SESSION_ENTRIES = 500;
+
+export async function recordLogin({ sessionId, role, name, court, ip, userAgent, os, browser, device }) {
+  const now = Date.now();
+  await pool.query(
+    `INSERT INTO sessions (session_id, role, name, court, ip, user_agent, os, browser, device, login_at, last_activity_at, logout_at, active)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NULL, TRUE)`,
+    [sessionId, role, name || '', court || null, ip || '', userAgent || '', os || '', browser || '', device || '', now, now]
+  );
+
+  // Prune oldest ended sessions once history grows past the cap — never
+  // removes an active session.
+  await pool.query(
+    `DELETE FROM sessions WHERE active = FALSE AND session_id NOT IN (
+       SELECT session_id FROM (
+         SELECT session_id FROM sessions ORDER BY login_at DESC LIMIT ?
+       ) keep
+     )`,
+    [MAX_SESSION_ENTRIES]
+  );
+}
+
+export async function touchSession(sessionId) {
+  await pool.query('UPDATE sessions SET last_activity_at = ? WHERE session_id = ?', [Date.now(), sessionId]);
+}
+
+export async function endSession(sessionId) {
+  await pool.query('UPDATE sessions SET active = FALSE, logout_at = ? WHERE session_id = ?', [Date.now(), sessionId]);
+}
+
+export async function getActiveSessions() {
+  const [rows] = await pool.query('SELECT * FROM sessions WHERE active = TRUE');
+  return rows.map(mapSessionRow);
+}
+
+export async function getLoginHistory(limit = 200) {
+  const [rows] = await pool.query('SELECT * FROM sessions ORDER BY login_at DESC LIMIT ?', [limit]);
+  return rows.map(mapSessionRow);
 }
 
 export async function adjustTimer(sheetName, deltaSeconds) {

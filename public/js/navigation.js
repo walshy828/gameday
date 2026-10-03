@@ -2,6 +2,7 @@ import { getDivisions } from './api.js';
 import { initSettingsView } from './settings.js';
 import { onChatTabOpened } from './chat.js';
 import { renderPlayoffsView } from './playoffs.js';
+import { renderStandings } from './standings.js';
 
 /**
  * Fetches all division (sheet) names via the /api/divisions REST endpoint.
@@ -70,6 +71,7 @@ function renderGateDivisions() {
 /** Shows the Gate screen and hides the app shell. */
 function showGate() {
     App.state.screen = 'gate';
+    document.documentElement.classList.remove('chat-locked');
     document.getElementById('gate-screen')?.classList.remove('hidden');
     document.getElementById('app-screen')?.classList.add('hidden');
     document.getElementById('bottom-tab-bar')?.classList.add('hidden');
@@ -275,14 +277,62 @@ function updateSheetInfoDisplay() {
 
 
 /**
+ * Persisted schedule/admin filter state, per division, in localStorage
+ * (`scheduleFilters` → { [division]: { team, court, adminTeam, adminCourt,
+ * hideFinished, hidePlayed, subAll } }) so the filters survive a reload.
+ * The sub division itself is NOT stored here — it's the shared
+ * get/setSelectedSubDivision value (also used by Standings/Playoffs); only
+ * the "All sub divisions" choice (`subAll`), which those tabs can't
+ * represent, lives here.
+ */
+const FILTER_STORAGE_KEY = 'scheduleFilters';
+
+function readFilterMap() {
+    try {
+        return JSON.parse(localStorage.getItem(FILTER_STORAGE_KEY) || '{}');
+    } catch {
+        return {};
+    }
+}
+
+function getStoredFilters() {
+    return readFilterMap()[App.config.currentSheetName] || {};
+}
+
+function saveFilter(key, value) {
+    const name = App.config.currentSheetName;
+    if (!name) return;
+    const map = readFilterMap();
+    map[name] = { ...(map[name] || {}), [key]: value };
+    try {
+        localStorage.setItem(FILTER_STORAGE_KEY, JSON.stringify(map));
+    } catch { /* storage unavailable — filters just won't persist */ }
+}
+
+let lastFilterDivision = null;
+
+const SUB_DIVISION_SELECT_IDS = ['sub-division-select', 'admin-sub-division-select'];
+
+/**
  * Populates the team and court filter dropdowns for both public and admin views.
+ * The passed-in values are the live selections to keep across data refreshes;
+ * on first load (and whenever the division changes) the persisted values for
+ * the division take over.
  */
 function initializeFilter(retainedTeam = 'all', retainedCourt = 'all', retainedAdminTeam = 'all', retainedAdminCourt = 'all') {
+    const division = App.config.currentSheetName;
+    const divisionChanged = !!division && division !== lastFilterDivision;
+    const stored = divisionChanged ? getStoredFilters() : {};
+    // Passed values came from a different division on a division switch, so
+    // fall back to 'all' there; on the very first load they're still useful
+    // (e.g. the court manager's login-court default).
+    const fallback = (v) => (lastFilterDivision === null ? v : 'all');
+
     const filters = [
-        { id: 'team-select', retained: retainedTeam, type: 'team' },
-        { id: 'court-select', retained: retainedCourt, type: 'court' },
-        { id: 'admin-team-select', retained: retainedAdminTeam, type: 'team' },
-        { id: 'admin-court-select', retained: retainedAdminCourt, type: 'court' }
+        { id: 'team-select', key: 'team', retained: stored.team ?? fallback(retainedTeam), type: 'team' },
+        { id: 'court-select', key: 'court', retained: stored.court ?? fallback(retainedCourt), type: 'court' },
+        { id: 'admin-team-select', key: 'adminTeam', retained: stored.adminTeam ?? fallback(retainedAdminTeam), type: 'team' },
+        { id: 'admin-court-select', key: 'adminCourt', retained: stored.adminCourt ?? fallback(retainedAdminCourt), type: 'court' }
     ];
 
     filters.forEach(filter => {
@@ -296,20 +346,150 @@ function initializeFilter(retainedTeam = 'all', retainedCourt = 'all', retainedA
         select.appendChild(allOption);
 
         const data = filter.type === 'team' ? App.data.teamNames : App.data.courtNames;
-        
+
         data.forEach(item => {
             const option = document.createElement('option');
             option.value = item;
             option.textContent = item;
             select.appendChild(option);
         });
-        
+
         if (data.includes(filter.retained)) {
             select.value = filter.retained;
         } else {
             select.value = 'all';
         }
+
+        if (!select.dataset.persistBound) {
+            select.dataset.persistBound = '1';
+            select.addEventListener('change', () => saveFilter(filter.key, select.value));
+        }
     });
+
+    [
+        { id: 'hide-finished-toggle', key: 'hideFinished' },
+        { id: 'hide-played-toggle', key: 'hidePlayed' }
+    ].forEach(({ id, key }) => {
+        const toggle = document.getElementById(id);
+        if (!toggle) return;
+        if (divisionChanged) toggle.checked = !!stored[key];
+        if (!toggle.dataset.persistBound) {
+            toggle.dataset.persistBound = '1';
+            toggle.addEventListener('change', () => saveFilter(key, toggle.checked));
+        }
+    });
+
+    if (division) lastFilterDivision = division;
+
+    initializeSubDivisionFilter();
+}
+
+/**
+ * Populates (and shows/hides) the sub-division filter dropdowns on the
+ * Schedule and Admin views. Only shown when the current division actually
+ * has 2+ distinct sub divisions in its schedule data — a v2 tab or a
+ * single-pool v3 tab never carries a non-empty `subDivision` value, so the
+ * control stays hidden and nothing else about those views changes.
+ */
+function getSubDivisionNames() {
+    const names = new Set();
+    (App.data.allScheduleData || []).forEach(g => { if (g.subDivision) names.add(g.subDivision); });
+    return [...names].sort();
+}
+
+/**
+ * Shared, persisted "currently selected sub division" — the Standings and
+ * Playoffs tabs both read/write this (instead of each keeping their own
+ * module-local variable) so picking a sub division in one tab is reflected
+ * in the other immediately, and survives reloads/future visits. Scoped per
+ * division (keyed by `App.config.currentSheetName`) so switching divisions
+ * doesn't leak one division's selection into another's.
+ */
+const SUBDIVISION_STORAGE_KEY = 'selectedSubDivision';
+
+function readSubDivisionMap() {
+    try {
+        return JSON.parse(localStorage.getItem(SUBDIVISION_STORAGE_KEY) || '{}');
+    } catch {
+        return {};
+    }
+}
+
+function getSelectedSubDivision() {
+    return readSubDivisionMap()[App.config.currentSheetName] || null;
+}
+
+/**
+ * `auto` marks Standings/Playoffs falling back to a default (nothing valid
+ * stored) — that must not cancel a deliberate "All sub divisions" choice on
+ * the Schedule/Admin filters.
+ */
+function setSelectedSubDivision(name, { auto = false } = {}) {
+    if (!auto && name) saveFilter('subAll', false);
+    const map = readSubDivisionMap();
+    if (name) {
+        map[App.config.currentSheetName] = name;
+    } else {
+        delete map[App.config.currentSheetName];
+    }
+    localStorage.setItem(SUBDIVISION_STORAGE_KEY, JSON.stringify(map));
+    syncSubDivisionSelects();
+}
+
+/** Points both Schedule/Admin sub-division selects at the shared selection. */
+function syncSubDivisionSelects() {
+    const value = getStoredFilters().subAll ? 'all' : (getSelectedSubDivision() || 'all');
+    SUB_DIVISION_SELECT_IDS.forEach(id => {
+        const select = document.getElementById(id);
+        if (!select) return;
+        const hasOption = [...select.options].some(o => o.value === value);
+        select.value = hasOption ? value : 'all';
+    });
+}
+
+function initializeSubDivisionFilter() {
+    const subDivisions = getSubDivisionNames();
+    const show = subDivisions.length > 1;
+
+    [
+        { wrapperId: 'sub-division-select-wrapper', selectId: 'sub-division-select' },
+        { wrapperId: 'admin-sub-division-select-wrapper', selectId: 'admin-sub-division-select' }
+    ].forEach(({ wrapperId, selectId }) => {
+        const wrapper = document.getElementById(wrapperId);
+        const select = document.getElementById(selectId);
+        if (!wrapper || !select) return;
+
+        wrapper.classList.toggle('hidden', !show);
+        if (!show) return;
+
+        select.innerHTML = '';
+        const allOption = document.createElement('option');
+        allOption.value = 'all';
+        allOption.textContent = 'All sub divisions';
+        select.appendChild(allOption);
+        subDivisions.forEach(name => {
+            const option = document.createElement('option');
+            option.value = name;
+            option.textContent = name;
+            select.appendChild(option);
+        });
+
+        if (!select.dataset.persistBound) {
+            select.dataset.persistBound = '1';
+            select.addEventListener('change', () => {
+                if (select.value === 'all') {
+                    saveFilter('subAll', true);
+                    syncSubDivisionSelects();
+                } else {
+                    setSelectedSubDivision(select.value);
+                }
+                // Standings isn't re-rendered on tab switch; keep it in step.
+                renderStandings(App.data.allStandingsData);
+            });
+        }
+    });
+
+    syncSubDivisionSelects();
 }
 
 /**
@@ -317,6 +497,7 @@ function initializeFilter(retainedTeam = 'all', retainedCourt = 'all', retainedA
  */
 function switchView(view) {
     App.state.currentView = view;
+    document.documentElement.classList.toggle('chat-locked', view === 'chat');
     //gtag('event', 'switch_view', {
     //                view: view
     //                });
@@ -373,6 +554,9 @@ export {
     renderGateDivisions,
     handleDivisionChange,
     initializeFilter,
+    getSubDivisionNames,
+    getSelectedSubDivision,
+    setSelectedSubDivision,
     switchView,
     showGate,
     goToGate,

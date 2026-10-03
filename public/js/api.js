@@ -64,8 +64,28 @@ export async function getDivisions() {
   return await apiGet(`/divisions`);
 }
 
-export async function validateAdmin(password) {
-  return await apiPost(`/validateAdmin`, { password });
+export async function validateAdmin(password, reporterName, court, sessionId) {
+  return await apiPost(`/validateAdmin`, { password, reporterName, court, sessionId });
+}
+
+export async function sendSessionHeartbeat(authToken, sessionId) {
+  return await apiPost(`/session/heartbeat`, { authToken, sessionId });
+}
+
+export async function endSession(authToken, sessionId) {
+  return await apiPost(`/session/logout`, { authToken, sessionId });
+}
+
+export async function getActiveSessions(authToken) {
+  return await apiGet(`/session/active?authToken=${encodeURIComponent(authToken)}`);
+}
+
+export async function getLoginHistory(authToken) {
+  return await apiGet(`/session/history?authToken=${encodeURIComponent(authToken)}`);
+}
+
+export async function getPresence(authToken) {
+  return await apiGet(`/presence?authToken=${encodeURIComponent(authToken)}`);
 }
 
 export async function saveMatchResult(authToken, matchData) {
@@ -92,6 +112,10 @@ export async function updateSheetSyncSettings(authToken, patch) {
   return await apiPost(`/sheetSync/settings`, { authToken, ...patch });
 }
 
+export async function updateFeatureSettings(authToken, patch) {
+  return await apiPost(`/featureSettings`, { authToken, ...patch });
+}
+
 export async function getAnnouncements() {
   return await apiGet(`/announcements`);
 }
@@ -112,8 +136,8 @@ export async function getChatMessages() {
   return await apiGet(`/chat`);
 }
 
-export async function postChatMessage(authToken, text, reporterName, court) {
-  return await apiPost(`/chat`, { authToken, text, reporterName, court });
+export async function postChatMessage(authToken, text, reporterName, court, sessionId) {
+  return await apiPost(`/chat`, { authToken, text, reporterName, court, sessionId });
 }
 
 export async function deleteChatMessage(authToken, id) {

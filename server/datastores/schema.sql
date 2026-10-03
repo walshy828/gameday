@@ -17,6 +17,7 @@ CREATE TABLE IF NOT EXISTS standings (
   record VARCHAR(64),
   points VARCHAR(64),
   sort_order INT NOT NULL DEFAULT 0,
+  sub_division VARCHAR(191) NULL,
   INDEX idx_standings_division (division)
 );
 
@@ -42,6 +43,7 @@ CREATE TABLE IF NOT EXISTS schedule (
   adminPlayersRemaining VARCHAR(64),
   notes TEXT,
   lastUpdated DATETIME NULL,
+  sub_division VARCHAR(191) NULL,
   UNIQUE KEY uq_schedule_div_idx (division, match_index),
   INDEX idx_schedule_division (division)
 );
@@ -79,7 +81,14 @@ CREATE TABLE IF NOT EXISTS sync_settings (
   interval_seconds INT NOT NULL DEFAULT 300,
   sync_scope VARCHAR(16) NOT NULL DEFAULT 'all',
   selected_divisions TEXT NULL,
-  spreadsheet_id VARCHAR(191) NULL
+  spreadsheet_id VARCHAR(191) NULL,
+  -- Superadmin-configured sync target (Settings page "Google Sheet ID"),
+  -- distinct from spreadsheet_id above (which tracks the id stored data was
+  -- LAST pulled from, for swap/prune detection). Falls back to the
+  -- SPREADSHEET_ID env var when unset — see server/sheetsSync.js.
+  google_sheet_id VARCHAR(191) NULL,
+  -- Epoch ms when auto-sync switches itself off (AUTO_SYNC_TIMEOUT_HOURS).
+  auto_sync_expires_at BIGINT NULL
 );
 
 -- Superadmin Settings page: log of each Google Sheet sync attempt.
@@ -95,6 +104,7 @@ CREATE TABLE IF NOT EXISTS sync_log (
   matches_count INT,
   scope VARCHAR(16),
   division_names TEXT,
+  failed_tabs TEXT,
   INDEX idx_sync_log_timestamp (timestamp)
 );
 
@@ -120,6 +130,35 @@ CREATE TABLE IF NOT EXISTS chat_messages (
   text TEXT NOT NULL,
   ts BIGINT NOT NULL,
   INDEX idx_chat_ts (ts)
+);
+
+-- Login/session tracking: one row per admin/superadmin/parent login,
+-- keyed by a client-generated sessionId. `active` + `last_activity_at`
+-- (updated by a client heartbeat) drive the Setup page's "Signed-in users"
+-- and "Sign-in history" modules.
+CREATE TABLE IF NOT EXISTS sessions (
+  session_id VARCHAR(64) PRIMARY KEY,
+  role VARCHAR(16) NOT NULL,
+  name VARCHAR(191),
+  court VARCHAR(64) NULL,
+  ip VARCHAR(64),
+  user_agent VARCHAR(512),
+  os VARCHAR(32),
+  browser VARCHAR(32),
+  device VARCHAR(16),
+  login_at BIGINT NOT NULL,
+  last_activity_at BIGINT NOT NULL,
+  logout_at BIGINT NULL,
+  active BOOLEAN NOT NULL DEFAULT TRUE,
+  INDEX idx_sessions_active (active),
+  INDEX idx_sessions_login_at (login_at)
+);
+
+-- Superadmin Settings page: global feature toggles, single row.
+CREATE TABLE IF NOT EXISTS feature_settings (
+  id INT PRIMARY KEY DEFAULT 1,
+  champion_celebration_enabled BOOLEAN NOT NULL DEFAULT TRUE,
+  auto_update_official_results_enabled BOOLEAN NOT NULL DEFAULT FALSE
 );
 
 -- Existing audit-log table (already written to unconditionally by
