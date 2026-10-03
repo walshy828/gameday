@@ -2,7 +2,7 @@
  * Renders the standings data.
  */
 import { updateAdminUI } from './admin.js';
-import { getSelectedSubDivision, setSelectedSubDivision } from './navigation.js';
+import { getSubDivisionNames, getSelectedSubDivision, setSelectedSubDivision } from './navigation.js';
 
 /** Escapes a value for safe interpolation into a template-literal row. */
 function esc(str) {
@@ -28,7 +28,7 @@ let lastRawStandingsData = [];
 function applySubDivisionToggle(data) {
     lastRawStandingsData = data;
     const toggle = document.getElementById('standings-subdivision-toggle');
-    const groups = [...new Set(data.map(item => item.subDivision).filter(Boolean))];
+    const groups = getSubDivisionNames();
 
     let selected = getSelectedSubDivision();
     if (!groups.includes(selected)) {

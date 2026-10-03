@@ -402,9 +402,15 @@ function initializeFilter(retainedTeam = 'all', retainedCourt = 'all', retainedA
  * control stays hidden and nothing else about those views changes.
  */
 function getSubDivisionNames() {
+    // One canonical list for every tab: standings order first (the sheet's
+    // configured group order, e.g. Pool A before Pool B), then any names only
+    // the schedule knows about. Never sort alphabetically here — Standings,
+    // Schedule and Playoffs must all show the same order and the same default.
     const names = new Set();
+    const standings = App.data.allStandingsData?.length ? App.data.allStandingsData : (App.data.standings || []);
+    standings.forEach(s => { if (s.subDivision) names.add(s.subDivision); });
     (App.data.allScheduleData || []).forEach(g => { if (g.subDivision) names.add(g.subDivision); });
-    return [...names].sort();
+    return [...names];
 }
 
 /**
