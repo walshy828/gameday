@@ -15,6 +15,7 @@ import { getSocket } from './socketClient.js';
 
 const IS_LOCAL_BACKEND = window.__DATA_BACKEND__ === 'local';
 const SEEN_KEYS = { crew: 'chatSeen', lead: 'chatSeenLead' };
+const LAST_CHANNEL_KEY = 'chatLastChannel';
 const LEAD_POLL_INTERVAL_MS = 5000; // firebase mode: lead messages aren't on a client-readable RTDB listener
 const AT_BOTTOM_THRESHOLD = 48; // px of slack before we consider the user "scrolled away"
 const PRESENCE_POLL_INTERVAL_MS = 15000;
@@ -217,6 +218,7 @@ function renderChannelBar() {
 function switchChatChannel(ch) {
   if (!CHANNEL_META[ch] || (ch === 'lead' && !canLead()) || ch === active) return;
   active = ch;
+  try { localStorage.setItem(LAST_CHANNEL_KEY, ch); } catch (e) { /* storage unavailable */ }
   chatOpenSeenSnapshot = seenFor(ch);
   showHistory = false;
   confirmDeleteId = null;
@@ -437,9 +439,12 @@ function renderUnreadDot() {
     dot.classList.add('hidden');
     return;
   }
-  // Leadership unread wins the dot color (violet) so it can't be mistaken for crew chatter.
-  const isAdminUnread = data.crew.some(m => m.mgr && m.id > seenFor('crew') && isRecent(m));
-  dot.style.background = leadUnread ? 'var(--lead-a)' : isAdminUnread ? 'var(--warn)' : 'var(--mar-l)';
+  // Crew = red, leadership = purple, both = split red/purple.
+  const crewColor = 'var(--warn)';
+  const leadColor = 'var(--lead-a)';
+  dot.style.background = crewUnread && leadUnread
+    ? `linear-gradient(90deg, ${crewColor} 50%, ${leadColor} 50%)`
+    : leadUnread ? leadColor : crewColor;
   dot.classList.remove('hidden');
 }
 
@@ -449,6 +454,23 @@ function onChatTabOpened() {
   // fixed anchor for the whole visit instead of chasing SEEN_KEY as the
   // IntersectionObserver marks messages read one by one.
   syncChatRole();
+  // Land on the channel with unread messages; if both have some, stay on the
+  // one this user last viewed.
+  if (canLead()) {
+    const crewUnread = unreadCount('crew');
+    const leadUnread = unreadCount('lead');
+    let last = 'crew';
+    try { last = localStorage.getItem(LAST_CHANNEL_KEY) || active; } catch (e) { last = active; }
+    const target = crewUnread && !leadUnread ? 'crew'
+      : leadUnread && !crewUnread ? 'lead'
+      : (last === 'lead' ? 'lead' : 'crew');
+    if (target !== active) {
+      active = target;
+      pendingJumpCount = 0;
+      hideJumpButton();
+      renderChannelBar();
+    }
+  }
   chatOpenSeenSnapshot = seenFor(active);
   showHistory = false;
   window.scrollTo(0, 0);
