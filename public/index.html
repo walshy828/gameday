@@ -949,6 +949,24 @@
                     <p class="text-sm text-white/50 col-span-2">Loading divisions…</p>
                 </div>
             </div>
+
+            <!-- ADMIN PANEL — superadmin only (toggled in admin.js updateGateAdminUI) -->
+            <div id="gate-admin-panel" class="card-dark mt-4 p-4 hidden">
+                <div class="px-1 pb-3">
+                    <span class="text-[10px] tracking-[.16em] font-semibold text-white/50 uppercase">Admin Panel</span>
+                </div>
+                <div class="grid gap-2.5" style="grid-template-columns:repeat(auto-fit,minmax(150px,1fr))">
+                    <button type="button" onclick="openSettingsFromGate()"
+                        class="rounded-xl border border-white/20 bg-white/[.06] px-4 py-3 text-sm font-semibold text-white/85 text-left">
+                        Settings<span class="block text-[11px] font-normal text-white/50">Setup, sync &amp; sessions</span></button>
+                    <a id="gate-sheet-link" href="#" target="_blank" rel="noopener noreferrer"
+                        class="hidden rounded-xl border border-white/20 bg-white/[.06] px-4 py-3 text-sm font-semibold text-white/85">
+                        Google Sheet<span class="block text-[11px] font-normal text-white/50">Open the tournament spreadsheet</span></a>
+                    <a href="/scoreboard.html" target="_blank" rel="noopener noreferrer"
+                        class="rounded-xl border border-white/20 bg-white/[.06] px-4 py-3 text-sm font-semibold text-white/85">
+                        Tournament Leaderboard<span class="block text-[11px] font-normal text-white/50">Full-screen tournament display</span></a>
+                </div>
+            </div>
         </div>
 
         <div class="flex items-center gap-3 mt-10">
@@ -956,8 +974,6 @@
                 program..</div>
             <div class="flex-none flex flex-col items-end gap-1.5 max-w-[48%]">
                 <div class="flex items-center gap-1.5">
-                    <button id="gate-settings-btn" onclick="openSettingsFromGate()"
-                        class="hidden rounded-full border border-white/20 bg-white/[.06] px-4 py-3 text-xs font-semibold text-white/75">Settings</button>
                     <button id="gate-admin-btn" onclick="showAdminLoginModal()"
                         class="pill-gold px-4 py-3 text-xs font-semibold">Admin login</button>
                 </div>

@@ -1,5 +1,5 @@
 // Avoid importing from main.js (circular). Use the api wrapper directly.
-import { validateAdmin, saveMatchResult as apiSaveMatchResult, sendSessionHeartbeat, endSession as apiEndSession, runSheetSync } from './api.js';
+import { validateAdmin, saveMatchResult as apiSaveMatchResult, sendSessionHeartbeat, endSession as apiEndSession, runSheetSync, getSheetSyncConfig } from './api.js';
 import {
     getFilterableTeamName, parseRoundTime,
     getRoundOrder, getRosterTeams, getByeTeams,
@@ -447,6 +447,24 @@ function renderAdminMatchEntryNow() {
 if (typeof window !== 'undefined') window.renderAdminMatchEntryNow = renderAdminMatchEntryNow;
 
 
+/** Points the gate's Admin Panel "Google Sheet" link at the configured spreadsheet (hidden if none). */
+async function loadGateSheetLink() {
+    const link = document.getElementById('gate-sheet-link');
+    const authToken = sessionStorage.getItem('adminAuthToken');
+    if (!link || !authToken) return;
+    try {
+        const cfg = await getSheetSyncConfig(authToken);
+        if (cfg && cfg.spreadsheetUrl) {
+            link.href = cfg.spreadsheetUrl;
+            link.classList.remove('hidden');
+        } else {
+            link.classList.add('hidden');
+        }
+    } catch (e) {
+        console.error('Failed to load sheet link', e);
+    }
+}
+
 /**
  * Shows login state on the division gate (Admin login button vs. Log out +
  * "Signed in as …") and a small signed-in badge in the app header.
@@ -454,7 +472,7 @@ if (typeof window !== 'undefined') window.renderAdminMatchEntryNow = renderAdmin
 function updateGateAdminUI(loggedIn) {
     const btn = document.getElementById('gate-admin-btn');
     const who = document.getElementById('gate-admin-who');
-    const settingsBtn = document.getElementById('gate-settings-btn');
+    const adminPanel = document.getElementById('gate-admin-panel');
     const badge = document.getElementById('header-staff-badge');
     const badgeName = document.getElementById('header-staff-name');
     const name = App.state.reporterName || 'Staff';
@@ -466,7 +484,9 @@ function updateGateAdminUI(loggedIn) {
         btn.textContent = loggedIn ? 'Log out' : 'Admin login';
         btn.onclick = loggedIn ? logoutAdmin : showAdminLoginModal;
     }
-    if (settingsBtn) settingsBtn.classList.toggle('hidden', !(loggedIn && App.state.isSuperAdmin));
+    const showPanel = !!(loggedIn && App.state.isSuperAdmin);
+    if (adminPanel) adminPanel.classList.toggle('hidden', !showPanel);
+    if (showPanel) loadGateSheetLink();
     if (who) {
         who.classList.toggle('hidden', !loggedIn);
         who.textContent = loggedIn ? `Signed in as ${name} · ${role}` : '';
