@@ -304,6 +304,22 @@
             display: none;
         }
 
+        /* Result-discrepancy dot (superadmin): amber, on the ADMIN tab icon */
+        #discrepancy-dot {
+            position: absolute;
+            top: -3px;
+            right: -6px;
+            width: 9px;
+            height: 9px;
+            border-radius: 999px;
+            background: var(--gold);
+            border: 1.5px solid rgba(20, 20, 22, .9);
+        }
+
+        #discrepancy-dot.hidden {
+            display: none;
+        }
+
         /* Chat channels: crew = maroon (everyone), lead = violet (admins & parents only) */
         :root { --lead-a: #8B7CF6; --lead-b: #5B4BC4; }
         #chat-view {
@@ -1723,7 +1739,7 @@
             <span class="tab-icon">📣</span><span class="tab-label">INFO</span>
         </button>
         <button id="admin-entry-tab" onclick="switchView('admin-entry')" class="tab-button hidden">
-            <span class="tab-icon">🛠️</span><span class="tab-label">ADMIN</span>
+            <span class="tab-icon">🛠️<span id="discrepancy-dot" class="hidden" title="Results need review"></span></span><span class="tab-label">ADMIN</span>
         </button>
         <button id="chat-tab" onclick="switchView('chat')" class="tab-button hidden">
             <span class="tab-icon">💬<span id="chat-unread-dot" class="hidden"></span></span><span

@@ -3,9 +3,103 @@ import { validateAdmin, saveMatchResult as apiSaveMatchResult, sendSessionHeartb
 import {
     getFilterableTeamName, parseRoundTime,
     getRoundOrder, getRosterTeams, getByeTeams,
-    isReported as isReportedOfficial
+    isReported as isReportedOfficial,
+    hasDiscrepancy
 } from './schedule.js';
 import { switchView } from './navigation.js';
+
+// --- Result discrepancies (superadmin) -------------------------------------
+// A referee-submitted result that differs from the official one. Dismissals
+// are remembered per browser, keyed on the reported values, so a new referee
+// edit re-opens the item. (Shared cross-superadmin state is a later phase.)
+
+const discKey = g => `discDismissed:${App.config.currentSheetName}:${g.match || `${g.roundTime}|${g.court}|${g.team1}|${g.team2}`}`;
+const discSig = g => `${(g.adminWinner || '').trim()}|${g.adminPlayersRemaining ?? ''}|${(g.winner || '').trim()}|${g.playersRemaining ?? ''}`;
+
+function isDiscrepancyDismissed(g) {
+    try { return localStorage.getItem(discKey(g)) === discSig(g); } catch { return false; }
+}
+
+function getOpenDiscrepancies() {
+    if (!App.state.isSuperAdmin || !Array.isArray(App.data.allScheduleData)) return [];
+    return App.data.allScheduleData.filter(g => hasDiscrepancy(g) && !isDiscrepancyDismissed(g));
+}
+
+/** Amber dot on the ADMIN tab while any discrepancy is open. Never moves layout. */
+function updateDiscrepancyBadge() {
+    const dot = document.getElementById('discrepancy-dot');
+    if (!dot) return;
+    const n = getOpenDiscrepancies().length;
+    dot.classList.toggle('hidden', n === 0);
+    dot.title = n ? `${n} result${n === 1 ? '' : 's'} need review` : '';
+}
+
+function dismissDiscrepancy(gameIndex) {
+    const g = App.data.allScheduleData[gameIndex];
+    if (!g) return;
+    try { localStorage.setItem(discKey(g), discSig(g)); } catch { /* storage unavailable */ }
+    renderAdminMatchEntryViewImpl();
+    updateDiscrepancyBadge();
+}
+
+/** Makes the referee-reported result the official one (same path as the modal's "submit as official"). */
+async function useReportedResult(gameIndex) {
+    const g = App.data.allScheduleData[gameIndex];
+    const authToken = sessionStorage.getItem('adminAuthToken');
+    if (!g || !authToken) return;
+    if (!confirm(`Set official result to the reported one (${g.adminWinner}, ${g.adminPlayersRemaining ?? 0} left, reported by ${g.adminName || 'referee'})?`)) return;
+    try {
+        const result = await apiSaveMatchResult(authToken, {
+            sheetName: App.config.currentSheetName,
+            rowIndex: g.rowIndex,
+            firebaseIndex: g.firebaseIndex,
+            team1: g.team1,
+            team2: g.team2,
+            winner: g.adminWinner,
+            playersRemaining: parseInt(g.adminPlayersRemaining) || 0,
+            adminName: App.state.reporterName || g.adminName || 'Tournament manager',
+            notes: `Official set from result reported by ${g.adminName || 'referee'}`,
+            setOfficial: true
+        });
+        if (!result.success) throw new Error(result.error || 'Server reported failure.');
+        await loadData(App.config.currentSheetName);
+    } catch (e) {
+        console.error('Use reported failed:', e);
+        showStatus(`Could not update official result: ${e.message}`, true);
+        setTimeout(() => showStatus(null), 6000);
+    }
+}
+
+/** "Needs review" card pinned above the match list (superadmin only). */
+function renderDiscrepancyPanel(container) {
+    const open = getOpenDiscrepancies();
+    if (!open.length) return;
+    const card = document.createElement('section');
+    card.className = 'rounded-[26px] border p-3.5';
+    card.style.background = 'rgba(224,184,99,.07)';
+    card.style.borderColor = 'rgba(224,184,99,.45)';
+    const fmt = (w, n) => `${esc((w || '—').trim() || '—')}${n !== undefined && n !== null && n !== '' ? ` · ${esc(String(n))} left` : ''}`;
+    card.innerHTML = `
+        <div class="text-[11px] font-semibold tracking-[.08em]" style="color:var(--gold-l)">NEEDS REVIEW (${open.length})</div>
+        <div class="mt-2 grid gap-[5px]">
+            ${open.map(g => {
+                const i = App.data.allScheduleData.indexOf(g);
+                return `
+                <div class="rounded-2xl px-3 py-2.5" style="background:rgba(255,255,255,.05)">
+                    <div class="text-[11px] font-semibold" style="color:rgba(255,255,255,.86)">${esc(g.roundTime || '')} · C${esc(g.court || '?')} · ${esc(g.team1)} vs ${esc(g.team2)}</div>
+                    <div class="mt-1 text-[11px]" style="color:var(--ok)">Official: ${fmt(g.winner, g.playersRemaining)}</div>
+                    <div class="text-[11px]" style="color:var(--gold-l)">Reported by ${esc(g.adminName || '—')}: ${fmt(g.adminWinner, g.adminPlayersRemaining)}</div>
+                    <div class="mt-2 flex gap-1.5">
+                        <button onclick="useReportedResult(${i})" class="rounded-[13px] px-3 py-2 text-[11px] font-semibold leading-none" style="background:linear-gradient(135deg,var(--gold) 0%,var(--gold-d) 100%);color:#2A1B08;border:0">Use reported</button>
+                        <button onclick="showMatchEntryModal(${i})" class="rounded-[13px] px-3 py-2 text-[11px] font-semibold leading-none" style="background:rgba(255,255,255,.08);color:rgba(255,255,255,.85);border:1px solid rgba(255,255,255,.14)">Edit</button>
+                        <button onclick="dismissDiscrepancy(${i})" class="rounded-[13px] px-3 py-2 text-[11px] font-semibold leading-none" style="background:rgba(255,255,255,.08);color:rgba(255,255,255,.85);border:1px solid rgba(255,255,255,.14)">Keep official</button>
+                    </div>
+                </div>`;
+            }).join('')}
+        </div>
+    `;
+    container.appendChild(card);
+}
 
 /** A game counts as reported for admin purposes once it has an admin-submitted or official result. */
 function isAdminReported(game) {
@@ -121,6 +215,8 @@ function renderAdminMatchEntryViewImpl() {
     }, {});
 
     matchListDiv.innerHTML = '';
+    renderDiscrepancyPanel(matchListDiv);
+    updateDiscrepancyBadge();
 
     // ... (Filter Info rendering logic remains the same) ...
 
@@ -517,6 +613,7 @@ function updateAdminUI() {
     const loggedIn = App.state.isAdmin || App.state.isParent;
 
     updateGateAdminUI(loggedIn);
+    updateDiscrepancyBadge();
     window.syncChatRole?.();
 
     if (loggedIn) {
@@ -1120,6 +1217,9 @@ function checkLoginStatus() {
 
     // The updateAdminUI() call below will handle showing the correct buttons.
 }
+
+window.useReportedResult = useReportedResult;
+window.dismissDiscrepancy = dismissDiscrepancy;
 
 export {
     updateAdminMatchEntryView,
