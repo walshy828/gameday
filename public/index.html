@@ -1469,22 +1469,6 @@
                         </div>
 
                         <div class="mt-3.5 grid gap-2.5">
-                            <!-- 0. Result-discrepancy alerts (this browser only) -->
-                            <section class="card-dark p-4">
-                                <div class="flex items-center justify-between gap-3">
-                                    <div class="min-w-0">
-                                        <h3 class="text-lg font-bold text-white">⚠️ Result discrepancy alerts</h3>
-                                        <p class="text-[11px] text-white/50">When a referee's result differs from official. Applies to this device only — set the clock operator's to “Off”.</p>
-                                    </div>
-                                    <select id="discrepancy-pref-select" onchange="setDiscrepancyPref(this.value)"
-                                        class="flex-none rounded-lg border border-white/20 bg-white/[.06] px-2 py-2 text-sm text-white">
-                                        <option value="full">Full</option>
-                                        <option value="dot">Dot only</option>
-                                        <option value="off">Off</option>
-                                    </select>
-                                </div>
-                            </section>
-
                             <!-- 1. Auto-Update Official Results -->
                             <section class="card-dark p-4">
                                 <div class="flex items-center justify-between gap-3">
@@ -1735,6 +1719,22 @@
                                             onchange="toggleChampionCelebration(this.checked)">
                                         <span class="slider round"></span>
                                     </label>
+                                </div>
+                            </section>
+
+                            <!-- 6. Result-discrepancy alerts (this browser only) -->
+                            <section class="card-dark p-4">
+                                <div class="flex items-center justify-between gap-3">
+                                    <div class="min-w-0">
+                                        <h3 class="text-lg font-bold text-white">⚠️ Result discrepancy alerts</h3>
+                                        <p class="text-[11px] text-white/50">When a referee's result differs from official. Applies to this device only — set the clock operator's to “Off”.</p>
+                                    </div>
+                                    <select id="discrepancy-pref-select" onchange="setDiscrepancyPref(this.value)"
+                                        class="flex-none rounded-lg border border-white/20 bg-white/[.06] px-2 py-2 text-sm text-white">
+                                        <option value="dot">Dot only</option>
+                                        <option value="full">Full</option>
+                                        <option value="off">Off</option>
+                                    </select>
                                 </div>
                             </section>
                         </div>

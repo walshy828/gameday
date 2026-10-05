@@ -18,12 +18,12 @@ const DISC_PREF_KEY = 'discrepancyAlertPref';
 const DISC_POLL_MS = 30000;
 let discWatching = false;
 
-/** Per-browser alert level: 'full' (default) | 'dot' (tab dot only) | 'off'. */
+/** Per-browser alert level: 'dot' (default; tab dot only) | 'full' (adds gate badge + row chips) | 'off'. */
 function getDiscrepancyPref() {
     try {
         const v = localStorage.getItem(DISC_PREF_KEY);
-        return v === 'dot' || v === 'off' ? v : 'full';
-    } catch { return 'full'; }
+        return v === 'full' || v === 'off' ? v : 'dot';
+    } catch { return 'dot'; }
 }
 
 function setDiscrepancyPref(value) {
