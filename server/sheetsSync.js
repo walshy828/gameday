@@ -70,6 +70,29 @@ export async function getAvailableDivisions() {
     .map(s => s.properties.title);
 }
 
+// Tab order changes rarely and /api/divisions is hit on every page load, so
+// the sheet's tab order is cached briefly rather than fetched per request.
+const TAB_ORDER_TTL_MS = 60 * 1000;
+let tabOrderCache = { at: 0, titles: [] };
+
+/**
+ * Sort division names into the order their tabs appear in the Google
+ * workbook. Names not found in the sheet (or all names, if the sheet isn't
+ * configured/reachable) keep their incoming order after the ones that are.
+ */
+export async function orderDivisionsBySheet(names) {
+  try {
+    if (Date.now() - tabOrderCache.at > TAB_ORDER_TTL_MS) {
+      tabOrderCache = { at: Date.now(), titles: await getAvailableDivisions() };
+    }
+  } catch (e) {
+    console.error('orderDivisionsBySheet: could not read sheet tab order', e.message || e);
+    return names;
+  }
+  const rank = new Map(tabOrderCache.titles.map((t, i) => [t, i]));
+  return [...names].sort((a, b) => (rank.get(a) ?? Infinity) - (rank.get(b) ?? Infinity));
+}
+
 /**
  * Pull division tabs from the sheet and write standings + schedule into the
  * active Store backend. Which tabs get synced is driven by the persisted

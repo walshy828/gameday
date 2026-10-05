@@ -108,7 +108,7 @@ app.get('/api/allData', async (req, res) => {
 app.get('/api/divisions', async (_req, res) => {
   try {
     const names = await Store.getDivisionNames();
-    res.json(names);
+    res.json(await SheetsSync.orderDivisionsBySheet(names));
   } catch (e) {
     console.error('getDivisionNames', e);
     res.status(500).json({ error: e.toString() });
