@@ -178,3 +178,12 @@ CREATE TABLE IF NOT EXISTS gameday_submissions (
   division VARCHAR(191),
   rowindex INT
 );
+
+-- Superadmin dismissals of referee-vs-official result discrepancies. sig
+-- fingerprints the disputed values so a changed result re-opens the item.
+CREATE TABLE IF NOT EXISTS discrepancy_dismissals (
+  dismiss_key VARCHAR(255) PRIMARY KEY,
+  sig VARCHAR(512) NOT NULL,
+  dismissed_by VARCHAR(191),
+  dismissed_at BIGINT NOT NULL
+);

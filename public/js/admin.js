@@ -1,56 +1,144 @@
 // Avoid importing from main.js (circular). Use the api wrapper directly.
-import { validateAdmin, saveMatchResult as apiSaveMatchResult, sendSessionHeartbeat, endSession as apiEndSession, runSheetSync, getSheetSyncConfig } from './api.js';
+import { validateAdmin, getDiscrepancies, dismissDiscrepancy as dismissDiscrepancyApi, saveMatchResult as apiSaveMatchResult, sendSessionHeartbeat, endSession as apiEndSession, runSheetSync, getSheetSyncConfig } from './api.js';
 import {
     getFilterableTeamName, parseRoundTime,
     getRoundOrder, getRosterTeams, getByeTeams,
-    isReported as isReportedOfficial,
-    hasDiscrepancy
+    isReported as isReportedOfficial
 } from './schedule.js';
-import { switchView } from './navigation.js';
+import { switchView, enterApp } from './navigation.js';
+import { getSocket } from './socketClient.js';
 
 // --- Result discrepancies (superadmin) -------------------------------------
-// A referee-submitted result that differs from the official one. Dismissals
-// are remembered per browser, keyed on the reported values, so a new referee
-// edit re-opens the item. (Shared cross-superadmin state is a later phase.)
+// A referee-submitted result that differs from the official one. The server
+// (server/discrepancies.js) scans every division and keeps dismissals shared
+// between all superadmins; the client just mirrors its list in
+// App.data.discrepancies and re-fetches whenever something might have changed.
 
-const discKey = g => `discDismissed:${App.config.currentSheetName}:${g.match || `${g.roundTime}|${g.court}|${g.team1}|${g.team2}`}`;
-const discSig = g => `${(g.adminWinner || '').trim()}|${g.adminPlayersRemaining ?? ''}|${(g.winner || '').trim()}|${g.playersRemaining ?? ''}`;
+const DISC_PREF_KEY = 'discrepancyAlertPref';
+const DISC_POLL_MS = 30000;
+let discWatching = false;
 
-function isDiscrepancyDismissed(g) {
-    try { return localStorage.getItem(discKey(g)) === discSig(g); } catch { return false; }
+/** Per-browser alert level: 'full' (default) | 'dot' (tab dot only) | 'off'. */
+function getDiscrepancyPref() {
+    try {
+        const v = localStorage.getItem(DISC_PREF_KEY);
+        return v === 'dot' || v === 'off' ? v : 'full';
+    } catch { return 'full'; }
+}
+
+function setDiscrepancyPref(value) {
+    try { localStorage.setItem(DISC_PREF_KEY, value); } catch { /* storage unavailable */ }
+    updateDiscrepancyBadge();
+    renderAdminMatchEntryViewImpl();
 }
 
 function getOpenDiscrepancies() {
-    if (!App.state.isSuperAdmin || !Array.isArray(App.data.allScheduleData)) return [];
-    return App.data.allScheduleData.filter(g => hasDiscrepancy(g) && !isDiscrepancyDismissed(g));
+    if (!App.state.isSuperAdmin || getDiscrepancyPref() === 'off') return [];
+    return Array.isArray(App.data.discrepancies) ? App.data.discrepancies : [];
 }
 
-/** Amber dot on the ADMIN tab while any discrepancy is open. Never moves layout. */
+const sameIndex = (a, b) => String(a) === String(b);
+const escAttr = v => esc(v).replace(/"/g, '&quot;');
+
+/** One delegated handler for the panel buttons and the per-row chips (keys may hold any division name). */
+function wireDiscrepancyActions(listEl) {
+    if (listEl.dataset.discWired) return;
+    listEl.dataset.discWired = '1';
+    listEl.addEventListener('click', e => {
+        const btn = e.target.closest('[data-act]');
+        const holder = btn && btn.closest('[data-disc-key]');
+        if (!btn || !holder) return;
+        const key = holder.dataset.discKey;
+        const act = btn.dataset.act;
+        if (act === 'use') useReportedResult(key);
+        else if (act === 'keep') dismissDiscrepancy(key);
+        else if (act === 'edit') reviewDiscrepancy(key);
+    });
+}
+
+/** Open item for a game in the current division, if any (drives the row chip). */
+function discrepancyFor(game) {
+    return getOpenDiscrepancies().find(d => d.division === App.config.currentSheetName && sameIndex(d.firebaseIndex, game.firebaseIndex));
+}
+
+/** Amber dot on the ADMIN tab and a count on the gate's Admin Panel. Never moves layout. */
 function updateDiscrepancyBadge() {
-    const dot = document.getElementById('discrepancy-dot');
-    if (!dot) return;
     const n = getOpenDiscrepancies().length;
-    dot.classList.toggle('hidden', n === 0);
-    dot.title = n ? `${n} result${n === 1 ? '' : 's'} need review` : '';
+    const pref = getDiscrepancyPref();
+    const dot = document.getElementById('discrepancy-dot');
+    if (dot) {
+        dot.classList.toggle('hidden', n === 0);
+        dot.title = n ? `${n} result${n === 1 ? '' : 's'} need review` : '';
+    }
+    const gate = document.getElementById('gate-discrepancy-btn');
+    if (gate) {
+        const show = n > 0 && pref === 'full';
+        gate.classList.toggle('hidden', !show);
+        const count = document.getElementById('gate-discrepancy-count');
+        if (count) count.textContent = String(n);
+    }
 }
 
-function dismissDiscrepancy(gameIndex) {
-    const g = App.data.allScheduleData[gameIndex];
-    if (!g) return;
-    try { localStorage.setItem(discKey(g), discSig(g)); } catch { /* storage unavailable */ }
-    renderAdminMatchEntryViewImpl();
+async function refreshDiscrepancies() {
+    const authToken = sessionStorage.getItem('adminAuthToken');
+    if (!App.state.isSuperAdmin || !authToken) {
+        App.data.discrepancies = [];
+        updateDiscrepancyBadge();
+        return;
+    }
+    try {
+        const res = await getDiscrepancies(authToken);
+        App.data.discrepancies = res.success ? res.items : [];
+    } catch (e) {
+        console.error('Discrepancy refresh failed:', e);
+        return; // keep the last known list rather than flashing it empty
+    }
     updateDiscrepancyBadge();
+    if (App.state.currentView === 'admin-entry') renderAdminMatchEntryViewImpl();
+}
+
+/** Starts (once) the live refresh: socket nudges + a slow poll as a fallback. */
+function startDiscrepancyWatch() {
+    if (!App.state.isSuperAdmin) return;
+    refreshDiscrepancies();
+    if (discWatching) return;
+    discWatching = true;
+    try {
+        const socket = getSocket();
+        ['discrepancyUpdate', 'syncStatusUpdate'].forEach(evt => socket.on(evt, refreshDiscrepancies));
+        socket.on('connect', refreshDiscrepancies);
+    } catch (e) {
+        console.warn('Discrepancy live updates unavailable, polling only:', e.message);
+    }
+    setInterval(() => { if (!document.hidden) refreshDiscrepancies(); }, DISC_POLL_MS);
+}
+
+async function dismissDiscrepancy(key) {
+    const item = (App.data.discrepancies || []).find(d => d.key === key);
+    const authToken = sessionStorage.getItem('adminAuthToken');
+    if (!item || !authToken) return;
+    try {
+        const res = await dismissDiscrepancyApi(authToken, item.division, item.firebaseIndex, App.state.reporterName || '');
+        if (res.success) App.data.discrepancies = res.items;
+    } catch (e) {
+        console.error('Dismiss failed:', e);
+        showStatus(`Could not dismiss: ${e.message}`, true);
+        setTimeout(() => showStatus(null), 6000);
+        return;
+    }
+    updateDiscrepancyBadge();
+    renderAdminMatchEntryViewImpl();
 }
 
 /** Makes the referee-reported result the official one (same path as the modal's "submit as official"). */
-async function useReportedResult(gameIndex) {
-    const g = App.data.allScheduleData[gameIndex];
+async function useReportedResult(key) {
+    const g = (App.data.discrepancies || []).find(d => d.key === key);
     const authToken = sessionStorage.getItem('adminAuthToken');
     if (!g || !authToken) return;
-    if (!confirm(`Set official result to the reported one (${g.adminWinner}, ${g.adminPlayersRemaining ?? 0} left, reported by ${g.adminName || 'referee'})?`)) return;
+    if (!confirm(`Set official result to the reported one (${g.adminWinner}, ${g.adminPlayersRemaining || 0} left, reported by ${g.adminName || 'referee'})?`)) return;
     try {
         const result = await apiSaveMatchResult(authToken, {
-            sheetName: App.config.currentSheetName,
+            sheetName: g.division,
             rowIndex: g.rowIndex,
             firebaseIndex: g.firebaseIndex,
             team1: g.team1,
@@ -63,6 +151,7 @@ async function useReportedResult(gameIndex) {
         });
         if (!result.success) throw new Error(result.error || 'Server reported failure.');
         await loadData(App.config.currentSheetName);
+        await refreshDiscrepancies();
     } catch (e) {
         console.error('Use reported failed:', e);
         showStatus(`Could not update official result: ${e.message}`, true);
@@ -70,29 +159,52 @@ async function useReportedResult(gameIndex) {
     }
 }
 
+/** Edit opens the match modal for this division, or switches to the item's division first. */
+async function reviewDiscrepancy(key) {
+    const d = (App.data.discrepancies || []).find(x => x.key === key);
+    if (!d) return;
+    if (d.division !== App.config.currentSheetName) {
+        await enterApp(d.division);
+        switchView('admin-entry');
+    }
+    const idx = (App.data.allScheduleData || []).findIndex(g => sameIndex(g.firebaseIndex, d.firebaseIndex));
+    if (idx >= 0) showMatchEntryModal(idx);
+}
+
+/** Gate shortcut: jump into the first division with something to review. */
+async function openDiscrepancyReview() {
+    const first = getOpenDiscrepancies()[0];
+    if (!first) return;
+    await enterApp(first.division);
+    switchView('admin-entry');
+}
+
 /** "Needs review" card pinned above the match list (superadmin only). */
 function renderDiscrepancyPanel(container) {
     const open = getOpenDiscrepancies();
     if (!open.length) return;
     const card = document.createElement('section');
+    card.id = 'discrepancy-panel';
     card.className = 'rounded-[26px] border p-3.5';
     card.style.background = 'rgba(224,184,99,.07)';
     card.style.borderColor = 'rgba(224,184,99,.45)';
-    const fmt = (w, n) => `${esc((w || '—').trim() || '—')}${n !== undefined && n !== null && n !== '' ? ` · ${esc(String(n))} left` : ''}`;
+    const fmt = (w, n) => `${esc((w || '—').toString().trim() || '—')}${n !== undefined && n !== null && n !== '' ? ` · ${esc(String(n))} left` : ''}`;
+    const btn = 'rounded-[13px] px-3 py-2 text-[11px] font-semibold leading-none';
+    const ghost = 'background:rgba(255,255,255,.08);color:rgba(255,255,255,.85);border:1px solid rgba(255,255,255,.14)';
     card.innerHTML = `
         <div class="text-[11px] font-semibold tracking-[.08em]" style="color:var(--gold-l)">NEEDS REVIEW (${open.length})</div>
         <div class="mt-2 grid gap-[5px]">
             ${open.map(g => {
-                const i = App.data.allScheduleData.indexOf(g);
+                const other = g.division !== App.config.currentSheetName;
                 return `
-                <div class="rounded-2xl px-3 py-2.5" style="background:rgba(255,255,255,.05)">
-                    <div class="text-[11px] font-semibold" style="color:rgba(255,255,255,.86)">${esc(g.roundTime || '')} · C${esc(g.court || '?')} · ${esc(g.team1)} vs ${esc(g.team2)}</div>
+                <div class="rounded-2xl px-3 py-2.5" style="background:rgba(255,255,255,.05)" data-disc-key="${escAttr(g.key)}">
+                    <div class="text-[11px] font-semibold" style="color:rgba(255,255,255,.86)">${other ? `${esc(g.division)} · ` : ''}${esc(g.roundTime)} · C${esc(g.court || '?')} · ${esc(g.team1)} vs ${esc(g.team2)}</div>
                     <div class="mt-1 text-[11px]" style="color:var(--ok)">Official: ${fmt(g.winner, g.playersRemaining)}</div>
                     <div class="text-[11px]" style="color:var(--gold-l)">Reported by ${esc(g.adminName || '—')}: ${fmt(g.adminWinner, g.adminPlayersRemaining)}</div>
-                    <div class="mt-2 flex gap-1.5">
-                        <button onclick="useReportedResult(${i})" class="rounded-[13px] px-3 py-2 text-[11px] font-semibold leading-none" style="background:linear-gradient(135deg,var(--gold) 0%,var(--gold-d) 100%);color:#2A1B08;border:0">Use reported</button>
-                        <button onclick="showMatchEntryModal(${i})" class="rounded-[13px] px-3 py-2 text-[11px] font-semibold leading-none" style="background:rgba(255,255,255,.08);color:rgba(255,255,255,.85);border:1px solid rgba(255,255,255,.14)">Edit</button>
-                        <button onclick="dismissDiscrepancy(${i})" class="rounded-[13px] px-3 py-2 text-[11px] font-semibold leading-none" style="background:rgba(255,255,255,.08);color:rgba(255,255,255,.85);border:1px solid rgba(255,255,255,.14)">Keep official</button>
+                    <div class="mt-2 flex flex-wrap gap-1.5">
+                        <button data-act="use" class="${btn}" style="background:linear-gradient(135deg,var(--gold) 0%,var(--gold-d) 100%);color:#2A1B08;border:0">Use reported</button>
+                        <button data-act="edit" class="${btn}" style="${ghost}">${other ? 'Open division' : 'Edit'}</button>
+                        <button data-act="keep" class="${btn}" style="${ghost}">Keep official</button>
                     </div>
                 </div>`;
             }).join('')}
@@ -215,6 +327,7 @@ function renderAdminMatchEntryViewImpl() {
     }, {});
 
     matchListDiv.innerHTML = '';
+    wireDiscrepancyActions(matchListDiv);
     renderDiscrepancyPanel(matchListDiv);
     updateDiscrepancyBadge();
 
@@ -300,6 +413,10 @@ function renderAdminMatchEntryViewImpl() {
             row.className = 'rounded-2xl px-3 py-2.5';
             row.style.background = 'rgba(255,255,255,.05)';
 
+            const disc = getDiscrepancyPref() === 'full' ? discrepancyFor(game) : null;
+            const discChip = disc
+                ? `<span data-disc-key="${escAttr(disc.key)}"><button data-act="edit" title="Reported result differs from official" class="rounded-full px-1.5 py-0.5" style="background:rgba(224,184,99,.18);color:var(--gold-l);border:1px solid rgba(224,184,99,.45)">≠ review</button></span>`
+                : '';
             const officialIsCompleted = isReportedOfficial(game);
             const winnerName = game.winner ? game.winner.trim() : null;
             const reportedByAdmin = !!(game.adminWinner && game.adminWinner.trim() !== '' && game.adminWinner.trim() !== '—');
@@ -361,6 +478,7 @@ function renderAdminMatchEntryViewImpl() {
                     <span class="flex items-center gap-1.5 text-[9px] font-semibold leading-none tracking-[.08em]" style="color:${dim}">
                         ${game.match ? esc(`M${game.match}`) : ''}
                         ${game.subDivision ? `<span class="rounded-full px-1.5 py-0.5" style="background:rgba(255,255,255,.08);color:rgba(255,255,255,.6)">${esc(game.subDivision)}</span>` : ''}
+                        ${discChip}
                     </span>
                     <span class="text-right text-[10px] font-medium leading-[1.3]" style="color:${updatedColor}">${updatedHtml}</span>
                 </div>
@@ -613,7 +731,7 @@ function updateAdminUI() {
     const loggedIn = App.state.isAdmin || App.state.isParent;
 
     updateGateAdminUI(loggedIn);
-    updateDiscrepancyBadge();
+    if (App.state.isSuperAdmin && loggedIn) startDiscrepancyWatch(); else { App.data.discrepancies = []; updateDiscrepancyBadge(); }
     window.syncChatRole?.();
 
     if (loggedIn) {
@@ -1218,8 +1336,8 @@ function checkLoginStatus() {
     // The updateAdminUI() call below will handle showing the correct buttons.
 }
 
-window.useReportedResult = useReportedResult;
-window.dismissDiscrepancy = dismissDiscrepancy;
+Object.assign(window, { openDiscrepancyReview, setDiscrepancyPref });
+window.getDiscrepancyPref = getDiscrepancyPref;
 
 export {
     updateAdminMatchEntryView,

@@ -7,7 +7,8 @@ import { Store } from './datastores/index.js';
 import * as SheetsMirror from './sheetsMirror.js';
 import * as SheetsSync from './sheetsSync.js';
 import { applySyncSettings, computeAutoSyncExpiry, initSyncScheduler, scheduleResultSync } from './syncScheduler.js';
-import { initSocket } from './socket.js';
+import { initSocket, broadcastDiscrepancyPing } from './socket.js';
+import { listOpenDiscrepancies, dismissDiscrepancy, notifyIfHighImpact } from './discrepancies.js';
 import { controlTimer, initTimerControl, TimerError, TIMER_ACTION_NAMES } from './timerControl.js';
 import crypto from 'crypto';
 import axios from 'axios';
@@ -398,6 +399,11 @@ app.post('/api/saveMatchResult', async (req, res) => {
       sheetsMirrorResult = { success: false, error: e.toString() };
     }
 
+    // A save can open, change or clear a discrepancy: nudge superadmin clients
+    // to refetch, and push (if configured) for playoff games.
+    broadcastDiscrepancyPing();
+    notifyIfHighImpact(matchData.sheetName, matchData.firebaseIndex);
+
     const totalMs = Date.now() - startTs;
     console.log(`[${requestId}] /api/saveMatchResult COMPLETE`, { totalMs, storeResult, dbResult, sheetsMirrorResult });
 
@@ -415,6 +421,37 @@ app.post('/api/saveMatchResult', async (req, res) => {
     });
   } catch (e) {
     console.error('saveMatchResult error', e);
+    res.status(500).json({ success: false, error: e.toString() });
+  }
+});
+
+// --- Result discrepancies (referee-reported vs official), superadmin only ---
+
+app.get('/api/discrepancies', async (req, res) => {
+  if (!requireSuperAdmin(req, res)) return;
+  try {
+    res.json({ success: true, items: await listOpenDiscrepancies() });
+  } catch (e) {
+    console.error('discrepancies error', e);
+    res.status(500).json({ success: false, error: e.toString() });
+  }
+});
+
+app.post('/api/discrepancies/dismiss', async (req, res) => {
+  if (!requireSuperAdmin(req, res)) return;
+  try {
+    const division = cleanText(req.body?.division, 191);
+    const firebaseIndex = req.body?.firebaseIndex;
+    if (!division || firebaseIndex === undefined || firebaseIndex === null || firebaseIndex === '') {
+      return res.status(400).json({ success: false, error: 'division and firebaseIndex are required' });
+    }
+    const by = cleanText(req.body?.by, 80);
+    const result = await dismissDiscrepancy(division, firebaseIndex, by);
+    if (!result.ok) return res.status(404).json({ success: false, error: result.error });
+    broadcastDiscrepancyPing();
+    res.json({ success: true, items: await listOpenDiscrepancies() });
+  } catch (e) {
+    console.error('dismiss discrepancy error', e);
     res.status(500).json({ success: false, error: e.toString() });
   }
 });

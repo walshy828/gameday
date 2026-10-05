@@ -363,21 +363,6 @@ function isReported(game) {
     return w !== '' && w !== 'TBA' && w !== '—';
 }
 
-const isBlankResult = w => { const v = (w || '').trim(); return v === '' || v === 'TBA' || v === '—'; };
-
-/**
- * True when a referee-submitted (unofficial) result disagrees with an
- * official one on winner or players remaining. A game with no official
- * result yet isn't a discrepancy — it's just "not official yet".
- */
-function hasDiscrepancy(game) {
-    if (!isReported(game) || isBlankResult(game.adminWinner)) return false;
-    if ((game.adminWinner || '').trim() !== (game.winner || '').trim()) return true;
-    const off = game.playersRemaining, adm = game.adminPlayersRemaining;
-    if (off === undefined || off === null || off === '' || adm === undefined || adm === null || adm === '') return false;
-    return Number(off) !== Number(adm);
-}
-
 /** Escapes a value for safe interpolation into a template-literal row. */
 function esc(str) {
     const d = document.createElement('div');
@@ -489,6 +474,8 @@ function getFilterableTeamName(teamName) {
     
     return cleanedName;
 }
+
+import { hasDiscrepancy } from './discrepancy.js';
 
 export {
     updateScheduleView,

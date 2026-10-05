@@ -130,6 +130,14 @@ export async function updateFeatureSettings(authToken, patch) {
   return await apiPost(`/featureSettings`, { authToken, ...patch });
 }
 
+export async function getDiscrepancies(authToken) {
+  return await apiGet(`/discrepancies`, authToken);
+}
+
+export async function dismissDiscrepancy(authToken, division, firebaseIndex, by) {
+  return await apiPost(`/discrepancies/dismiss`, { authToken, division, firebaseIndex, by });
+}
+
 export async function getAnnouncements() {
   return await apiGet(`/announcements`);
 }

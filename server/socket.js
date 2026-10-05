@@ -69,6 +69,14 @@ export function broadcastChatLeadPing() {
   io.emit('chatLeadPing');
 }
 
+// Result discrepancies (referee-reported vs official) are superadmin-only, so
+// like the leadership chat ping this carries no data — it's only a nudge for
+// superadmin clients to refetch GET /api/discrepancies.
+export function broadcastDiscrepancyPing() {
+  if (!io) return;
+  io.emit('discrepancyUpdate');
+}
+
 // Feature toggles (e.g. champion celebration) are tournament-wide, so they
 // broadcast to every connected client rather than a division room.
 export function broadcastFeatureSettingsUpdate(settings) {

@@ -3,7 +3,7 @@
 // DATA_BACKEND=local. Realtime push (replacing Firebase RTDB's built-in
 // listeners) is done via Socket.IO broadcasts after each write.
 import { pool } from '../db.js';
-import { broadcastDivisionUpdate, broadcastTimerUpdate, broadcastSyncStatus, broadcastAnnouncementUpdate, broadcastChatUpdate, broadcastChatLeadPing, broadcastFeatureSettingsUpdate } from '../socket.js';
+import { broadcastDivisionUpdate, broadcastTimerUpdate, broadcastSyncStatus, broadcastAnnouncementUpdate, broadcastChatUpdate, broadcastChatLeadPing, broadcastFeatureSettingsUpdate, broadcastDiscrepancyPing } from '../socket.js';
 
 export const backend = 'local';
 
@@ -216,6 +216,14 @@ export const schemaReady = (async function ensureFeatureTables() {
     } catch (e) {
       if (e.code !== 'ER_DUP_FIELDNAME') throw e;
     }
+    await pool.query(`
+      CREATE TABLE IF NOT EXISTS discrepancy_dismissals (
+        dismiss_key VARCHAR(255) PRIMARY KEY,
+        sig VARCHAR(512) NOT NULL,
+        dismissed_by VARCHAR(191),
+        dismissed_at BIGINT NOT NULL
+      )
+    `);
     await pool.query(`
       CREATE TABLE IF NOT EXISTS gameday_submissions (
         id INT AUTO_INCREMENT PRIMARY KEY,
@@ -752,3 +760,23 @@ export async function getLoginHistory(limit = 200) {
   return rows.map(mapSessionRow);
 }
 
+
+
+// Superadmin dismissals of result discrepancies, shared by every superadmin.
+// `key` is "<division>|<firebaseIndex>"; `sig` fingerprints the disputed
+// values (see public/js/discrepancy.js) so a changed result re-opens it.
+export async function getDiscrepancyDismissals() {
+  const [rows] = await pool.query('SELECT dismiss_key, sig, dismissed_by, dismissed_at FROM discrepancy_dismissals');
+  const out = {};
+  rows.forEach(r => { out[r.dismiss_key] = { sig: r.sig, by: r.dismissed_by || '', ts: Number(r.dismissed_at) }; });
+  return out;
+}
+
+export async function setDiscrepancyDismissal(key, sig, by) {
+  await pool.query(
+    `INSERT INTO discrepancy_dismissals (dismiss_key, sig, dismissed_by, dismissed_at) VALUES (?, ?, ?, ?)
+     ON DUPLICATE KEY UPDATE sig = VALUES(sig), dismissed_by = VALUES(dismissed_by), dismissed_at = VALUES(dismissed_at)`,
+    [key, sig, by || '', Date.now()]
+  );
+  broadcastDiscrepancyPing();
+}

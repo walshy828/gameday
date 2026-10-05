@@ -362,6 +362,8 @@ function initSettingsView() {
     startRelativeTimeTicker();
     attachSocketListener();
     renderFeatureSettings(App.settings);
+    const prefSelect = document.getElementById('discrepancy-pref-select');
+    if (prefSelect && window.getDiscrepancyPref) prefSelect.value = window.getDiscrepancyPref();
     startSessionsPoller();
     refreshActiveSessions();
     refreshSessionHistory();

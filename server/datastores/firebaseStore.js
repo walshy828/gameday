@@ -7,10 +7,11 @@
 // unused by the frontend and exist only to satisfy the shared Store interface.
 import * as Sheets from '../sheets.js';
 import admin, { createCustomToken as fbCreateCustomToken } from '../firebase.js';
-import { broadcastSyncStatus, broadcastFeatureSettingsUpdate } from '../socket.js';
+import { broadcastSyncStatus, broadcastFeatureSettingsUpdate, broadcastDiscrepancyPing } from '../socket.js';
 
 const SYNC_SETTINGS_PATH = 'dodgeball-tournament/settings/sheetSync';
 const MAX_SYNC_LOG_ENTRIES = 100;
+const DISCREPANCY_PATH = 'dodgeball-tournament/discrepancyDismissals';
 const FEATURE_SETTINGS_PATH = 'dodgeball-tournament/settings/features';
 
 export async function getDivisionNames() {
@@ -264,6 +265,22 @@ export async function getLoginHistory(limit = 200) {
   const snap = await admin.database().ref(SESSIONS_PATH).once('value');
   const val = snap.val() || {};
   return Object.values(val).sort((a, b) => (b.loginAt || 0) - (a.loginAt || 0)).slice(0, limit);
+}
+
+// Superadmin dismissals of result discrepancies. RTDB keys can't contain
+// `. # $ [ ] /`, so the "<division>|<index>" key is encoded before use.
+const fbKey = key => encodeURIComponent(key).replace(/\./g, '%2E');
+
+export async function getDiscrepancyDismissals() {
+  const snap = await admin.database().ref(DISCREPANCY_PATH).once('value');
+  const out = {};
+  Object.values(snap.val() || {}).forEach(v => { if (v && v.key) out[v.key] = { sig: v.sig, by: v.by || '', ts: v.ts || 0 }; });
+  return out;
+}
+
+export async function setDiscrepancyDismissal(key, sig, by) {
+  await admin.database().ref(`${DISCREPANCY_PATH}/${fbKey(key)}`).set({ key, sig, by: by || '', ts: Date.now() });
+  broadcastDiscrepancyPing();
 }
 
 export const backend = 'firebase';
