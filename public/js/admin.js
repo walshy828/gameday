@@ -720,7 +720,7 @@ async function loginAdmin() {
                 sessionStorage.setItem('isSuperAdmin', 'true');
                 // initialize/move timer overlay for superadmin (if present)
                 if (typeof window.initTimerOverlay === 'function') window.initTimerOverlay();
-                gtag('event', 'login', {
+                window.gtag?.('event', 'login', {
                     method: 'web', // or 'google', 'facebook', etc.
                     success: true,
                     user_id: 'superadmin' // optional, only if you have one
@@ -732,7 +732,7 @@ async function loginAdmin() {
                 const court = App.state.selectedCourt || '1';
                 App.state.selectedCourt = court;
                 sessionStorage.setItem('selectedCourt', court);
-                gtag('event', 'login', {
+                window.gtag?.('event', 'login', {
                     method: 'web', // or 'google', 'facebook', etc.
                     success: true,
                     user_id: 'admin' // optional, only if you have one
@@ -763,7 +763,7 @@ async function loginAdmin() {
             sessionStorage.removeItem('adminAuthToken'); // Clear any old token
             try { localStorage.removeItem('savedAdminPassword'); } catch (e) { /* ignore */ }
             loginMessage.classList.remove('hidden');
-            gtag('event', 'login_failed', {
+            window.gtag?.('event', 'login_failed', {
                 method: 'web',
                 success: false
             });

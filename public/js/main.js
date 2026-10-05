@@ -390,7 +390,7 @@ function handleDivisionSnapshot(data, divisionName) {
   } catch (e) {
     console.error('Error running championshipBanner on division update:', e);
   }
-  gtag('event','filter_change', {
+  window.gtag?.('event','filter_change', {
     filter_name: 'division',
     filter_value: divisionName
   });
