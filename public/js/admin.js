@@ -38,6 +38,16 @@ function getOpenDiscrepancies() {
 }
 
 const sameIndex = (a, b) => String(a) === String(b);
+const CONFIRM_WINDOW_MS = 4000;
+let pendingConfirm = null; // { key, act, timer } — the armed "click again to confirm" button
+
+function clearPendingConfirm(rerender = true) {
+    if (!pendingConfirm) return;
+    clearTimeout(pendingConfirm.timer);
+    pendingConfirm = null;
+    if (rerender) renderAdminMatchEntryViewImpl();
+}
+
 const escAttr = v => esc(v).replace(/"/g, '&quot;');
 
 /** One delegated handler for the panel buttons and the per-row chips (keys may hold any division name). */
@@ -50,9 +60,17 @@ function wireDiscrepancyActions(listEl) {
         if (!btn || !holder) return;
         const key = holder.dataset.discKey;
         const act = btn.dataset.act;
-        if (act === 'use') useReportedResult(key);
-        else if (act === 'keep') dismissDiscrepancy(key);
-        else if (act === 'edit') reviewDiscrepancy(key);
+        if (act === 'edit') return reviewDiscrepancy(key);
+        // Use reported / Keep official change what the manager sees as the
+        // result, so they take a second click on the same button (inline,
+        // no browser dialog). It disarms itself after a few seconds.
+        if (pendingConfirm && pendingConfirm.key === key && pendingConfirm.act === act) {
+            clearPendingConfirm();
+            return act === 'use' ? useReportedResult(key) : dismissDiscrepancy(key);
+        }
+        clearPendingConfirm(false);
+        pendingConfirm = { key, act, timer: setTimeout(clearPendingConfirm, CONFIRM_WINDOW_MS) };
+        renderAdminMatchEntryViewImpl();
     });
 }
 
@@ -135,7 +153,6 @@ async function useReportedResult(key) {
     const g = (App.data.discrepancies || []).find(d => d.key === key);
     const authToken = sessionStorage.getItem('adminAuthToken');
     if (!g || !authToken) return;
-    if (!confirm(`Set official result to the reported one (${g.adminWinner}, ${g.adminPlayersRemaining || 0} left, reported by ${g.adminName || 'referee'})?`)) return;
     try {
         const result = await apiSaveMatchResult(authToken, {
             sheetName: g.division,
@@ -189,6 +206,7 @@ function renderDiscrepancyPanel(container) {
     card.style.background = 'rgba(224,184,99,.07)';
     card.style.borderColor = 'rgba(224,184,99,.45)';
     const fmt = (w, n) => `${esc((w || '—').toString().trim() || '—')}${n !== undefined && n !== null && n !== '' ? ` · ${esc(String(n))} left` : ''}`;
+    const armed = (g, act) => !!pendingConfirm && pendingConfirm.key === g.key && pendingConfirm.act === act;
     const btn = 'rounded-[13px] px-3 py-2 text-[11px] font-semibold leading-none';
     const ghost = 'background:rgba(255,255,255,.08);color:rgba(255,255,255,.85);border:1px solid rgba(255,255,255,.14)';
     card.innerHTML = `
@@ -202,9 +220,9 @@ function renderDiscrepancyPanel(container) {
                     <div class="mt-1 text-[11px]" style="color:var(--ok)">Official: ${fmt(g.winner, g.playersRemaining)}</div>
                     <div class="text-[11px]" style="color:var(--gold-l)">Reported by ${esc(g.adminName || '—')}: ${fmt(g.adminWinner, g.adminPlayersRemaining)}</div>
                     <div class="mt-2 flex flex-wrap gap-1.5">
-                        <button data-act="use" class="${btn}" style="background:linear-gradient(135deg,var(--gold) 0%,var(--gold-d) 100%);color:#2A1B08;border:0">Use reported</button>
+                        <button data-act="use" class="${btn}" style="${armed(g, 'use') ? 'background:var(--ok);color:#06210F;border:0' : 'background:linear-gradient(135deg,var(--gold) 0%,var(--gold-d) 100%);color:#2A1B08;border:0'}">${armed(g, 'use') ? 'Tap again to confirm' : 'Use reported'}</button>
                         <button data-act="edit" class="${btn}" style="${ghost}">${other ? 'Open division' : 'Edit'}</button>
-                        <button data-act="keep" class="${btn}" style="${ghost}">Keep official</button>
+                        <button data-act="keep" class="${btn}" style="${armed(g, 'keep') ? 'background:var(--ok);color:#06210F;border:0' : ghost}">${armed(g, 'keep') ? 'Tap again to confirm' : 'Keep official'}</button>
                     </div>
                 </div>`;
             }).join('')}
