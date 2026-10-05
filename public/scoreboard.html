@@ -304,6 +304,7 @@
       background: linear-gradient(135deg, var(--gold) 0%, var(--gold-d) 100%);
       border-color: transparent; color: #2A1B08;
     }
+    .subdiv-cd { font-variant-numeric: tabular-nums; }
     .subdiv-auto {
       margin-left: auto; font-size: 9px; font-weight: 700;
       letter-spacing: .1em; text-transform: uppercase;
@@ -1413,6 +1414,8 @@ const SB = {
   subCycleSecs:      0,    // 0 = manual, else seconds between subdivision flips
   subSel:            {},   // { divName: selected subdivision name }
   subTimer:          null,
+  subCdTimer:        null,
+  subNextAt:         0,
   socket:            null,
   timers:            {},   // { divName: timerState } (local mode is per-division)
   resyncTimer:       null,
@@ -1785,7 +1788,7 @@ function renderSubdivBars(divName) {
     bar.classList.toggle('hidden', names.length === 0);
     bar.innerHTML = names.map(n =>
       `<button class="subdiv-chip ${n === sel ? 'active' : ''}" data-sub="${esc(n)}">${esc(n)}</button>`
-    ).join('') + (SB.subCycleSecs > 0 ? `<span class="subdiv-auto">auto · ${SB.subCycleSecs}s</span>` : '');
+    ).join('') + (SB.subCycleSecs > 0 ? `<span class="subdiv-auto">auto · <span class="subdiv-cd">${subCycleRemaining()}</span>s</span>` : '');
   });
 }
 
@@ -1796,7 +1799,20 @@ function selectSubDivision(name) {
   renderAll(div, false);
 }
 
+function subCycleRemaining() {
+  if (!SB.subNextAt) return SB.subCycleSecs;
+  return Math.max(0, Math.ceil((SB.subNextAt - Date.now()) / 1000));
+}
+
+function updateSubCountdown() {
+  const txt = String(subCycleRemaining());
+  document.querySelectorAll('.subdiv-cd').forEach(el => {
+    if (el.textContent !== txt) el.textContent = txt;
+  });
+}
+
 function cycleSubDivision() {
+  SB.subNextAt = Date.now() + SB.subCycleSecs * 1000;
   const div = SB.divisions[SB.activeIndex];
   const names = subDivisionNames(div);
   if (names.length < 2) return;
@@ -1816,7 +1832,13 @@ function cycleSubDivision() {
 
 function startSubCycle() {
   if (SB.subTimer) { clearInterval(SB.subTimer); SB.subTimer = null; }
-  if (SB.subCycleSecs > 0) SB.subTimer = setInterval(cycleSubDivision, SB.subCycleSecs * 1000);
+  if (SB.subCdTimer) { clearInterval(SB.subCdTimer); SB.subCdTimer = null; }
+  SB.subNextAt = 0;
+  if (SB.subCycleSecs > 0) {
+    SB.subNextAt = Date.now() + SB.subCycleSecs * 1000;
+    SB.subTimer = setInterval(cycleSubDivision, SB.subCycleSecs * 1000);
+    SB.subCdTimer = setInterval(updateSubCountdown, 250);
+  }
 }
 
 function setSubCycle(val) {
