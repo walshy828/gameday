@@ -310,6 +310,18 @@
       color: rgba(255,255,255,.35);
     }
 
+    /* Soft fade when the subdivision auto-cycle swaps content */
+    #body-standings, #body-bracket {
+      transition: opacity .35s ease, transform .35s ease;
+    }
+    #body-standings.sub-fade, #body-bracket.sub-fade {
+      opacity: 0;
+      transform: translateY(6px);
+    }
+    @media (prefers-reduced-motion: reduce) {
+      #body-standings, #body-bracket { transition: none; }
+    }
+
     /* Header subdivision-cycle setting */
     .sb-cycle {
       display: flex; align-items: center; gap: 6px;
@@ -1784,9 +1796,18 @@ function cycleSubDivision() {
   const div = SB.divisions[SB.activeIndex];
   const names = subDivisionNames(div);
   if (names.length < 2) return;
-  const i = names.indexOf(SB.subSel[div]);
-  SB.subSel[div] = names[(i + 1) % names.length];
-  renderAll(div, false);
+  const bodies = ['body-standings', 'body-bracket']
+    .map(id => document.getElementById(id)).filter(Boolean);
+  bodies.forEach(b => b.classList.add('sub-fade'));       // fade out
+  setTimeout(() => {
+    const cur = SB.divisions[SB.activeIndex];
+    if (cur !== div) { bodies.forEach(b => b.classList.remove('sub-fade')); return; }
+    const i = names.indexOf(SB.subSel[div]);
+    SB.subSel[div] = names[(i + 1) % names.length];
+    renderAll(div, false);
+    requestAnimationFrame(() => requestAnimationFrame(() =>
+      bodies.forEach(b => b.classList.remove('sub-fade'))));  // fade in
+  }, 350);
 }
 
 function startSubCycle() {
