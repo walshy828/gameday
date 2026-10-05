@@ -62,7 +62,10 @@ function renderGateDivisions() {
     App.data.allDivisionNames.forEach(name => {
         const btn = document.createElement('button');
         btn.className = 'text-left rounded-2xl p-3.5 border border-white/[.12] bg-white/[.06] hover:bg-gold/10 hover:border-gold/40 active:bg-gold/15 transition-colors';
-        btn.innerHTML = `<span class="block text-lg font-bold tracking-tight text-gray-50">${name}</span>`;
+        const label = document.createElement('span');
+        label.className = 'block text-lg font-bold tracking-tight text-gray-50';
+        label.textContent = name;
+        btn.appendChild(label);
         btn.onclick = () => enterApp(name);
         grid.appendChild(btn);
     });

@@ -669,7 +669,8 @@ async function loginAdmin() {
         const result = await validateAdmin(password, reporterName, App.state.selectedCourt, sessionId);
 
         // One-day tournament: remember the password on this device (expires after 24h).
-        if (result && (result.isParent || result.isAdmin)) {
+        if (result && (result.isParent || (result.isAdmin && !result.isSuperAdmin))) {
+            // Superadmin password is never stored on the device.
             try { localStorage.setItem('savedAdminPassword', JSON.stringify({ p: password, t: Date.now() })); } catch (e) { /* storage unavailable */ }
         }
 

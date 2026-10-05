@@ -3,10 +3,22 @@
 // Fallback to a relative path so same-origin deployments work without configuration.
 //const API_BASE = (window.__API_BASE__ && window.__API_BASE__.length > 0) ? window.__API_BASE__ : '/api';
 
-async function apiGet(endpoint) {
+// Auth tokens travel in the Authorization header, never in URLs (which end up
+// in access logs) — the server also still accepts a body `authToken`.
+function authHeaders(token) {
+  return token ? { Authorization: `Bearer ${token}` } : {};
+}
+
+// Pulls `authToken` out of a request body so it's sent as a header instead.
+function splitToken(body) {
+  const { authToken, ...rest } = body || {};
+  return { token: authToken, rest };
+}
+
+async function apiGet(endpoint, authToken) {
   try {
     const baseURL = window.location.origin;  // Dynamic host:port
-    const response = await fetch(`${baseURL}/api${endpoint}`);  // Add /api prefix
+    const response = await fetch(`${baseURL}/api${endpoint}`, { headers: authHeaders(authToken) });  // Add /api prefix
     if (!response.ok) {
       throw new Error(`GET /api${endpoint} failed: ${response.status}`);
     }
@@ -18,11 +30,12 @@ async function apiGet(endpoint) {
 }
 
 async function apiPost(endpoint, body) {
+  const { token, rest } = splitToken(body);
   const baseURL = window.location.origin;
   const res = await fetch(`${baseURL}/api${endpoint}`, {
     method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify(body),
+    headers: { "Content-Type": "application/json", ...authHeaders(token) },
+    body: JSON.stringify(rest),
   });
   if (!res.ok) {
     const text = await res.text();
@@ -37,11 +50,12 @@ async function apiPost(endpoint, body) {
 }
 
 async function apiDelete(endpoint, body) {
+  const { token, rest } = splitToken(body);
   const baseURL = window.location.origin;
   const res = await fetch(`${baseURL}/api${endpoint}`, {
     method: "DELETE",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify(body),
+    headers: { "Content-Type": "application/json", ...authHeaders(token) },
+    body: JSON.stringify(rest),
   });
   if (!res.ok) {
     const text = await res.text();
@@ -77,15 +91,15 @@ export async function endSession(authToken, sessionId) {
 }
 
 export async function getActiveSessions(authToken) {
-  return await apiGet(`/session/active?authToken=${encodeURIComponent(authToken)}`);
+  return await apiGet(`/session/active`, authToken);
 }
 
 export async function getLoginHistory(authToken) {
-  return await apiGet(`/session/history?authToken=${encodeURIComponent(authToken)}`);
+  return await apiGet(`/session/history`, authToken);
 }
 
 export async function getPresence(authToken) {
-  return await apiGet(`/presence?authToken=${encodeURIComponent(authToken)}`);
+  return await apiGet(`/presence`, authToken);
 }
 
 export async function saveMatchResult(authToken, matchData) {
@@ -93,7 +107,7 @@ export async function saveMatchResult(authToken, matchData) {
 }
 
 export async function getSheetSyncConfig(authToken) {
-  return await apiGet(`/sheetSync/config?authToken=${encodeURIComponent(authToken)}`);
+  return await apiGet(`/sheetSync/config`, authToken);
 }
 
 export async function runSheetSync(authToken) {
@@ -105,7 +119,7 @@ export async function pruneSheetSyncDivisions(authToken) {
 }
 
 export async function getSheetSyncStatus(authToken) {
-  return await apiGet(`/sheetSync/status?authToken=${encodeURIComponent(authToken)}`);
+  return await apiGet(`/sheetSync/status`, authToken);
 }
 
 export async function updateSheetSyncSettings(authToken, patch) {
@@ -138,7 +152,7 @@ export async function getChatMessages() {
 
 // Superadmin/parent only — the server refuses referee tokens.
 export async function getLeadChatMessages(authToken) {
-  return await apiGet(`/chat/lead?authToken=${encodeURIComponent(authToken)}`);
+  return await apiGet(`/chat/lead`, authToken);
 }
 
 export async function postChatMessage(authToken, text, reporterName, court, sessionId, channel = 'crew') {

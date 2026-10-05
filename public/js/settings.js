@@ -84,6 +84,10 @@ const STATUS_ICONS = {
     unknown: { label: 'Unknown status', color: 'text-gray-500', path: 'M9.5 9a2.5 2.5 0 115 0c0 1.5-2.5 2-2.5 3.5M12 17h.01' }
 };
 
+function escapeHtml(s) {
+    return String(s ?? '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;').replace(/'/g, '&#39;');
+}
+
 function escapeAttr(s) {
     return String(s).replace(/&/g, '&amp;').replace(/"/g, '&quot;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
 }
@@ -114,20 +118,20 @@ function renderLog(logEntries) {
 
     tbody.innerHTML = entries.map(entry => {
         const scopeLabel = entry.scope === 'selected' && entry.divisionNames && entry.divisionNames.length
-            ? ` (${entry.divisionNames.join(', ')})`
+            ? ` (${escapeHtml(entry.divisionNames.join(', '))})`
             : '';
         const failedLabel = entry.failedTabs && entry.failedTabs.length
-            ? `<br><span class="text-red-400">Failed: ${entry.failedTabs.map(f => `${f.name} (${f.error})`).join(', ')}</span>`
+            ? `<br><span class="text-red-400">Failed: ${entry.failedTabs.map(f => `${escapeHtml(f.name)} (${escapeHtml(f.error)})`).join(', ')}</span>`
             : '';
         const detail = entry.error
-            ? `<span class="text-red-400">${entry.error}</span>${failedLabel}`
+            ? `<span class="text-red-400">${escapeHtml(entry.error)}</span>${failedLabel}`
             : (entry.divisions != null ? `${entry.divisions} divisions${scopeLabel} · ${entry.standingsCount} standings · ${entry.matchesCount} matches${failedLabel}` : '—');
         return `
             <tr class="border-t border-gray-800">
                 <td class="px-3 py-2 text-sm text-gray-300 whitespace-nowrap">${new Date(entry.timestamp).toLocaleString()}</td>
                 <td class="px-3 py-2 text-sm">${statusBadge(entry.status, [entry.error, ...(entry.failedTabs || []).map(f => `${f.name} (${f.error})`)].filter(Boolean).join('; '))}</td>
                 <td class="px-3 py-2 text-sm text-gray-300 whitespace-nowrap">${entry.durationMs != null ? (entry.durationMs / 1000).toFixed(1) + 's' : '—'}</td>
-                <td class="px-3 py-2 text-sm text-gray-300 capitalize">${entry.triggeredBy || '—'}</td>
+                <td class="px-3 py-2 text-sm text-gray-300 capitalize">${escapeHtml(entry.triggeredBy || '—')}</td>
                 <td class="px-3 py-2 text-sm text-gray-400">${detail}</td>
             </tr>
         `;
@@ -165,11 +169,11 @@ function renderActiveSessions(sessions) {
         return `
             <tr class="border-t border-gray-800">
                 <td class="px-3 py-2 text-sm">${dot}</td>
-                <td class="px-3 py-2 text-sm text-gray-200">${s.name || '—'}</td>
-                <td class="px-3 py-2 text-sm text-gray-300">${ROLE_LABELS[s.role] || s.role}</td>
-                <td class="px-3 py-2 text-sm text-gray-300">${s.court ? 'Court ' + s.court : '—'}</td>
-                <td class="px-3 py-2 text-sm text-gray-400 whitespace-nowrap">${deviceLabel(s)}</td>
-                <td class="px-3 py-2 text-sm text-gray-400 whitespace-nowrap">${s.ip || '—'}</td>
+                <td class="px-3 py-2 text-sm text-gray-200">${escapeHtml(s.name || '—')}</td>
+                <td class="px-3 py-2 text-sm text-gray-300">${escapeHtml(ROLE_LABELS[s.role] || s.role)}</td>
+                <td class="px-3 py-2 text-sm text-gray-300">${s.court ? escapeHtml('Court ' + s.court) : '—'}</td>
+                <td class="px-3 py-2 text-sm text-gray-400 whitespace-nowrap">${escapeHtml(deviceLabel(s))}</td>
+                <td class="px-3 py-2 text-sm text-gray-400 whitespace-nowrap">${escapeHtml(s.ip || '—')}</td>
                 <td class="px-3 py-2 text-sm text-gray-400 whitespace-nowrap">${formatRelativeTime(s.lastActivityAt)}</td>
             </tr>
         `;
@@ -196,11 +200,11 @@ function renderSessionHistory(history) {
         return `
             <tr class="border-t border-gray-800">
                 <td class="px-3 py-2 text-sm text-gray-300 whitespace-nowrap">${new Date(s.loginAt).toLocaleString()}</td>
-                <td class="px-3 py-2 text-sm text-gray-200">${s.name || '—'}</td>
-                <td class="px-3 py-2 text-sm text-gray-300">${ROLE_LABELS[s.role] || s.role}</td>
-                <td class="px-3 py-2 text-sm text-gray-300">${s.court ? 'Court ' + s.court : '—'}</td>
-                <td class="px-3 py-2 text-sm text-gray-400 whitespace-nowrap">${deviceLabel(s)}</td>
-                <td class="px-3 py-2 text-sm text-gray-400 whitespace-nowrap">${s.ip || '—'}</td>
+                <td class="px-3 py-2 text-sm text-gray-200">${escapeHtml(s.name || '—')}</td>
+                <td class="px-3 py-2 text-sm text-gray-300">${escapeHtml(ROLE_LABELS[s.role] || s.role)}</td>
+                <td class="px-3 py-2 text-sm text-gray-300">${s.court ? escapeHtml('Court ' + s.court) : '—'}</td>
+                <td class="px-3 py-2 text-sm text-gray-400 whitespace-nowrap">${escapeHtml(deviceLabel(s))}</td>
+                <td class="px-3 py-2 text-sm text-gray-400 whitespace-nowrap">${escapeHtml(s.ip || '—')}</td>
                 <td class="px-3 py-2 text-sm">${statusLabel}${s.logoutAt ? ` <span class="text-gray-500">(${durationLabel})</span>` : ''}</td>
             </tr>
         `;
@@ -261,11 +265,11 @@ function renderDivisionPicker() {
 
     picker.innerHTML = availableDivisions.map(name => {
         const checked = selected.includes(name) ? 'checked' : '';
-        const safeName = name.replace(/"/g, '&quot;');
+        const safeName = escapeAttr(name).replace(/'/g, '&#39;');
         return `
             <label class="flex items-center gap-2 px-3 py-1.5 bg-gray-800 border border-gray-700 rounded-lg text-sm text-gray-300 cursor-pointer">
-                <input type="checkbox" value="${safeName}" ${checked} onchange="toggleSyncDivision('${safeName}', this.checked)">
-                ${name}
+                <input type="checkbox" value="${safeName}" ${checked} onchange="toggleSyncDivision(this.value, this.checked)">
+                ${escapeHtml(name)}
             </label>
         `;
     }).join('');

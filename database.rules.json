@@ -1,0 +1,15 @@
+{
+  "rules": {
+    ".read": false,
+    ".write": false,
+    "dodgeball-tournament": {
+      "divisions": { ".read": true },
+      "announcements": { ".read": true },
+      "chat": { ".read": true }
+    },
+    "timer": {
+      ".read": true,
+      ".write": "auth != null && auth.token.admin === true"
+    }
+  }
+}

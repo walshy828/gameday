@@ -16,10 +16,37 @@ import axios from 'axios';
 
 dotenv.config();
 
+// Fail fast on missing/weak secrets: an unset password would otherwise let a
+// request with no password (undefined === undefined) log in, and an unset salt
+// falls back to a publicly known default.
+{
+  const problems = [];
+  const need = (name, min) => {
+    const v = process.env[name];
+    if (!v) problems.push(`${name} is not set`);
+    else if (v.length < min) problems.push(`${name} must be at least ${min} characters`);
+  };
+  need('ADMIN_PASSWORD', 8);
+  need('SUPERADMIN_PASSWORD', 8);
+  need('SECRET_SALT', 16);
+  if (process.env.PARENT_PASSWORD) need('PARENT_PASSWORD', 8);
+  if (process.env.SECRET_SALT === 'secret-salt') problems.push('SECRET_SALT must not be the default value');
+  const pws = [process.env.ADMIN_PASSWORD, process.env.SUPERADMIN_PASSWORD, process.env.PARENT_PASSWORD].filter(Boolean);
+  if (new Set(pws).size !== pws.length) problems.push('ADMIN_PASSWORD, SUPERADMIN_PASSWORD and PARENT_PASSWORD must all differ');
+  if (problems.length) {
+    console.error('Refusing to start — fix your .env:\n  - ' + problems.join('\n  - '));
+    process.exit(1);
+  }
+}
+
 const DATA_BACKEND = (process.env.DATA_BACKEND || 'firebase').toLowerCase();
 
 const app = express();
-app.set('trust proxy', true);
+// Only trust X-Forwarded-For when you run behind a reverse proxy/tunnel you
+// control: set TRUST_PROXY=1 (number of proxy hops). Left unset, client IPs
+// come from the socket and can't be spoofed with a header.
+const TRUST_PROXY = process.env.TRUST_PROXY;
+app.set('trust proxy', TRUST_PROXY ? (/^\d+$/.test(TRUST_PROXY) ? Number(TRUST_PROXY) : TRUST_PROXY === 'true' ? 1 : TRUST_PROXY) : false);
 app.use(express.json());
 
 const __filename = fileURLToPath(import.meta.url);
@@ -55,7 +82,7 @@ app.get('/config.js', (req, res) => {
 const ADMIN_PASSWORD = process.env.ADMIN_PASSWORD;
 const SUPERADMIN_PASSWORD = process.env.SUPERADMIN_PASSWORD;
 const PARENT_PASSWORD = process.env.PARENT_PASSWORD;
-const SECRET_SALT = process.env.SECRET_SALT || 'secret-salt';
+const SECRET_SALT = process.env.SECRET_SALT;
 
 // route: getAllData
 app.get('/api/allData', async (req, res) => {
@@ -122,24 +149,89 @@ function parseUserAgent(ua = '') {
 }
 
 function clientIp(req) {
-  return (req.headers['x-forwarded-for'] || '').split(',')[0].trim() || req.ip || req.socket.remoteAddress || '';
+  // req.ip already honors the `trust proxy` setting above.
+  return String(req.ip || req.socket.remoteAddress || '').slice(0, 64);
 }
+
+// --- Input hygiene helpers ---
+function safeEqual(a, b) {
+  if (typeof a !== 'string' || typeof b !== 'string') return false;
+  const ha = crypto.createHash('sha256').update(a).digest();
+  const hb = crypto.createHash('sha256').update(b).digest();
+  return crypto.timingSafeEqual(ha, hb);
+}
+
+// Auth token from `Authorization: Bearer <token>` (preferred), falling back to
+// a body `authToken` (used by timerLocal.js). Never read from the URL.
+function getAuthToken(req) {
+  const h = req.headers.authorization;
+  if (typeof h === 'string' && h.startsWith('Bearer ')) return h.slice(7).trim();
+  return typeof req.body?.authToken === 'string' ? req.body.authToken : undefined;
+}
+
+// Strips control characters and caps length; non-strings become ''.
+function cleanText(v, max) {
+  if (typeof v !== 'string') return '';
+  return v.replace(/[\u0000-\u001f\u007f]/g, ' ').trim().slice(0, max);
+}
+
+const SESSION_ID_RE = /^[A-Za-z0-9-]{8,64}$/;
+const MAX_CHAT_LEN = 500;
+const MAX_ANNOUNCEMENT_LEN = 1000;
+
+// Failed-login throttle (per client IP): LOGIN_MAX_FAILS failures inside
+// LOGIN_WINDOW_MS locks that IP out until the window passes. In-memory is fine
+// for a one-day single-process deployment.
+const LOGIN_WINDOW_MS = 15 * 60 * 1000;
+const LOGIN_MAX_FAILS = Number(process.env.LOGIN_MAX_FAILS) || 15;
+const loginFails = new Map(); // ip -> { count, resetAt }
+
+function loginLockedOut(ip) {
+  const e = loginFails.get(ip);
+  if (!e) return 0;
+  if (Date.now() > e.resetAt) { loginFails.delete(ip); return 0; }
+  return e.count >= LOGIN_MAX_FAILS ? Math.ceil((e.resetAt - Date.now()) / 1000) : 0;
+}
+function recordLoginFailure(ip) {
+  const now = Date.now();
+  const e = loginFails.get(ip);
+  if (!e || now > e.resetAt) loginFails.set(ip, { count: 1, resetAt: now + LOGIN_WINDOW_MS });
+  else e.count++;
+}
+setInterval(() => {
+  const now = Date.now();
+  for (const [ip, e] of loginFails) if (now > e.resetAt) loginFails.delete(ip);
+}, 5 * 60 * 1000).unref();
 
 // route: validateAdminPassword
 app.post('/api/validateAdmin', async (req, res) => {
-  const { password, reporterName, court, sessionId } = req.body || {};
+  const { password } = req.body || {};
+  const reporterName = cleanText(req.body?.reporterName, 40);
+  const court = /^[A-Za-z0-9 ._-]{1,16}$/.test(req.body?.court ?? '') ? req.body.court : null;
+  const sessionId = SESSION_ID_RE.test(req.body?.sessionId ?? '') ? req.body.sessionId : null;
+
+  const ip = clientIp(req);
+  const retryAfter = loginLockedOut(ip);
+  if (retryAfter) {
+    res.set('Retry-After', String(retryAfter));
+    return res.status(429).json({ isAdmin: false, isSuperAdmin: false, isParent: false, error: `Too many attempts. Try again in ${Math.ceil(retryAfter / 60)} min.` });
+  }
+  if (typeof password !== 'string' || !password) {
+    return res.status(400).json({ isAdmin: false, isSuperAdmin: false, isParent: false, error: 'Password is required.' });
+  }
 
   async function recordLoginIfPossible(role) {
     if (!sessionId) return;
     try {
-      const ua = req.headers['user-agent'] || '';
+      let ua = String(req.headers['user-agent'] || '');
       const { os, browser, device } = parseUserAgent(ua);
+      ua = ua.slice(0, 500);
       await Store.recordLogin({
         sessionId,
         role,
-        name: (reporterName || '').trim() || 'Unknown',
+        name: reporterName || 'Unknown',
         court: role === 'admin' ? (court || null) : null,
-        ip: clientIp(req),
+        ip,
         userAgent: ua,
         os,
         browser,
@@ -150,12 +242,12 @@ app.post('/api/validateAdmin', async (req, res) => {
     }
   }
 
-  if (password === ADMIN_PASSWORD) {
+  if (safeEqual(password, ADMIN_PASSWORD)) {
     const token = computeToken(ADMIN_PASSWORD);
     await recordLoginIfPossible('admin');
     return res.json({ isAdmin: true, isSuperAdmin: false, token });
   }
-  if (password === SUPERADMIN_PASSWORD) {
+  if (safeEqual(password, SUPERADMIN_PASSWORD)) {
     const token = computeToken(SUPERADMIN_PASSWORD);
     // Firebase custom auth tokens are only meaningful when the browser talks
     // to Firebase RTDB directly (firebase mode) — local mode relies solely on
@@ -166,39 +258,70 @@ app.post('/api/validateAdmin', async (req, res) => {
     await recordLoginIfPossible('superadmin');
     return res.json({ isAdmin: true, isSuperAdmin: true, token, firebaseToken });
   }
-  if (PARENT_PASSWORD && password === PARENT_PASSWORD) {
+  if (PARENT_PASSWORD && safeEqual(password, PARENT_PASSWORD)) {
     const token = computeToken(PARENT_PASSWORD);
     // Parents can post in the crew chat (identified as "Parent") but get no
     // match-entry, timer, or superadmin privileges — see requireChatAuth.
     await recordLoginIfPossible('parent');
     return res.json({ isAdmin: false, isSuperAdmin: false, isParent: true, token });
   }
+  recordLoginFailure(ip);
   res.json({ isAdmin: false, isSuperAdmin: false, isParent: false, error: 'Invalid password.' });
 });
+
+// Validates and normalizes the match-result payload. Returns { value } or { error }.
+async function validateMatchData(raw) {
+  if (!raw || typeof raw !== 'object') return { error: 'matchData is required.' };
+
+  const sheetName = typeof raw.sheetName === 'string' ? raw.sheetName : '';
+  const divisions = await Store.getDivisionNames();
+  if (!divisions.includes(sheetName)) return { error: 'Unknown division.' };
+
+  const intOrNull = (v, label, { required } = {}) => {
+    if (v === undefined || v === null || v === '') return required ? { err: `${label} is required.` } : { v: null };
+    const n = typeof v === 'string' && /^\d{1,6}$/.test(v) ? Number(v) : v;
+    if (!Number.isInteger(n) || n < 0 || n > 100000) return { err: `${label} is invalid.` };
+    return { v: n };
+  };
+  const fi = intOrNull(raw.firebaseIndex, 'firebaseIndex', { required: true });
+  if (fi.err) return { error: fi.err };
+  const ri = intOrNull(raw.rowIndex, 'rowIndex');
+  if (ri.err) return { error: ri.err };
+
+  const str = (v, max) => (typeof v === 'string' ? v.replace(/[\u0000-\u0008\u000b\u000c\u000e-\u001f\u007f]/g, '').trim().slice(0, max) : '');
+  const pr = raw.playersRemaining;
+  if (pr !== undefined && pr !== null && pr !== '' && !(Number.isFinite(Number(pr)) && Number(pr) >= 0 && Number(pr) <= 999)) {
+    return { error: 'playersRemaining is invalid.' };
+  }
+
+  return {
+    value: {
+      sheetName,
+      firebaseIndex: fi.v,
+      rowIndex: ri.v,
+      team1: str(raw.team1, 191),
+      team2: str(raw.team2, 191),
+      winner: str(raw.winner, 191),
+      playersRemaining: pr === undefined || pr === null || pr === '' ? '' : Number(pr),
+      adminName: str(raw.adminName, 64),
+      notes: str(raw.notes, 1000),
+      setOfficial: raw.setOfficial === true
+    }
+  };
+}
 
 // route: saveMatchResult
 app.post('/api/saveMatchResult', async (req, res) => {
   try {
-    const { authToken, matchData } = req.body || {};
-
-    // DEBUG: In dev, log token checks to help diagnose 401 issues for superadmin
-    if (process.env.NODE_ENV !== 'production') {
-      try {
-        const expectedAdmin = computeToken(process.env.ADMIN_PASSWORD || '');
-        const expectedSuper = computeToken(process.env.SUPERADMIN_PASSWORD || '');
-        const adminMatch = authToken === expectedAdmin;
-        const superMatch = authToken === expectedSuper;
-        console.log('[DEBUG] /api/saveMatchResult token check:', {
-          tokenSnippet: authToken ? authToken.slice(0, 8) : null,
-          adminMatch,
-          superMatch
-        });
-      } catch (dbgErr) {
-        console.error('[DEBUG] token check failed', dbgErr);
-      }
-    }
-
+    const authToken = getAuthToken(req);
     if (!isValidToken(authToken)) return res.status(401).json({ success: false, error: 'Authentication failed.' });
+
+    // Whitelist + validate the payload: sheetName/indexes end up in RTDB paths
+    // and Google Sheets A1 ranges, so a referee must not be able to aim them
+    // at arbitrary locations.
+    const clean = await validateMatchData(req.body?.matchData);
+    if (clean.error) return res.status(400).json({ success: false, error: clean.error });
+    const matchData = clean.value;
 
     // Detailed logging for save flow
     const requestId = crypto.randomBytes(4).toString('hex');
@@ -208,7 +331,7 @@ app.post('/api/saveMatchResult', async (req, res) => {
     // Superadmin ticked "also submit as official result": the sheet's official
     // columns get overwritten (not just filled when blank). Honored only for
     // the superadmin token, and only for a winner that's actually in the match.
-    const forceOfficial = matchData?.setOfficial === true && authToken === computeToken(process.env.SUPERADMIN_PASSWORD || '');
+    const forceOfficial = matchData.setOfficial === true && safeEqual(authToken, computeToken(SUPERADMIN_PASSWORD));
     if (forceOfficial) {
       const winner = (matchData.winner || '').trim();
       const game = Number.isInteger(matchData.rowIndex)
@@ -361,7 +484,7 @@ app.get('/api/announcements', async (_req, res) => {
 app.post('/api/announcements', async (req, res) => {
   if (!requireSuperAdmin(req, res)) return;
   try {
-    const text = (req.body?.text || '').trim();
+    const text = cleanText(req.body?.text, MAX_ANNOUNCEMENT_LEN);
     if (!text) return res.status(400).json({ success: false, error: 'text is required' });
     const announcements = await Store.createAnnouncement(text);
     res.json({ success: true, announcements });
@@ -375,7 +498,7 @@ app.post('/api/announcements/:id', async (req, res) => {
   try {
     const id = Number(req.params.id);
     const patch = {};
-    if (typeof req.body?.text === 'string') patch.text = req.body.text.trim();
+    if (typeof req.body?.text === 'string') patch.text = cleanText(req.body.text, MAX_ANNOUNCEMENT_LEN);
     if (typeof req.body?.on === 'boolean') patch.on = req.body.on;
     const announcements = await Store.updateAnnouncement(id, patch);
     res.json({ success: true, announcements });
@@ -400,9 +523,8 @@ app.delete('/api/announcements/:id', async (req, res) => {
 // client-supplied display name/court, never trusted directly from the body.
 
 function requireChatAuth(req, res) {
-  const authToken = req.body?.authToken || req.query?.authToken;
-  const expectedParent = computeToken(process.env.PARENT_PASSWORD || '');
-  const isParent = !!process.env.PARENT_PASSWORD && authToken === expectedParent;
+  const authToken = getAuthToken(req);
+  const isParent = !!PARENT_PASSWORD && safeEqual(authToken, computeToken(PARENT_PASSWORD));
   if (!isValidToken(authToken) && !isParent) {
     res.status(401).json({ success: false, error: 'Authentication failed.' });
     return false;
@@ -420,9 +542,9 @@ function chatChannelOf(value) {
 
 function chatRoleOf(authToken) {
   if (!authToken || typeof authToken !== 'string') return null;
-  if (authToken === computeToken(process.env.SUPERADMIN_PASSWORD || '')) return 'superadmin';
-  if (process.env.PARENT_PASSWORD && authToken === computeToken(process.env.PARENT_PASSWORD)) return 'parent';
-  if (authToken === computeToken(process.env.ADMIN_PASSWORD || '')) return 'admin';
+  if (safeEqual(authToken, computeToken(SUPERADMIN_PASSWORD))) return 'superadmin';
+  if (PARENT_PASSWORD && safeEqual(authToken, computeToken(PARENT_PASSWORD))) return 'parent';
+  if (safeEqual(authToken, computeToken(ADMIN_PASSWORD))) return 'admin';
   return null;
 }
 
@@ -441,7 +563,7 @@ app.get('/api/chat', async (_req, res) => {
 });
 
 app.get('/api/chat/lead', async (req, res) => {
-  if (!canUseLeadChat(chatRoleOf(req.query?.authToken))) {
+  if (!canUseLeadChat(chatRoleOf(getAuthToken(req)))) {
     return res.status(403).json({ success: false, error: 'Leadership chat is restricted.' });
   }
   try {
@@ -454,19 +576,18 @@ app.get('/api/chat/lead', async (req, res) => {
 app.post('/api/chat', async (req, res) => {
   if (!requireChatAuth(req, res)) return;
   try {
-    const text = (req.body?.text || '').trim();
+    const text = cleanText(req.body?.text, MAX_CHAT_LEN);
     if (!text) return res.status(400).json({ success: false, error: 'text is required' });
 
-    const authToken = req.body?.authToken;
-    const role = chatRoleOf(authToken);
+    const role = chatRoleOf(getAuthToken(req));
     const channel = chatChannelOf(req.body?.channel);
     if (channel === 'lead' && !canUseLeadChat(role)) {
       return res.status(403).json({ success: false, error: 'Leadership chat is restricted.' });
     }
     const isMgr = role === 'superadmin';
     const isParent = role === 'parent';
-    const reporterName = (req.body?.reporterName || '').trim() || 'Staff';
-    const court = req.body?.court;
+    const reporterName = cleanText(req.body?.reporterName, 40) || 'Staff';
+    const court = /^[A-Za-z0-9 ._-]{1,16}$/.test(req.body?.court ?? '') ? req.body.court : null;
     const who = isMgr ? `Admin · ${reporterName}` : isParent ? `Parent · ${reporterName}` : `Court ${court || '?'} · ${reporterName}`;
 
     const chat = await Store.postChatMessage({ who, mgr: isMgr, text, channel });
@@ -477,7 +598,7 @@ app.post('/api/chat', async (req, res) => {
     // heartbeat interval, which can stall for a while after a backgrounded
     // mobile tab resumes (see the chat presence dot / ONLINE_THRESHOLD_MS).
     const sessionId = req.body?.sessionId;
-    if (sessionId) Store.touchSession(sessionId).catch(err => console.error('Failed to touch session on chat send:', err));
+    if (SESSION_ID_RE.test(sessionId ?? '')) Store.touchSession(sessionId).catch(err => console.error('Failed to touch session on chat send:', err));
   } catch (e) {
     res.status(500).json({ success: false, error: e.toString() });
   }
@@ -543,7 +664,7 @@ app.post('/api/session/heartbeat', async (req, res) => {
   if (!requireChatAuth(req, res)) return;
   try {
     const { sessionId } = req.body || {};
-    if (!sessionId) return res.status(400).json({ success: false, error: 'sessionId is required' });
+    if (!SESSION_ID_RE.test(sessionId ?? '')) return res.status(400).json({ success: false, error: 'valid sessionId is required' });
     await Store.touchSession(sessionId);
     res.json({ success: true });
   } catch (e) {
@@ -555,7 +676,7 @@ app.post('/api/session/logout', async (req, res) => {
   if (!requireChatAuth(req, res)) return;
   try {
     const { sessionId } = req.body || {};
-    if (!sessionId) return res.status(400).json({ success: false, error: 'sessionId is required' });
+    if (!SESSION_ID_RE.test(sessionId ?? '')) return res.status(400).json({ success: false, error: 'valid sessionId is required' });
     await Store.endSession(sessionId);
     res.json({ success: true });
   } catch (e) {
@@ -595,9 +716,8 @@ app.get('/api/session/history', async (req, res) => {
 // Sheets client, which lives in sheetsSync.js.
 
 function requireSuperAdmin(req, res) {
-  const authToken = req.body?.authToken || req.query?.authToken;
-  const expectedSuper = computeToken(process.env.SUPERADMIN_PASSWORD || '');
-  if (!authToken || authToken !== expectedSuper) {
+  const authToken = getAuthToken(req);
+  if (!authToken || !safeEqual(authToken, computeToken(SUPERADMIN_PASSWORD))) {
     res.status(403).json({ success: false, error: 'Superadmin access required.' });
     return false;
   }
@@ -705,10 +825,8 @@ function computeToken(password) {
 }
 function isValidToken(tokenFromClient) {
   if (!tokenFromClient || typeof tokenFromClient !== 'string') return false;
-  const expectedAdmin = computeToken(process.env.ADMIN_PASSWORD || '');
-  const expectedSuper = computeToken(process.env.SUPERADMIN_PASSWORD || '');
   // Accept either admin or superadmin token
-  return tokenFromClient === expectedAdmin || tokenFromClient === expectedSuper;
+  return safeEqual(tokenFromClient, computeToken(ADMIN_PASSWORD)) || safeEqual(tokenFromClient, computeToken(SUPERADMIN_PASSWORD));
 }
 
 
