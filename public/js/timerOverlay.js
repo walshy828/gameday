@@ -7,20 +7,37 @@
 // Two extra jobs live here that aren't backend-specific:
 //  - Mirror the header's #timer-display text/colour onto the popover's own
 //    big #admin-timer-display (the backends only ever write the header).
-//  - Auto-sync the timer's round label to the schedule's computed "on court
-//    now" round (getLiveRoundKey in schedule.js) whenever that round
-//    actually changes. Manual Prev/Next (in "More controls") still works as
-//    an override in between transitions — this only fires on a real flip,
-//    so it never fights a manual click made seconds earlier. It only runs in
-//    the tab that owns this division's clock, and re-baselines on every
-//    division switch so browsing another division can never write a round.
+//  - Auto-sync the timer's round label to the "on court now" round: the
+//    earliest round with a game that has no result yet (referee-submitted or
+//    official). When that round changes it is written to the clock, retrying
+//    until the clock matches; a clock found behind on load is caught up. Manual
+//    Prev/Next (in "More controls") still works as an override in between
+//    transitions. It only writes from the tab that owns this division's clock,
+//    and re-baselines on every division switch so browsing another division can
+//    never write a round.
 //  - Wrong-division guard: a warning banner (and a confirm before the first
 //    control click) when the division being viewed isn't the one this tab last
 //    ran the clock for — e.g. a manager peeking at another division.
-import { getLiveRoundKey } from './schedule.js';
+import { getRoundOrder, isReported } from './schedule.js';
+import { getTimerSnapshot } from './timerSnapshot.js';
 import { isController, LAST_DIVISION_KEY } from './timerControlsUI.js';
 
-const AUTO_SYNC_POLL_MS = 5000;
+const AUTO_SYNC_POLL_MS = 2000;
+
+const hasValue = (v) => { const t = (v || '').trim(); return t !== '' && t !== 'TBA' && t !== '—'; };
+
+// A game counts as reported once the referee has submitted a result
+// (adminWinner) *or* it is official (winner). schedule.js's isReported only
+// sees the official one, which would hold the clock on a round until the
+// tournament manager confirmed every result.
+const isGameDone = (g) => isReported(g) || hasValue(g.adminWinner);
+
+/** Earliest round that still has an unreported game; undefined when all are done. */
+function liveRoundForClock() {
+  return getRoundOrder().find(key =>
+    App.data.allScheduleData.some(g => (g.roundTime || 'TBD') === key && !isGameDone(g))
+  );
+}
 
 function wireMirror() {
   const source = document.getElementById('timer-display');
@@ -150,10 +167,16 @@ function wireMoreDisclosure() {
   toggleBtn.dataset.init = 'true';
 }
 
-// undefined until the first poll tick establishes a baseline — we never want
-// the very first check (e.g. right after page load/reconnect) to clobber
-// whatever round is already set.
-let lastSyncedLiveKey;
+// Edge + retry: a change of the live round (the earliest round with an
+// unreported game) marks that round as *pending*; it stays pending until the
+// clock's stored round actually equals it, retrying every tick while this tab
+// owns the clock. So a write that failed, a flip that happened while the tab was
+// backgrounded/not the owner, or a dropped update can't leave the clock behind.
+// Once the clock matches, pending clears — a later manual Prev/Next is never
+// fought. On the first look at a division, a clock sitting *behind* the live
+// round is caught up (never moved backwards).
+let lastSeenLiveKey;
+let pendingKey = null;
 let lastSyncedDivision = null;
 let autoSyncStarted = false;
 
@@ -168,11 +191,12 @@ function startRoundAutoSync(setCurrentRound) {
     const division = viewedDivision();
     if (!division) return;
 
-    // Division switched: drop the old baseline so the new division's live
-    // round is treated as a fresh baseline, never as a "flip" to write.
+    // Division switched: forget the old division's baseline/pending round so
+    // browsing another division can never write a round.
     if (division !== lastSyncedDivision) {
       lastSyncedDivision = division;
-      lastSyncedLiveKey = undefined;
+      lastSeenLiveKey = undefined;
+      pendingKey = null;
     }
 
     // The schedule in memory must be the viewed division's (it lags the
@@ -182,22 +206,33 @@ function startRoundAutoSync(setCurrentRound) {
 
     let liveKey;
     try {
-      liveKey = getLiveRoundKey();
+      liveKey = liveRoundForClock();
     } catch {
       return;
     }
-    if (!liveKey) return; // everything reported — leave the clock on the last round
+    if (!liveKey) { pendingKey = null; return; } // everything reported — leave the clock on the last round
 
-    if (lastSyncedLiveKey === undefined) {
-      lastSyncedLiveKey = liveKey;
-      return;
+    // Need the clock's current state for this division before judging anything.
+    const snap = getTimerSnapshot(division);
+    if (!snap) return;
+    const clockRound = (snap.state?.currentRound || '').trim();
+
+    if (lastSeenLiveKey === undefined) {
+      lastSeenLiveKey = liveKey;
+      const order = getRoundOrder();
+      if (order.indexOf(clockRound) < order.indexOf(liveKey)) pendingKey = liveKey; // catch up
+    } else if (liveKey !== lastSeenLiveKey) {
+      lastSeenLiveKey = liveKey;
+      pendingKey = liveKey;
     }
-    if (liveKey !== lastSyncedLiveKey) {
-      lastSyncedLiveKey = liveKey;
-      // Only the tab that owns this division's clock writes its round; every
-      // other super admin tab just observes.
-      if (isController(division)) setCurrentRound(liveKey);
-    }
+
+    if (!pendingKey) return;
+    pendingKey = liveKey; // always chase the latest live round
+    if (clockRound === pendingKey) { pendingKey = null; return; }
+
+    // Only the tab that owns this division's clock writes its round; every
+    // other super admin tab just observes (and writes if it later takes over).
+    if (isController(division)) setCurrentRound(pendingKey);
   }, AUTO_SYNC_POLL_MS);
 }
 
