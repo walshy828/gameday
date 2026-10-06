@@ -6,7 +6,8 @@
 CREATE TABLE IF NOT EXISTS divisions (
   id INT AUTO_INCREMENT PRIMARY KEY,
   name VARCHAR(191) NOT NULL UNIQUE,
-  sort_order INT NOT NULL DEFAULT 0
+  sort_order INT NOT NULL DEFAULT 0,
+  schedule_config TEXT NULL
 );
 
 CREATE TABLE IF NOT EXISTS standings (

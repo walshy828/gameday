@@ -27,7 +27,8 @@ import {
     initializeFilter,
     switchView,
     goToGate,
-    openSettingsFromGate
+    openSettingsFromGate,
+    openGameManagerFromGate
 } from './navigation.js';
 
 import {
@@ -65,6 +66,7 @@ import * as TimerLocal from './timerLocal.js';
 import { initAnnouncements, dismissAnnouncementBanner, postAnnouncementFromSetup, cancelAnnouncementEdit } from './announcements.js';
 import { initChat, syncChatRole, switchChatChannel, sendChatMessage, jumpToChatBottom, toggleChatHistory, requestDeleteChatMessage, cancelDeleteChatMessage, confirmDeleteChatMessage } from './chat.js';
 import { renderPlayoffsView } from './playoffs.js';
+import { setGameManagerAllowance } from './gameManagerUI.js';
 
 const IS_LOCAL_BACKEND = window.__DATA_BACKEND__ === 'local';
 const TimerModule = IS_LOCAL_BACKEND ? TimerLocal : TimerFirebase;
@@ -177,7 +179,7 @@ async function loadData(divisionName) {
 
   try {
     // Replace Firebase load with API call
-    const { settings, standings, schedule } = await getAllData(divisionName);
+    const { settings, standings, schedule, scheduleConfig } = await getAllData(divisionName);
 
     if (!standings && !schedule) throw new Error(`No data found for division ${divisionName}.`);
 
@@ -226,6 +228,7 @@ async function loadData(divisionName) {
         }));
 
     App.data.scheduleDivision = divisionName;
+    App.data.scheduleConfig = scheduleConfig || null;
 
     // Update derived lists
     App.data.teamNames = getUniqueTeams();
@@ -574,6 +577,8 @@ exposeGlobals({
   switchView,
   goToGate,
   openSettingsFromGate,
+  openGameManagerFromGate,
+  setGameManagerAllowance,
   getCurrentFilteredTeam
 });
 

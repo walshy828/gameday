@@ -18,9 +18,15 @@ export const schemaReady = (async function ensureFeatureTables() {
       CREATE TABLE IF NOT EXISTS divisions (
         id INT AUTO_INCREMENT PRIMARY KEY,
         name VARCHAR(191) NOT NULL UNIQUE,
-        sort_order INT NOT NULL DEFAULT 0
+        sort_order INT NOT NULL DEFAULT 0,
+        schedule_config TEXT NULL
       )
     `);
+    try {
+      await pool.query('ALTER TABLE divisions ADD COLUMN schedule_config TEXT NULL');
+    } catch (e) {
+      if (e.code !== 'ER_DUP_FIELDNAME') throw e;
+    }
     await pool.query(`
       CREATE TABLE IF NOT EXISTS standings (
         id INT AUTO_INCREMENT PRIMARY KEY,
@@ -295,6 +301,14 @@ export async function getSchedule(sheetName) {
   return rows.map(mapScheduleRow).filter(m => m && (m.team1 || m.team2));
 }
 
+export async function getScheduleConfig(sheetName) {
+  if (!sheetName) return null;
+  const [rows] = await pool.query('SELECT schedule_config FROM divisions WHERE name = ?', [sheetName]);
+  const raw = rows[0]?.schedule_config;
+  if (!raw) return null;
+  try { return JSON.parse(raw); } catch (e) { return null; }
+}
+
 async function loadDivisionSnapshot(sheetName) {
   const [standings, schedule] = await Promise.all([
     getStandings(sheetName),
@@ -347,11 +361,13 @@ export async function saveMatchResult(matchData) {
  * columns and lastUpdated (written by the app's own match-entry flow) are
  * left untouched.
  */
-export async function writeDivisionData(name, { standings, schedule } = {}) {
+export async function writeDivisionData(name, { standings, schedule, scheduleConfig } = {}) {
   const conn = await pool.getConnection();
   try {
     await conn.beginTransaction();
     await conn.query('INSERT IGNORE INTO divisions (name) VALUES (?)', [name]);
+    await conn.query('UPDATE divisions SET schedule_config = ? WHERE name = ?',
+      [scheduleConfig ? JSON.stringify(scheduleConfig) : null, name]);
 
     await conn.query('DELETE FROM standings WHERE division = ?', [name]);
     if (standings && standings.length) {

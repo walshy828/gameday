@@ -19,6 +19,7 @@
 //    the run's startTime, so duplicate attempts are harmless.
 import { getClientId, getClientName } from './timerClient.js';
 import { renderControlState, setControlHandlers } from './timerControlsUI.js';
+import { setTimerSnapshot } from './timerSnapshot.js';
 
 const EXPIRY_TAKEOVER_MS = 4000;
 
@@ -100,6 +101,7 @@ function onTimerValue(raw, division) {
   // (writes happen on demand, inside the control transactions).
   const data = { duration: 300, lastSetDuration: 300, running: false, ...(raw || {}) };
   latestData = data;
+  setTimerSnapshot(division, data, serverOffset);
 
   const scoreboard = document.getElementById('scoreboard');
   if (scoreboard) {

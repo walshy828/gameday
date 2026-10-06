@@ -976,6 +976,9 @@
                         style="border-color:rgba(224,184,99,.5);background:rgba(224,184,99,.1);color:var(--gold-l)">
                         Results need review <span id="gate-discrepancy-count" class="ml-1 rounded-full px-2 py-0.5 text-[11px]" style="background:var(--gold);color:#2A1B08">0</span>
                         <span class="block text-[11px] font-normal text-white/50">Referee-reported results that differ from official</span></button>
+                    <button type="button" onclick="openGameManagerFromGate()"
+                        class="rounded-xl border border-white/20 bg-white/[.06] px-4 py-3 text-sm font-semibold text-white/85 text-left">
+                        Game Management<span class="block text-[11px] font-normal text-white/50">Pace vs. schedule &amp; how to finish on time</span></button>
                     <button type="button" onclick="openSettingsFromGate()"
                         class="rounded-xl border border-white/20 bg-white/[.06] px-4 py-3 text-sm font-semibold text-white/85 text-left">
                         Settings<span class="block text-[11px] font-normal text-white/50">Setup, sync &amp; sessions</span></button>
@@ -1457,6 +1460,17 @@
                             <p class="py-4 text-center text-sm text-white/45">Select filters to view matches, or load
                                 data.</p>
                         </div>
+                    </div>
+
+                    <!-- GAME MANAGEMENT VIEW (Superadmin only) — populated by gameManagerUI.js -->
+                    <div id="game-manager-view" class="screen hidden">
+                        <div class="screen-head">
+                            <h2 class="screen-title">Game Management</h2>
+                            <button onclick="switchView('admin-entry')"
+                                class="flex-none rounded-full border border-white/20 bg-white/[.06] px-3.5 py-2.5 text-[11px] font-semibold leading-none text-white/75">←
+                                Admin</button>
+                        </div>
+                        <div id="game-manager-body" class="mt-3.5 grid gap-2.5"></div>
                     </div>
 
                     <!-- SETTINGS VIEW (Superadmin only) -->

@@ -1066,7 +1066,7 @@ function logoutAdmin() {
     // closes it for non-superadmins.
     updateAdminUI();
     // If the user was in a staff-only tab, switch them out
-    if (['admin-entry', 'settings', 'chat'].includes(App.state.currentView)) {
+    if (['admin-entry', 'settings', 'game-manager', 'chat'].includes(App.state.currentView)) {
         switchView('standings');
     }
     showStatus('Logged out of Admin Mode.', false);

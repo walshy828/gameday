@@ -165,8 +165,8 @@ async function syncTabs(spreadsheetId, divisionNames) {
   let syncedCount = 0;
   for (const name of divisionNames) {
     try {
-      const { standings, schedule, legacy } = await readTabData(sheetsApi, spreadsheetId, name);
-      await Store.writeDivisionData(name, { standings, schedule });
+      const { standings, schedule, legacy, config } = await readTabData(sheetsApi, spreadsheetId, name);
+      await Store.writeDivisionData(name, { standings, schedule, scheduleConfig: config });
       standingsCount += standings.length;
       matchesCount += schedule.length;
       syncedCount += 1;

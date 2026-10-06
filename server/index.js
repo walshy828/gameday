@@ -98,7 +98,8 @@ app.get('/api/allData', async (req, res) => {
     };
     const standings = await Store.getStandings(sheetName);
     const schedule = await Store.getSchedule(sheetName);
-    res.json({ settings, standings, schedule });
+    const scheduleConfig = await Store.getScheduleConfig(sheetName);
+    res.json({ settings, standings, schedule, scheduleConfig });
   } catch (e) {
     console.error('getAllData error', e);
     res.status(500).json({ error: e.toString() });

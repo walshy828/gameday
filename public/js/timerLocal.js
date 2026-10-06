@@ -12,6 +12,7 @@
 import { getSocket } from './socketClient.js';
 import { getClientId, getClientName } from './timerClient.js';
 import { renderControlState, setControlHandlers } from './timerControlsUI.js';
+import { setTimerSnapshot } from './timerSnapshot.js';
 
 let localTimerInterval = null;
 let allRounds = [];
@@ -204,6 +205,7 @@ function updateDisplay(timerData) {
 
 function applyState(state) {
   latestState = state;
+  setTimerSnapshot(currentDivision(), state);
   const scoreboard = document.getElementById('scoreboard');
   if (scoreboard) {
     if (App.state.isSuperAdmin) {

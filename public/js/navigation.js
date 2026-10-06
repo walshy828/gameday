@@ -2,6 +2,7 @@ import { getDivisions } from './api.js';
 import { initSettingsView } from './settings.js';
 import { onChatTabOpened } from './chat.js';
 import { renderPlayoffsView } from './playoffs.js';
+import { renderGameManager } from './gameManagerUI.js';
 import { renderStandings } from './standings.js';
 
 /**
@@ -88,6 +89,27 @@ function openSettingsFromGate() {
     document.getElementById('app-screen')?.classList.remove('hidden');
     document.getElementById('bottom-tab-bar')?.classList.remove('hidden');
     switchView('settings');
+}
+
+/**
+ * Superadmin shortcut from the Gate to Game Management. The assessment is per
+ * division, so enter the last-used (or first) division if none is loaded yet.
+ */
+async function openGameManagerFromGate() {
+    if (!App.state.isSuperAdmin) return;
+    const names = App.data.allDivisionNames || [];
+    const stored = localStorage.getItem(DIVISION_STORAGE_KEY);
+    const division = App.config.currentSheetName || (names.includes(stored) ? stored : names[0]);
+    if (!division) return;
+    if (App.data.scheduleDivision !== division) {
+        await enterApp(division);
+    } else {
+        App.state.screen = 'app';
+        document.getElementById('gate-screen')?.classList.add('hidden');
+        document.getElementById('app-screen')?.classList.remove('hidden');
+        document.getElementById('bottom-tab-bar')?.classList.remove('hidden');
+    }
+    switchView('game-manager');
 }
 
 /** Returns to the Gate screen from within the app (the header "Change" chip). */
@@ -565,7 +587,8 @@ function switchView(view) {
         'info': document.getElementById('info-view'),
         'admin-entry': document.getElementById('admin-match-entry-view'),
         'chat': document.getElementById('chat-view'),
-        'settings': document.getElementById('settings-view')
+        'settings': document.getElementById('settings-view'),
+        'game-manager': document.getElementById('game-manager-view')
     };
     const tabs = {
         'standings': document.getElementById('standings-tab'),
@@ -586,13 +609,14 @@ function switchView(view) {
         if (v === view) {
             viewEl.classList.remove('hidden');
             if (tab) {
-                tab.classList.add(v === 'admin-entry' || v === 'settings' ? 'tab-admin-active' : 'tab-active');
-                tab.classList.remove(v === 'admin-entry' || v === 'settings' ? 'tab-active' : 'tab-admin-active');
+                tab.classList.add(v === 'admin-entry' || v === 'settings' || v === 'game-manager' ? 'tab-admin-active' : 'tab-active');
+                tab.classList.remove(v === 'admin-entry' || v === 'settings' || v === 'game-manager' ? 'tab-active' : 'tab-admin-active');
             }
             // Trigger specific view update
             if (v === 'schedule') updateScheduleView();
             if (v === 'admin-entry') updateAdminMatchEntryView();
             if (v === 'settings') initSettingsView();
+            if (v === 'game-manager') renderGameManager();
             if (v === 'chat') onChatTabOpened();
             if (v === 'playoffs') renderPlayoffsView();
 
@@ -618,5 +642,6 @@ export {
     showGate,
     goToGate,
     openSettingsFromGate,
+    openGameManagerFromGate,
     enterApp
 };

@@ -26,6 +26,12 @@ export async function getSchedule(sheetName) {
   return Sheets.getSchedule(sheetName);
 }
 
+export async function getScheduleConfig(sheetName) {
+  if (!sheetName) return null;
+  const snap = await admin.database().ref(`dodgeball-tournament/divisions/${sheetName}/scheduleConfig`).once('value');
+  return snap.val() || null;
+}
+
 export async function saveMatchResult(matchData) {
   return Sheets.saveMatchResult(matchData);
 }
@@ -48,9 +54,11 @@ export async function createCustomToken(uid, claims = {}) {
  * per-match `history` nodes written by the app's own match-entry flow
  * aren't clobbered by the pull.
  */
-export async function writeDivisionData(name, { standings, schedule } = {}) {
+export async function writeDivisionData(name, { standings, schedule, scheduleConfig } = {}) {
   const db = admin.database();
   await db.ref(`dodgeball-tournament/divisions/${name}/standings`).set(standings || []);
+  // null (a tab without a config block) removes any stale node.
+  await db.ref(`dodgeball-tournament/divisions/${name}/scheduleConfig`).set(scheduleConfig || null);
 
   const updates = {};
   (schedule || []).forEach((match, idx) => { updates[idx] = match; });
