@@ -449,6 +449,60 @@ function watchDivision(divisionName) {
 }
 
 
+// --- Resume after background / sleep (mobile) ---
+// Phones freeze the page and silently kill sockets while the tab is hidden or
+// the screen is off, so on return the clock (and data) can be stale until the
+// transport notices it is dead. Force a resync the moment the page is usable.
+let hiddenAt = 0;
+let lastResumeAt = 0;
+
+function resumeSync() {
+  const now = Date.now();
+  if (now - lastResumeAt < 2000) return;
+  lastResumeAt = now;
+  const division = App?.config?.currentSheetName;
+  if (!division) return;
+
+  if (IS_LOCAL_BACKEND) {
+    const socket = getSocket();
+    if (!socket.connected) {
+      socket.connect(); // 'connect' handler (watchDivision) re-joins + refreshes the clock
+    } else {
+      // "Connected" can be a zombie after suspension: only a round trip proves it.
+      socket.timeout(4000).emit('joinDivision', division, (err) => {
+        if (err) { socket.disconnect().connect(); return; }
+        TimerModule.refreshState?.();
+      });
+    }
+    TimerModule.refreshState?.(); // don't wait on the socket for the clock
+    if (!App.refresh?.isLoadingData) {
+      getAllData(division)
+        .then(({ standings, schedule }) => {
+          if (division !== App.config.currentSheetName) return;
+          handleDivisionSnapshot({ standings, schedule }, division);
+        })
+        .catch(e => console.error('Resume data refresh failed', e));
+    }
+  } else {
+    // Firebase's websocket can sit half-dead for a while after suspension;
+    // cycling the connection makes it reconnect now and re-fire the listeners
+    // (clock + division data) with current values.
+    try {
+      const db = firebase.database();
+      db.goOffline();
+      db.goOnline();
+    } catch (e) { console.error('Firebase resume failed', e); }
+  }
+}
+
+document.addEventListener('visibilitychange', () => {
+  if (document.hidden) { hiddenAt = Date.now(); return; }
+  if (hiddenAt && Date.now() - hiddenAt >= 5000) resumeSync();
+  hiddenAt = 0;
+});
+window.addEventListener('pageshow', (e) => { if (e.persisted) resumeSync(); }); // back/forward cache
+window.addEventListener('online', resumeSync);
+
 /**
  * Switches to the schedule view and filters by the specified team.
  */

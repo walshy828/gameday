@@ -1426,8 +1426,8 @@ const SB = {
     startTime: 0,
     startAfterRoundRunning: false,
     lastSetDuration: 300,
-    serverOffset: 0,
   },
+  serverOffset: 0,
   timerIntervalId:   null,
 };
 
@@ -1613,10 +1613,10 @@ function renderDivSwitcher() {
   `).join('');
 }
 
-// Point the match clock at the active division's timer. Firebase mode has a
-// single global timer node, so there's nothing to swap there.
+// Point the match clock at the active division's timer.
+let bindFirebaseTimer = null, fbTimerRef = null, fbTimerHandler = null;
 function applyActiveTimer() {
-  if (window.__DATA_BACKEND__ !== 'local') return;
+  if (window.__DATA_BACKEND__ !== 'local') { bindFirebaseTimer?.(); return; }
   const div = SB.divisions[SB.activeIndex];
   if (SB.timers[div]) SB.timerState = SB.timers[div];
   fetchTimerState(div).catch(console.error);
@@ -2559,30 +2559,41 @@ async function openSetupFromCtrl() {
 // ================================================================
 // MATCH CLOCK ENGINE
 // ================================================================
-function normalizeTimer(p, serverOffset = 0) {
+function normalizeTimer(p) {
   return {
     running:                !!p.running,
     duration:               p.duration ?? 300,
     startTime:              p.startTime || 0,
     startAfterRoundRunning: !!p.startAfterRoundRunning,
     lastSetDuration:        p.lastSetDuration || 300,
-    serverOffset,
   };
 }
 
-// Local mode: timers are per-division and the server stamps startTime with
-// its own clock, so offset the countdown by (server clock - this clock),
-// read from the HTTP Date header, rather than trusting the display PC.
+// Server-clock offset (server - this device), NTP-style: several samples of
+// /api/time, keep the lowest round-trip, assume symmetric latency. Used by both
+// backends' clocks; in firebase mode Firebase's .info/serverTimeOffset wins.
+async function syncServerClock(samples = 5) {
+  let best = null;
+  for (let i = 0; i < samples; i++) {
+    try {
+      const t0 = Date.now();
+      const r = await fetch(`${API}/api/time`, { cache: 'no-store' });
+      const t1 = Date.now();
+      const { now } = await r.json();
+      if (!Number.isFinite(now)) continue;
+      const rtt = t1 - t0;
+      if (!best || rtt < best.rtt) best = { rtt, offset: now - (t0 + t1) / 2 };
+    } catch (e) { /* keep what we have */ }
+  }
+  if (best) SB.serverOffset = Math.round(best.offset);
+}
+
 async function fetchTimerState(divName) {
   if (window.__DATA_BACKEND__ !== 'local' || !divName) return;
   try {
-    const t0 = Date.now();
     const r = await fetch(`${API}/api/timer?sheetName=${encodeURIComponent(divName)}`, { cache: 'no-store' });
     if (!r.ok) return;
-    const payload = await r.json();
-    const dateHdr = r.headers.get('Date');
-    const offset = dateHdr ? new Date(dateHdr).getTime() - (t0 + Date.now()) / 2 : 0;
-    SB.timers[divName] = normalizeTimer(payload, Number.isFinite(offset) ? offset : 0);
+    SB.timers[divName] = normalizeTimer(await r.json());
     if (SB.divisions[SB.activeIndex] === divName) SB.timerState = SB.timers[divName];
   } catch(e) {
     console.error('[timer] Failed to fetch timer state', e);
@@ -2600,7 +2611,7 @@ function startMatchClockTicker() {
     let remaining = state.duration ?? 300;
 
     if (state.running && state.startTime) {
-      const now = Date.now() + (state.serverOffset || 0);
+      const now = Date.now() + SB.serverOffset;
       const elapsed = Math.max(0, Math.floor((now - state.startTime) / 1000));
       remaining = Math.max(0, Math.min(state.duration, state.duration - elapsed));
     }
@@ -2620,7 +2631,7 @@ function startMatchClockTicker() {
   }
 
   tick();
-  SB.timerIntervalId = setInterval(tick, 250);
+  SB.timerIntervalId = setInterval(tick, 100);
 }
 
 // ================================================================
@@ -2819,27 +2830,25 @@ function launch() {
         renderAnnouncements();
       });
 
-      // Subscribe to global match timer
-      const timerRef = db.ref('timer');
-      activeFbRefs.push(timerRef);
-      timerRef.on('value', (snap) => {
-        const val = snap.val();
-        if (!val) return;
-        SB.timerState = {
-          running:               val.running || false,
-          duration:              val.duration ?? 300,
-          startTime:             val.startTime || 0,
-          startAfterRoundRunning: val.startAfterRoundRunning || false,
-          lastSetDuration:       val.lastSetDuration || 300,
-          serverOffset:          SB.timerState.serverOffset || 0,
-        };
-      });
+      // Per-division match clock at timer/byDivision/{division}; rebound
+      // whenever the active division changes (see applyActiveTimer).
+      bindFirebaseTimer = () => {
+        if (fbTimerRef && fbTimerHandler) fbTimerRef.off('value', fbTimerHandler);
+        const div = SB.divisions[SB.activeIndex];
+        if (!div) return;
+        fbTimerRef = db.ref(`timer/byDivision/${div}`);
+        fbTimerHandler = fbTimerRef.on('value', (snap) => {
+          // A division nobody has run yet has no node: show the defaults.
+          SB.timerState = normalizeTimer(snap.val() || {});
+        });
+      };
+      bindFirebaseTimer();
 
-      // Server time offset for accurate countdown
+      // Firebase's own server-time offset (better than any HTTP estimate).
       const offsetRef = db.ref('.info/serverTimeOffset');
       activeFbRefs.push(offsetRef);
       offsetRef.on('value', (snap) => {
-        SB.timerState.serverOffset = snap.val() || 0;
+        SB.serverOffset = snap.val() || 0;
       });
 
     } else {
@@ -2874,8 +2883,7 @@ function launch() {
 
         SB.socket.on('timerUpdate', (payload) => {
           if (!payload.division) return;
-          const prev = SB.timers[payload.division];
-          SB.timers[payload.division] = normalizeTimer(payload, prev ? prev.serverOffset : 0);
+          SB.timers[payload.division] = normalizeTimer(payload);
           if (payload.division === SB.divisions[SB.activeIndex]) SB.timerState = SB.timers[payload.division];
         });
 
@@ -2903,11 +2911,38 @@ function launch() {
     }
   }
 
+  if (window.__DATA_BACKEND__ === 'local') syncServerClock().catch(console.error);
+
+  // Resume after the device slept / the tab was backgrounded: transports may
+  // be dead without having noticed, so resync immediately.
+  let sbHiddenAt = 0;
+  const sbResume = () => {
+    if (window.__DATA_BACKEND__ === 'local') {
+      if (SB.socket && !SB.socket.connected) SB.socket.connect();
+      else SB.socket?.timeout(4000).emit('joinDivision', SB.divisions[SB.activeIndex], (err) => {
+        if (err) SB.socket.disconnect().connect();
+      });
+      syncServerClock(3).catch(console.error);
+      fetchTimerState(SB.divisions[SB.activeIndex]).catch(console.error);
+      SB.divisions.forEach(d => fetchAndCache(d).catch(console.error));
+    } else if (typeof firebase !== 'undefined' && firebase.apps.length) {
+      const db = firebase.database(); db.goOffline(); db.goOnline();
+    }
+  };
+  document.addEventListener('visibilitychange', () => {
+    if (document.hidden) { sbHiddenAt = Date.now(); return; }
+    if (sbHiddenAt && Date.now() - sbHiddenAt >= 5000) sbResume();
+    sbHiddenAt = 0;
+  });
+  window.addEventListener('pageshow', (e) => { if (e.persisted) sbResume(); });
+  window.addEventListener('online', sbResume);
+
   // Safety-net resync: sockets/listeners can silently die on a long-running
   // display, so re-pull the timer, announcements and divisions regularly.
   if (SB.resyncTimer) clearInterval(SB.resyncTimer);
   SB.resyncTimer = setInterval(() => {
     if (window.__DATA_BACKEND__ === 'local') {
+      syncServerClock(3).catch(console.error);
       fetchTimerState(SB.divisions[SB.activeIndex]).catch(console.error);
       SB.divisions.forEach(d => fetchAndCache(d).catch(console.error));
       fetchAnnouncements().catch(console.error);

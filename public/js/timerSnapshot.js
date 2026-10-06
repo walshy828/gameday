@@ -4,6 +4,7 @@
 // consumers like the Game Management view don't need to know which one it is.
 let snapshot = null;
 
+// offsetMs: a number, or a function returning the live offset.
 export function setTimerSnapshot(division, state, offsetMs = 0) {
   snapshot = { division, state, offsetMs };
   window.dispatchEvent(new CustomEvent('timersnapshot'));
@@ -12,5 +13,5 @@ export function setTimerSnapshot(division, state, offsetMs = 0) {
 /** { state, nowMs } for `division`, or null if the clock hasn't loaded for it. */
 export function getTimerSnapshot(division) {
   if (!snapshot || snapshot.division !== division) return null;
-  return { state: snapshot.state, nowMs: Date.now() + snapshot.offsetMs };
+  return { state: snapshot.state, nowMs: Date.now() + (typeof snapshot.offsetMs === 'function' ? snapshot.offsetMs() : snapshot.offsetMs) };
 }

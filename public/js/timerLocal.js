@@ -13,6 +13,7 @@ import { getSocket } from './socketClient.js';
 import { getClientId, getClientName } from './timerClient.js';
 import { renderControlState, setControlHandlers } from './timerControlsUI.js';
 import { setTimerSnapshot } from './timerSnapshot.js';
+import { serverNow, serverOffsetMs, startServerClockSync } from './serverClock.js';
 
 let localTimerInterval = null;
 let allRounds = [];
@@ -176,8 +177,7 @@ function updateDisplay(timerData) {
 
   function getRemaining() {
     if (running) {
-      const now = Date.now();
-      return Math.max(0, duration - Math.floor((now - timerData.startTime) / 1000));
+      return Math.max(0, duration - Math.floor((serverNow() - timerData.startTime) / 1000));
     }
     return duration;
   }
@@ -200,12 +200,12 @@ function updateDisplay(timerData) {
       clearInterval(localTimerInterval);
       setTimeout(refreshState, 3000);
     }
-  }, 250);
+  }, 100);
 }
 
 function applyState(state) {
   latestState = state;
-  setTimerSnapshot(currentDivision(), state);
+  setTimerSnapshot(currentDivision(), state, serverOffsetMs);
   const scoreboard = document.getElementById('scoreboard');
   if (scoreboard) {
     if (App.state.isSuperAdmin) {
@@ -254,6 +254,7 @@ export async function refreshState() {
 
 export function init() {
   const socket = getSocket();
+  startServerClockSync();
 
   socket.on('timerUpdate', (payload) => {
     if (payload.division !== currentDivision()) return;

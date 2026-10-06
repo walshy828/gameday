@@ -463,6 +463,13 @@ app.post('/api/discrepancies/dismiss', async (req, res) => {
 // server is the source of truth and pushes updates over Socket.IO. All
 // transitions (and clock expiry) live in server/timerControl.js.
 
+// Millisecond server time for client clock-offset estimation (see
+// public/js/serverClock.js). Must never be cached.
+app.get('/api/time', (_req, res) => {
+  res.set('Cache-Control', 'no-store');
+  res.json({ now: Date.now() });
+});
+
 app.get('/api/timer', async (req, res) => {
   try {
     const sheetName = req.query.sheetName;

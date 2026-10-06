@@ -321,7 +321,7 @@ function updateDisplay(timerData) {
       clearInterval(localTimerInterval);
       expireClock(timerData.startTime);
     }
-  }, 250);
+  }, 100);
 }
 
 // --- Controls ---
