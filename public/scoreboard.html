@@ -1289,6 +1289,7 @@
     <div id="match-clock-wrap" style="display:flex;flex-direction:column;align-items:flex-end;">
       <div style="font-size:8px;font-weight:700;color:rgba(255,255,255,0.38);letter-spacing:.1em;text-transform:uppercase;margin-bottom:2px;">Match Time</div>
       <div id="match-clock" style="font-size:34px;font-weight:900;color:var(--gold-l);font-variant-numeric:tabular-nums;line-height:1;letter-spacing:-.02em;">5:00</div>
+      <div id="match-round" style="font-size:9px;font-weight:600;color:rgba(255,255,255,0.45);letter-spacing:.08em;text-transform:uppercase;line-height:1;margin-top:3px;"></div>
     </div>
     <!-- Separator -->
     <div style="width:1px;height:36px;background:rgba(255,255,255,0.12);"></div>
@@ -1716,6 +1717,16 @@ function getLiveRound(schedule) {
   return rts.find(rt => nonPlayoff.some(g => g.roundTime === rt && !isReported(g))) || null;
 }
 
+// "Round N" under the match clock: the live round's position among the
+// division's non-playoff rounds; blank once only playoffs (or nothing) remain.
+function renderMatchRound(schedule) {
+  const el = document.getElementById('match-round');
+  if (!el) return;
+  const live = getLiveRound(schedule);
+  const rts = [...new Set(schedule.filter(g => !isPlayoff(g) && g.roundTime).map(g => g.roundTime))];
+  el.textContent = live ? `Round ${rts.indexOf(live) + 1}` : '';
+}
+
 function getNextRound(schedule, liveRound) {
   if (!liveRound) return null;
   const nonPlayoff = schedule.filter(g => !isPlayoff(g) && g.roundTime);
@@ -1749,6 +1760,7 @@ function renderAll(divName, animate = false) {
     }, { once: true });
   }
 
+  renderMatchRound(schedule);
   renderSubdivBars(divName);
   renderStandings(standings);
   renderNextUp(schedule);
