@@ -458,6 +458,9 @@ function renderAdminMatchEntryViewImpl() {
             const team1AdminOnly = !officialIsCompleted && !tie && reportedByAdmin && adminWinnerVal === team1Name;
             const team2AdminOnly = !officialIsCompleted && !tie && reportedByAdmin && adminWinnerVal === team2Name;
             const count = officialIsCompleted ? game.playersRemaining : game.adminPlayersRemaining;
+            const tieChip = tie
+                ? `<span class="rounded-full px-1.5 py-0.5" style="background:${officialIsCompleted ? 'rgba(52,168,83,.18)' : 'rgba(224,184,99,.18)'};color:${officialIsCompleted ? 'var(--ok)' : 'var(--gold-l)'}">🤝 TIE</span>`
+                : '';
 
             // "Updated:" line replaces the old "Team won · N left · Name"
             // stamp — who reported it and when, unofficial while game.winner
@@ -496,6 +499,7 @@ function renderAdminMatchEntryViewImpl() {
                     <span class="flex items-center gap-1.5 text-[9px] font-semibold leading-none tracking-[.08em]" style="color:${dim}">
                         ${game.match ? esc(`M${game.match}`) : ''}
                         ${game.subDivision ? `<span class="rounded-full px-1.5 py-0.5" style="background:rgba(255,255,255,.08);color:rgba(255,255,255,.6)">${esc(game.subDivision)}</span>` : ''}
+                        ${tieChip}
                         ${discChip}
                     </span>
                     <span class="text-right text-[10px] font-medium leading-[1.3]" style="color:${updatedColor}">${updatedHtml}</span>
