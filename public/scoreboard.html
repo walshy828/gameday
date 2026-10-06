@@ -1717,14 +1717,12 @@ function getLiveRound(schedule) {
   return rts.find(rt => nonPlayoff.some(g => g.roundTime === rt && !isReported(g))) || null;
 }
 
-// "Round N" under the match clock: the live round's position among the
-// division's non-playoff rounds; blank once only playoffs (or nothing) remain.
+// Live round's time label (the schedule's round column) under the match
+// clock; blank once only playoffs (or nothing) remain.
 function renderMatchRound(schedule) {
   const el = document.getElementById('match-round');
   if (!el) return;
-  const live = getLiveRound(schedule);
-  const rts = [...new Set(schedule.filter(g => !isPlayoff(g) && g.roundTime).map(g => g.roundTime))];
-  el.textContent = live ? `Round ${rts.indexOf(live) + 1}` : '';
+  el.textContent = getLiveRound(schedule) || '';
 }
 
 function getNextRound(schedule, liveRound) {
