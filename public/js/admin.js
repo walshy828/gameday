@@ -747,6 +747,7 @@ function updateAdminUI() {
     const chatSetupGear = document.getElementById('chat-setup-gear');
     const chatTab = document.getElementById('chat-tab');
     const scheduleTab = document.getElementById('schedule-tab');
+    const infoTab = document.getElementById('info-tab');
 
     if (!adminButton || !adminStatusText || !adminEntryTab) return;
 
@@ -774,6 +775,11 @@ function updateAdminUI() {
             if (scheduleTab) scheduleTab.classList.remove('hidden');
         }
         if (chatTab) chatTab.classList.remove('hidden'); // Show Chat Tab (staff + parents)
+        // Superadmins reach Info from the gate's Admin Panel instead of the tab bar.
+        if (infoTab) {
+            infoTab.classList.toggle('hidden', !!App.state.isSuperAdmin);
+            if (App.state.isSuperAdmin && App.state.currentView === 'info') switchView('admin-entry');
+        }
         if (App.state.isSuperAdmin) {
             if (setupGear) setupGear.classList.remove('hidden');
             if (chatSetupGear) chatSetupGear.classList.remove('hidden');
@@ -785,6 +791,7 @@ function updateAdminUI() {
         adminButton.onclick = showAdminLoginModal;
         adminEntryTab.classList.add('hidden'); // Hide Admin Tab
         if (scheduleTab) scheduleTab.classList.remove('hidden'); // Restore Games Tab
+        if (infoTab) infoTab.classList.remove('hidden');
         if (adminControls) adminControls.classList.add('hidden');
         if (setupGear) setupGear.classList.add('hidden');
         if (chatSetupGear) chatSetupGear.classList.add('hidden');

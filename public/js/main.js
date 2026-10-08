@@ -28,7 +28,8 @@ import {
     switchView,
     goToGate,
     openSettingsFromGate,
-    openGameManagerFromGate
+    openGameManagerFromGate,
+    openInfoFromGate
 } from './navigation.js';
 
 import {
@@ -632,6 +633,7 @@ exposeGlobals({
   goToGate,
   openSettingsFromGate,
   openGameManagerFromGate,
+  openInfoFromGate,
   setGameManagerAllowance,
   getCurrentFilteredTeam
 });

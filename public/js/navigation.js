@@ -96,6 +96,15 @@ function openSettingsFromGate() {
  * division, so enter the last-used (or first) division if none is loaded yet.
  */
 async function openGameManagerFromGate() {
+    return openViewFromGate('game-manager');
+}
+
+/** Superadmin shortcut from the Gate to the Info page (its tab is hidden for superadmins). */
+async function openInfoFromGate() {
+    return openViewFromGate('info');
+}
+
+async function openViewFromGate(view) {
     if (!App.state.isSuperAdmin) return;
     const names = App.data.allDivisionNames || [];
     const stored = localStorage.getItem(DIVISION_STORAGE_KEY);
@@ -109,7 +118,7 @@ async function openGameManagerFromGate() {
         document.getElementById('app-screen')?.classList.remove('hidden');
         document.getElementById('bottom-tab-bar')?.classList.remove('hidden');
     }
-    switchView('game-manager');
+    switchView(view);
 }
 
 /** Returns to the Gate screen from within the app (the header "Change" chip). */
@@ -643,5 +652,6 @@ export {
     goToGate,
     openSettingsFromGate,
     openGameManagerFromGate,
+    openInfoFromGate,
     enterApp
 };
