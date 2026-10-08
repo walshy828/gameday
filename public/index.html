@@ -1509,6 +1509,23 @@
                                 </div>
                             </section>
 
+                            <!-- 1b. Team check-in (Roster) -->
+                            <section class="card-dark p-4">
+                                <div class="flex items-center justify-between gap-3">
+                                    <div class="flex items-center gap-2 min-w-0">
+                                        <h3 class="text-lg font-bold text-white">🎟️ Team Check-In</h3>
+                                        <span class="tip">
+                                            <button type="button" class="tip-btn" aria-label="About team check-in">ⓘ</button>
+                                            <span class="tip-body">Shows the check-in counter, ticks and Check in card in Roster. Off by default so registration work stays uncluttered; switch it on the morning of the event. Nothing is deleted when turned off. This switch is separate from the one in the Registrations sheet's Team Management tool.</span>
+                                        </span>
+                                    </div>
+                                    <label class="switch flex-none">
+                                        <input type="checkbox" id="checkin-toggle" onchange="toggleCheckin(this.checked)">
+                                        <span class="slider round"></span>
+                                    </label>
+                                </div>
+                            </section>
+
                             <!-- 2. Google Sheet Sync -->
                             <section class="card-dark p-4 space-y-3">
                                 <div class="flex items-center justify-between flex-wrap gap-2">

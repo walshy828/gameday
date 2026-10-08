@@ -199,7 +199,8 @@ export async function getFeatureSettings() {
   const val = snap.val() || {};
   return {
     championCelebrationEnabled: val.championCelebrationEnabled !== false,
-    autoUpdateOfficialResultsEnabled: val.autoUpdateOfficialResultsEnabled === true
+    autoUpdateOfficialResultsEnabled: val.autoUpdateOfficialResultsEnabled === true,
+    checkinEnabled: val.checkinEnabled === true
   };
 }
 

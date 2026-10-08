@@ -214,11 +214,17 @@ export const schemaReady = (async function ensureFeatureTables() {
       CREATE TABLE IF NOT EXISTS feature_settings (
         id INT PRIMARY KEY,
         champion_celebration_enabled BOOLEAN NOT NULL DEFAULT TRUE,
-        auto_update_official_results_enabled BOOLEAN NOT NULL DEFAULT FALSE
+        auto_update_official_results_enabled BOOLEAN NOT NULL DEFAULT FALSE,
+        checkin_enabled BOOLEAN NOT NULL DEFAULT FALSE
       )
     `);
     try {
       await pool.query('ALTER TABLE feature_settings ADD COLUMN auto_update_official_results_enabled BOOLEAN NOT NULL DEFAULT FALSE');
+    } catch (e) {
+      if (e.code !== 'ER_DUP_FIELDNAME') throw e;
+    }
+    try {
+      await pool.query('ALTER TABLE feature_settings ADD COLUMN checkin_enabled BOOLEAN NOT NULL DEFAULT FALSE');
     } catch (e) {
       if (e.code !== 'ER_DUP_FIELDNAME') throw e;
     }
@@ -512,11 +518,12 @@ export async function updateSyncSettings(patch) {
 }
 
 export async function getFeatureSettings() {
-  const [rows] = await pool.query('SELECT champion_celebration_enabled, auto_update_official_results_enabled FROM feature_settings WHERE id = 1');
+  const [rows] = await pool.query('SELECT champion_celebration_enabled, auto_update_official_results_enabled, checkin_enabled FROM feature_settings WHERE id = 1');
   const row = rows[0];
   return {
     championCelebrationEnabled: row ? !!row.champion_celebration_enabled : true,
-    autoUpdateOfficialResultsEnabled: row ? !!row.auto_update_official_results_enabled : false
+    autoUpdateOfficialResultsEnabled: row ? !!row.auto_update_official_results_enabled : false,
+    checkinEnabled: row ? !!row.checkin_enabled : false
   };
 }
 
@@ -524,10 +531,11 @@ export async function updateFeatureSettings(patch) {
   const current = await getFeatureSettings();
   const next = { ...current, ...patch };
   await pool.query(
-    `INSERT INTO feature_settings (id, champion_celebration_enabled, auto_update_official_results_enabled) VALUES (1, ?, ?)
+    `INSERT INTO feature_settings (id, champion_celebration_enabled, auto_update_official_results_enabled, checkin_enabled) VALUES (1, ?, ?, ?)
      ON DUPLICATE KEY UPDATE champion_celebration_enabled = VALUES(champion_celebration_enabled),
-       auto_update_official_results_enabled = VALUES(auto_update_official_results_enabled)`,
-    [next.championCelebrationEnabled, next.autoUpdateOfficialResultsEnabled]
+       auto_update_official_results_enabled = VALUES(auto_update_official_results_enabled),
+       checkin_enabled = VALUES(checkin_enabled)`,
+    [next.championCelebrationEnabled, next.autoUpdateOfficialResultsEnabled, next.checkinEnabled]
   );
   const settings = await getFeatureSettings();
   broadcastFeatureSettingsUpdate(settings);

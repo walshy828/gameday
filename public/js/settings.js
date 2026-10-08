@@ -12,6 +12,7 @@
 // running against Firebase or MariaDB.
 import { getSheetSyncConfig, getSheetSyncStatus, updateSheetSyncSettings, updateFeatureSettings, runSheetSync, pruneSheetSyncDivisions, getActiveSessions, getLoginHistory } from './api.js';
 import { getSocket } from './socketClient.js';
+import { setCheckinEnabled } from './roster.js';
 
 const PRESET_INTERVALS = [30, 60, 300];
 const SESSIONS_POLL_INTERVAL_MS = 15000;
@@ -321,6 +322,11 @@ function renderFeatureSettings(settings) {
     const toggle = document.getElementById('champion-celebration-toggle');
     if (toggle) toggle.checked = App.settings.championCelebrationEnabled;
 
+    App.settings.checkinEnabled = settings.checkinEnabled === true;
+    setCheckinEnabled(App.settings.checkinEnabled);
+    const checkinToggle = document.getElementById('checkin-toggle');
+    if (checkinToggle) checkinToggle.checked = App.settings.checkinEnabled;
+
     const officialResultsToggle = document.getElementById('auto-update-official-results-toggle');
     if (officialResultsToggle) officialResultsToggle.checked = App.settings.autoUpdateOfficialResultsEnabled;
 }
@@ -570,6 +576,24 @@ async function toggleAutoUpdateOfficialResults(checked) {
     }
 }
 
+async function toggleCheckin(checked) {
+    const authToken = sessionStorage.getItem('adminAuthToken');
+    if (!authToken) {
+        showStatus('Please log in as superadmin.', true);
+        return;
+    }
+    try {
+        const settings = await updateFeatureSettings(authToken, { checkinEnabled: !!checked });
+        renderFeatureSettings(settings);
+    } catch (e) {
+        console.error('Failed to update check-in setting', e);
+        const toggle = document.getElementById('checkin-toggle');
+        if (toggle) toggle.checked = !checked;
+        showStatus('Failed to update check-in setting: ' + e.message, true);
+        setTimeout(() => showStatus(null), 4000);
+    }
+}
+
 function setSyncInterval(seconds) {
     const value = Math.max(Number(seconds) || 0, 10);
     persistSettings({ intervalSeconds: value });
@@ -634,6 +658,7 @@ export {
     toggleAutoSync,
     toggleChampionCelebration,
     toggleAutoUpdateOfficialResults,
+    toggleCheckin,
     setSyncInterval,
     setCustomSyncInterval,
     setSyncScope,

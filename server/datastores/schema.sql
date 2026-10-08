@@ -164,7 +164,8 @@ CREATE TABLE IF NOT EXISTS sessions (
 CREATE TABLE IF NOT EXISTS feature_settings (
   id INT PRIMARY KEY DEFAULT 1,
   champion_celebration_enabled BOOLEAN NOT NULL DEFAULT TRUE,
-  auto_update_official_results_enabled BOOLEAN NOT NULL DEFAULT FALSE
+  auto_update_official_results_enabled BOOLEAN NOT NULL DEFAULT FALSE,
+  checkin_enabled BOOLEAN NOT NULL DEFAULT FALSE
 );
 
 -- Existing audit-log table (already written to unconditionally by

@@ -27,19 +27,22 @@ export const RM_CFG = {
     LOG: 'Roster Change Log',
     HP: 'history - participants',
     HR: 'history - registrations',
-    SET: 'Season Settings'
+    SET: 'Season Settings',
+    CI: 'Check-In Log'
   },
   HEADER_ROW: { REG: 1, PL: 2, WV: 2, LOG: 1, HP: 1, HR: 1 },
   H: {
     REG: { team: 'Team Name', div: 'Which age group is your team?', capName: 'Parent Team Captain Name (first and last)', capEmail: 'Parent Team Captain Email Address' },
     // Optional Registrations columns: looked up when needed, the action says so plainly if one is missing.
-    REGX: { paid: 'Paid', sub: 'Sub Division', girls: 'Optional: Girls Only Division', type: 'Team Type', phone: 'Cell Number', regDate: 'Registration Date', ts: 'Timestamp' },
+    REGX: { paid: 'Paid', sub: 'Sub Division', girls: 'Optional: Girls Only Division', type: 'Team Type', phone: 'Cell Number', regDate: 'Registration Date', ts: 'Timestamp',
+             ci: 'Checked In', ciTime: 'Check-In Time', ciBy: 'Check-In By' },   // the 3 check-in columns are created on the first check-in if missing
     PL: { name: 'Participant', team: 'Team', div: 'Division', signed: 'Signed Waiver', waiverName: 'Waiver Name Found', notes: 'Notes', key: 'lookup key', trim: 'trim name', resolution: 'Resolution' },
     WV: { ts: 'Timestamp', parent: 'Your Full Name (Parent/Guardian)', typed: 'Participating Childs Name', team: 'Team Name', validated: 'Validated', found: 'Found in Participant List',
           key: 'lookup key', matched: 'Matched Roster Name', conf: 'Match Confidence', review: 'Review Status', div: 'Participating Childs Division', parentEmail: 'Your Email (Parent/Guardian)', capSent: 'Captain Email Sent' },
     LOG: { ts: 'Timestamp', team: 'Team', change: 'Change', oldv: 'Old Value', newv: 'New Value' },
     HP: { name: 'Participant', team: 'Team', div: 'Division', signed: 'Signed Waiver', year: 'Year', key: '_sync_key' },
-    HR: { team: 'Team Name', div: 'Age Group', count: 'Participant Count', year: 'season_year' }
+    HR: { team: 'Team Name', div: 'Age Group', count: 'Participant Count', year: 'season_year' },
+    CI: { ts: 'Timestamp', team: 'Team', div: 'Division', action: 'Action', note: 'Note', by: 'By', warn: 'Warnings at check-in' }
   }
 };
 
@@ -144,6 +147,17 @@ export function rmIsPaid_(ctx, regRow) {
   const v = rmNK_(rmG_(ctx.reg, regRow, RM_CFG.H.REGX.paid));
   return v === 'yes' || v === 'y' || v === 'paid' || v === 'true';
 }
+/** Check-in state of a team (Registrations "Checked In" = Yes). Time and by are what was written when the box was checked. */
+export function rmCheckin_(ctx, regRow) {
+  const X = RM_CFG.H.REGX, v = rmNK_(rmG_(ctx.reg, regRow, X.ci));
+  const on = v === 'yes' || v === 'y' || v === 'true' || v === 'checked in';
+  return { ci: on, ciTime: on ? rmClean_(rmG_(ctx.reg, regRow, X.ciTime)) : '', ciBy: on ? rmClean_(rmG_(ctx.reg, regRow, X.ciBy)) : '' };
+}
+/** Plain text that goes into a cell: collapse whitespace, cap the length, and keep a leading = + - @ from turning into a formula. */
+export function rmSafeText_(s, max) {
+  const t = String(s == null ? '' : s).replace(/[\r\n\t]+/g, ' ').replace(/ {2,}/g, ' ').trim().slice(0, max || 500);
+  return /^[=+\-@]/.test(t) ? ' ' + t : t;
+}
 export function rmSubOf_(ctx, regRow) { return rmClean_(rmG_(ctx.reg, regRow, RM_CFG.H.REGX.sub)); }
 /** Girls-only team: the form's "Optional: Girls Only Division" has a non-"no" answer, or Team Type says girls. */
 export function rmIsGirls_(ctx, regRow) {
@@ -178,7 +192,8 @@ export function rmTeamList_(ctx) {
       key: t.key, team, division: div, count: m.length,
       signed: m.filter((x) => x.signed).length, paid: rmIsPaid_(ctx, row),
       captain: rmClean_(rmG_(ctx.reg, row, RM_CFG.H.REG.capName)),
-      sub: rmSubOf_(ctx, row), girls: rmIsGirls_(ctx, row)
+      sub: rmSubOf_(ctx, row), girls: rmIsGirls_(ctx, row),
+      ci: rmCheckin_(ctx, row).ci, ciTime: rmCheckin_(ctx, row).ciTime
     });
   });
   out.sort((a, b) => rmDivOrder_(a.division) - rmDivOrder_(b.division) || a.team.toLowerCase().localeCompare(b.team.toLowerCase()));
@@ -229,6 +244,7 @@ export function rmRoster_(ctx, teamKey) {
     captainPhone: rmClean_(rmG_(ctx.reg, t.regRow, RM_CFG.H.REGX.phone)),
     registered: rmClean_(rmG_(ctx.reg, t.regRow, RM_CFG.H.REGX.regDate)) || rmClean_(rmG_(ctx.reg, t.regRow, RM_CFG.H.REGX.ts)).split(' ')[0],
     paid: rmIsPaid_(ctx, t.regRow), paidText: rmClean_(rmG_(ctx.reg, t.regRow, RM_CFG.H.REGX.paid)), sub: rmSubOf_(ctx, t.regRow), girls: rmIsGirls_(ctx, t.regRow),
+    ci: rmCheckin_(ctx, t.regRow).ci, ciTime: rmCheckin_(ctx, t.regRow).ciTime, ciBy: rmCheckin_(ctx, t.regRow).ciBy,
     hasPaidCol: ctx.reg.cols[RM_CFG.H.REGX.paid] != null, hasSubCol: ctx.reg.cols[RM_CFG.H.REGX.sub] != null, subOptions: rmSubOptions_(ctx),
     min: rmSetting_(ctx, 'Min Players Per Team', 8), max: rmSetting_(ctx, 'Max Players Per Team', 12)
   };

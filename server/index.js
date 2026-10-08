@@ -95,7 +95,8 @@ app.get('/api/allData', async (req, res) => {
       is_tie_allowed: (process.env.ALLOW_MATCH_TIE === 'true') || false,
       ga_measurement_id: process.env.GA_MEASUREMENT_ID || null,
       championCelebrationEnabled: featureSettings.championCelebrationEnabled,
-      autoUpdateOfficialResultsEnabled: featureSettings.autoUpdateOfficialResultsEnabled
+      autoUpdateOfficialResultsEnabled: featureSettings.autoUpdateOfficialResultsEnabled,
+      checkinEnabled: featureSettings.checkinEnabled
     };
     const standings = await Store.getStandings(sheetName);
     const schedule = await Store.getSchedule(sheetName);
@@ -472,9 +473,48 @@ function rosterGuard(req, res) {
 app.get('/api/roster', async (req, res) => {
   if (!rosterGuard(req, res)) return;
   try {
-    res.json({ success: true, ...(await Roster.getRosterData()) });
+    const [data, features] = await Promise.all([Roster.getRosterData({ refresh: req.query.refresh === '1' }), Store.getFeatureSettings()]);
+    res.json({ success: true, ...data, ciOn: features.checkinEnabled === true });
   } catch (e) {
     console.error('roster load error', e);
+    res.status(500).json({ success: false, error: e.message || e.toString() });
+  }
+});
+
+app.post('/api/roster/checkin', async (req, res) => {
+  if (!rosterGuard(req, res)) return;
+  try {
+    const b = req.body || {};
+    const result = await Roster.setCheckin({
+      teamKey: cleanText(b.teamKey, 300), want: cleanText(b.want, 5), note: cleanText(b.note, 500), warnings: cleanText(b.warnings, 300), by: cleanText(b.by, 80)
+    });
+    if (!result.ok) return res.status(400).json({ success: false, error: (result.errors || []).join(' '), errors: result.errors });
+    res.json({ success: true, ...result });
+  } catch (e) {
+    console.error('roster checkin error', e);
+    res.status(500).json({ success: false, error: e.message || e.toString() });
+  }
+});
+
+app.post('/api/roster/checkin/note', async (req, res) => {
+  if (!rosterGuard(req, res)) return;
+  try {
+    const b = req.body || {};
+    const result = await Roster.addCheckinNote({ teamKey: cleanText(b.teamKey, 300), note: cleanText(b.note, 500), by: cleanText(b.by, 80) });
+    if (!result.ok) return res.status(400).json({ success: false, error: (result.errors || []).join(' '), errors: result.errors });
+    res.json({ success: true, ...result });
+  } catch (e) {
+    console.error('roster checkin note error', e);
+    res.status(500).json({ success: false, error: e.message || e.toString() });
+  }
+});
+
+app.get('/api/roster/checkin/log', async (req, res) => {
+  if (!rosterGuard(req, res)) return;
+  try {
+    res.json({ success: true, ...(await Roster.getCheckinLog(cleanText(req.query.teamKey, 300))) });
+  } catch (e) {
+    console.error('roster checkin log error', e);
     res.status(500).json({ success: false, error: e.message || e.toString() });
   }
 });
@@ -894,10 +934,11 @@ app.post('/api/sheetSync/settings', async (req, res) => {
 app.post('/api/featureSettings', async (req, res) => {
   if (!requireSuperAdmin(req, res)) return;
   try {
-    const { championCelebrationEnabled, autoUpdateOfficialResultsEnabled } = req.body || {};
+    const { championCelebrationEnabled, autoUpdateOfficialResultsEnabled, checkinEnabled } = req.body || {};
     const patch = {};
     if (typeof championCelebrationEnabled === 'boolean') patch.championCelebrationEnabled = championCelebrationEnabled;
     if (typeof autoUpdateOfficialResultsEnabled === 'boolean') patch.autoUpdateOfficialResultsEnabled = autoUpdateOfficialResultsEnabled;
+    if (typeof checkinEnabled === 'boolean') patch.checkinEnabled = checkinEnabled;
 
     const settings = await Store.updateFeatureSettings(patch);
     res.json(settings);

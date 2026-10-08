@@ -3,7 +3,8 @@
 // Teams list first; tap a team for its roster, waiver status, and the remove / add / rename /
 // move / Paid / Sub Division actions. All data and every write goes through /api/roster* which
 // reads and edits the Registrations sheet itself, so the sheet and this view never disagree.
-import { getRoster, previewRosterAction, applyRosterAction } from './api.js';
+import { getRoster, previewRosterAction, applyRosterAction, setRosterCheckin, addRosterCheckinNote, getRosterCheckinLog } from './api.js';
+import { getSocket } from './socketClient.js';
 
 const S = {
     data: null,          // { teams, rosters, people, year, subOptions, loadedAt }
@@ -19,6 +20,10 @@ const S = {
     confirmPaid: false, paidBusy: false,
     openWaiver: null,    // member name whose waiver detail is expanded
     busyRows: {},        // 'teamKey|name' -> label while a write is in flight
+    ciOn: false,         // team check-in switched on (shared app setting, off by default)
+    ciDiv: '', ciOut: false,          // counter's division picker / "only teams not checked in"
+    ciAsk: null, ciReason: '', ciBusy: null,   // inline check-in confirm (team key), its note box, team being saved
+    ciLog: {}, ciLoading: {}, ciNote: '', ciNoteBusy: false,   // per-team notes & history
     adding: [],          // [{team, name}] optimistic "Adding…" rows
     hl: null
 };
@@ -71,12 +76,12 @@ function head(title, right) {
 
 /* ---------- loading ---------- */
 
-async function load(quiet) {
+async function load(quiet, refresh) {
     if (S.loading) return;
     S.loading = true; S.error = '';
     if (!quiet) render();
     try {
-        const r = await getRoster(token());
+        const r = await getRoster(token(), !!refresh);
         adopt(r);
     } catch (e) {
         S.error = e.message || String(e);
@@ -86,12 +91,14 @@ async function load(quiet) {
     }
 }
 function adopt(d) {
-    S.data = d; S.loadedAt = Date.now();
+    S.data = d; S.loadedAt = Date.now() - (Number(d.ageMs) || 0);      // the server may serve a cached copy: show how old the DATA is
+    if (typeof d.ciOn === 'boolean') S.ciOn = d.ciOn;
     if (S.cur && !d.rosters[S.cur]) S.cur = null;
 }
 
 export function renderRoster() {
     wire();
+    wireSocket();
     if (!S.data && !S.loading) { load(); return; }
     render();
 }
@@ -101,16 +108,23 @@ export function renderRoster() {
 function renderList() {
     const q = S.q.trim().toLowerCase();
     let html = '', last = '', any = false;
+    const cs = ciStats();
     S.data.teams.forEach(t => {
+        if (S.ciOn && S.ciDiv && t.division !== S.ciDiv) return;   // counter's division picker
+        if (S.ciOn && S.ciOut && t.ci) return;                       // "only teams not checked in"
         const byCap = !!q && !t.team.toLowerCase().includes(q) && (t.captain || '').toLowerCase().includes(q);
         if (q && !t.team.toLowerCase().includes(q) && !byCap) return;
         any = true;
-        if (t.division !== last) { html += `<div class="mt-3 mb-1 px-1">${kicker(t.division)}</div>`; last = t.division; }
+        if (t.division !== last) {
+            const gd = S.ciOn ? cs.by[t.division] : null;
+            html += `<div class="mt-3 mb-1 flex items-baseline justify-between px-1">${kicker(t.division)}${gd ? `<span class="text-[11px] text-white/45" title="Teams checked in">${gd.ci}/${gd.n} in</span>` : ''}</div>`;
+            last = t.division;
+        }
         const min = S.data.rosters[t.key]?.min ?? 8;
         const low = t.count < min;
         const sub = [t.captain, t.sub].filter(Boolean).map(esc).join(' · ');
-        html += `<button data-act="open" data-k="${esc(t.key)}" class="flex w-full items-center justify-between gap-3 rounded-2xl border border-white/10 bg-white/[.05] px-3.5 py-3 text-left" style="${t.girls ? 'border-left:3px solid #db2777' : ''}">
-            <span class="min-w-0"><span class="block truncate text-[14px] font-semibold text-white">${esc(t.team)}</span>
+        html += `<button data-act="open" data-k="${esc(t.key)}" class="flex w-full items-center justify-between gap-3 rounded-2xl border border-white/10 bg-white/[.05] px-3.5 py-3 text-left" style="${t.girls ? 'border-left:3px solid #db2777;' : ''}${S.ciOn && t.ci ? 'background:rgba(46,158,99,.14);border-color:rgba(46,158,99,.4)' : ''}">
+            <span class="min-w-0"><span class="block truncate text-[14px] font-semibold text-white">${esc(t.team)}${S.ciOn && t.ci ? `<span role="img" aria-label="Checked in" title="Checked in${t.ciTime ? ' ' + esc(t.ciTime) : ''}" class="ml-1.5 inline-flex h-4 w-4 items-center justify-center rounded-full border-2 text-[9px] font-extrabold align-middle" style="border-color:var(--ok);color:var(--ok)">✓</span>` : ''}</span>
             <span class="block truncate text-[12px] ${t.girls ? '' : 'text-white/55'}" style="${t.girls ? 'color:#f9a8d4' : ''}">${sub || '&nbsp;'}</span></span>
             <span class="flex flex-none items-center gap-2">
               ${t.paid ? '<span title="Paid" aria-label="Paid" class="inline-flex h-[18px] w-[18px] items-center justify-center rounded-full text-[11px] font-bold text-white" style="background:var(--ok)">$</span>' : ''}
@@ -126,9 +140,10 @@ function renderList() {
         });
     }
     return `${head('Roster', `<button data-act="refresh" class="${pillBtn}" ${S.loading ? 'disabled' : ''}>↻ Refresh</button>`)}
+      ${ciBox(cs)}
       <div class="mt-3.5"><input id="roster-q" type="search" value="${esc(S.q)}" placeholder="Find a team, captain or person…" autocomplete="off" aria-label="Find a team, captain or person" class="field-dark"></div>
       <div class="mt-1.5 px-1 text-[11px] text-white/40">${esc(stamp())}${S.loading ? ' · Refreshing…' : ''}</div>
-      <div class="mt-1 grid gap-2">${any ? html : `<div class="py-10 text-center text-sm text-white/50">Nothing matches “${esc(S.q)}”.</div>`}</div>`;
+      <div class="mt-1 grid gap-2">${any ? html : `<div class="py-10 text-center text-sm text-white/50">${S.q ? `Nothing matches “${esc(S.q)}”.` : (S.ciOn && S.ciOut ? 'Every team here is checked in. ✓' : 'No teams to show.')}</div>`}</div>`;
 }
 
 /* ---------- team detail ---------- */
@@ -261,7 +276,9 @@ function renderDetail() {
     h += `<div class="mt-2.5 grid grid-cols-2 gap-2.5">${paidChip(r)}
         ${statChip(`<div><div class="text-[16px] font-bold text-white tabular-nums">${signed} / ${n}</div><div class="text-[11px] text-white/50">waivers matched</div></div>`)}
         ${subChip(r)}
-        ${statChip(`<div><div class="text-[16px] font-bold" style="color:${r.girls ? '#f9a8d4' : 'white'}">${r.girls ? 'Yes' : 'No'}</div><div class="text-[11px] text-white/50">Girls only</div></div>`)}</div>`;
+        ${statChip(`<div><div class="text-[16px] font-bold" style="color:${r.girls ? '#f9a8d4' : 'white'}">${r.girls ? 'Yes' : 'No'}</div><div class="text-[11px] text-white/50">Girls only</div></div>`)}
+        ${ciChip(r)}</div>`;
+    h += ciAskHtml(r) + ciNotesHtml(r);
     const banner = (inner, warn) => `<div class="mt-2.5 rounded-2xl px-3.5 py-2.5 text-[12.5px] leading-snug text-white/80" style="${warn ? 'background:rgba(224,184,99,.12);border:1px solid rgba(224,184,99,.4)' : 'background:rgba(255,255,255,.06);border-left:3px solid var(--gold)'}">${inner}</div>`;
     if (n < r.min) h += banner(`Below the minimum of ${r.min} players.`, true);
     if (n > r.max) h += banner(`Over the form limit of ${r.max} players (allowed — they only appear on the Participant List).`, true);
@@ -289,6 +306,140 @@ function renderDetail() {
     return h;
 }
 
+/* ---------- team check-in (gameday) ---------- */
+// Mirrors v15 of the Registrations sheet's Team Management tool. Off until switched on in Setup; while off, none of this renders.
+
+/** Per division: how many teams, how many checked in. Order follows the team list (already sorted by division). */
+function ciStats() {
+    const by = {}, order = [];
+    S.data.teams.forEach(t => { let d = by[t.division]; if (!d) { d = by[t.division] = { n: 0, ci: 0 }; order.push(t.division); } d.n++; if (t.ci) d.ci++; });
+    return { by, order };
+}
+
+/** The counter above the team list: All divisions or one, "14 / 28 teams", a bar, and an "only not checked in" filter. */
+function ciBox(cs) {
+    if (!S.ciOn || !cs.order.length) return '';
+    if (S.ciDiv && !cs.by[S.ciDiv]) S.ciDiv = '';
+    let n = 0, c = 0, allN = 0, allC = 0;
+    cs.order.forEach(k => { allN += cs.by[k].n; allC += cs.by[k].ci; if (!S.ciDiv || k === S.ciDiv) { n += cs.by[k].n; c += cs.by[k].ci; } });
+    return `<section class="card-dark mt-3.5 p-3.5">
+      <div class="flex items-center justify-between gap-2"><span class="text-[12px] font-semibold text-white/60">✓ Checked in</span>
+        <select id="roster-ci-div" class="select-glass !w-auto max-w-[170px] !py-1.5 text-[12px]" aria-label="Show check-in for one division"><option value="">All divisions (${allC}/${allN})</option>${cs.order.map(k => `<option value="${esc(k)}"${k === S.ciDiv ? ' selected' : ''}>${esc(k)} (${cs.by[k].ci}/${cs.by[k].n})</option>`).join('')}</select></div>
+      <div class="mt-1.5 text-[22px] font-bold leading-tight text-white tabular-nums">${c} / ${n} <span class="text-[12px] font-normal text-white/50">teams${n && c === n ? ' · all in ✓' : n ? ' · ' + (n - c) + ' to go' : ''}</span></div>
+      <div class="mt-2 h-1.5 overflow-hidden rounded-full bg-white/10"><i class="block h-full" style="width:${n ? Math.round(100 * c / n) : 0}%;background:var(--ok)"></i></div>
+      <label class="mt-2.5 flex cursor-pointer items-center gap-2 text-[12px] text-white/70"><input type="checkbox" id="roster-ci-out"${S.ciOut ? ' checked' : ''}> Only teams not checked in</label></section>`;
+}
+
+/** Things worth a second look at the door. They never block a check-in; they are shown, and kept on the Check-In Log if you go ahead. */
+function ciWarnings(r) {
+    const n = r.members.length, signed = r.members.filter(m => m.signed).length, w = [];
+    if (r.hasPaidCol && !r.paid) w.push('Not marked paid');
+    if (n && signed < n) w.push(`${n - signed} of ${n} player${n === 1 ? ' has' : 's have'} no waiver`);
+    if (r.unlinkedWaivers.length) w.push(`${r.unlinkedWaivers.length} waiver${r.unlinkedWaivers.length === 1 ? '' : 's'} on file not matched to anyone`);
+    if (n < r.min) w.push(`Only ${n} player${n === 1 ? '' : 's'} on the roster (minimum ${r.min})`);
+    return w;
+}
+
+function ciChip(r) {
+    if (!S.ciOn) return '';
+    let act;
+    if (S.ciBusy === r.key) act = '<span class="text-[11px] text-white/50">Saving…</span>';
+    else if (S.ciAsk === r.key) act = '';
+    else act = r.ci ? `<button data-act="ci-act" class="${smBtn}" title="Undo check-in" aria-label="Undo check-in">↺</button>`
+                    : `<button data-act="ci-act" class="${goldBtn}" style="${goldStyle}">Check in</button>`;
+    return statChip(`<div><div class="text-[16px] font-bold" style="color:${r.ci ? 'var(--ok)' : 'white'}">${r.ci ? 'Yes' : 'No'}</div>
+        <div class="text-[11px] text-white/50">Checked in${r.ci && r.ciTime ? ' · ' + esc(r.ciTime) : ''}</div>${r.ci && r.ciBy ? `<div class="text-[11px] text-white/50">by ${esc(r.ciBy)}</div>` : ''}</div>${act}`,
+        'col-span-2');
+}
+
+/** The inline confirm under the cards: problems listed first, a note/reason box, then the button. */
+function ciAskHtml(r) {
+    if (!S.ciOn || S.ciAsk !== r.key) return '';
+    const box = (warn, inner) => `<section class="mt-2.5 rounded-2xl px-3.5 py-3" style="${warn ? 'background:rgba(224,184,99,.12);border:1px solid rgba(224,184,99,.4)' : 'background:rgba(255,255,255,.06);border:1px solid rgba(255,255,255,.15)'}">${inner}</section>`;
+    const field = (ph, okLabel, okStyle) => `<div class="mt-2.5 flex flex-wrap gap-2"><input id="roster-ci-reason" placeholder="${esc(ph)}" maxlength="300" value="${esc(S.ciReason)}" class="field-dark min-w-0 flex-1"><button data-act="ci-ok" class="${goldBtn}" style="${okStyle}">${okLabel}</button><button data-act="ci-no" class="${smBtn}">Cancel</button></div>`;
+    if (r.ci) return box(false, `<div class="text-[14px] text-white">Undo the check-in for <b>${esc(r.team)}</b>? It goes back to “No”. The history keeps both entries.</div>${field('Why? (optional)', 'Undo check-in', dangerStyle)}`);
+    const w = ciWarnings(r);
+    return box(w.length > 0, `<div class="text-[14px] text-white">${w.length ? `Check in <b>${esc(r.team)}</b> anyway? Before you do:` : `Check in <b>${esc(r.team)}</b>?`}</div>
+        ${w.length ? `<ul class="mt-1.5 list-disc pl-5 text-[12.5px] text-white/80">${w.map(x => `<li>${esc(x)}</li>`).join('')}</ul>` : ''}
+        ${field(w.length ? 'Reason for checking in anyway, or a note (optional)' : 'Note (optional)', w.length ? 'Check in anyway' : 'Check in', goldStyle)}`);
+}
+
+function ciNotesHtml(r) {
+    if (!S.ciOn) return '';
+    const log = S.ciLog[r.key];
+    let h = `<section class="card-dark mt-2.5 p-3.5"><div class="text-[12px] font-semibold text-white/60">Check-in notes &amp; history${log && log.length ? ` · ${log.length} entr${log.length === 1 ? 'y' : 'ies'}` : ''}</div>
+      <div class="mt-2 flex gap-2"><input id="roster-ci-note" placeholder="Note about the team or its captain…" maxlength="500" autocomplete="off" value="${esc(S.ciNote)}" aria-label="Check-in note for ${esc(r.team)}" class="field-dark min-w-0 flex-1"><button data-act="ci-note-add" class="${goldBtn}" style="${goldStyle}"${S.ciNoteBusy ? ' disabled' : ''}>Add note</button></div>`;
+    if (log === undefined) h += '<div class="mt-2 text-[12px] text-white/45">Loading history…</div>';
+    else if (!log.length) h += '<div class="mt-2 text-[12px] text-white/45">No check-in history yet.</div>';
+    else h += `<div class="mt-2 max-h-[190px] overflow-auto">${log.map(e => {
+        const tone = e.action === 'Checked in' ? 'background:rgba(46,158,99,.18);color:#6fd6a0' : e.action === 'Note' ? 'background:rgba(255,255,255,.1);color:rgba(255,255,255,.7)' : 'background:rgba(224,184,99,.18);color:var(--gold-l)';
+        return `<div class="border-t border-white/10 py-1.5 text-[13px] text-white/80"><span class="text-[12px] text-white/45">${esc(e.time)}${e.by ? ' · ' + esc(e.by) : ''}</span> <span class="rounded-full px-2 py-0.5 text-[11px] font-semibold" style="${tone}">${esc(e.action)}</span>${e.note ? ' ' + esc(e.note) : ''}${e.warn ? `<div class="text-[12px] text-white/45">Checked in with: ${esc(e.warn)}</div>` : ''}</div>`;
+    }).join('')}</div>`;
+    return h + '</section>';
+}
+
+function ciWho() {
+    try { return (window.App && window.App.state && window.App.state.reporterName) || 'Tournament manager'; } catch (e) { return 'Tournament manager'; }
+}
+
+function addCiEntry(key, entry) { if (entry && S.ciLog[key]) S.ciLog[key].unshift(entry); }
+
+async function loadCiLog(key) {
+    S.ciLoading[key] = true;
+    try {
+        const x = await getRosterCheckinLog(token(), key);
+        S.ciLog[key] = x.success === false ? [] : (x.entries || []);
+    } catch (e) { S.ciLog[key] = []; }
+    S.ciLoading[key] = false;
+    if (S.cur === key && S.ciOn) render();
+}
+
+/** Check in / undo: the page updates at once, the sheet write happens behind it, and it rolls back with a message if the write fails (same as Paid). */
+async function setCheckin(want) {
+    const key = S.cur, r = S.data.rosters[key], t = S.data.teams.find(x => x.key === key), yes = want === 'Yes';
+    const warns = yes ? ciWarnings(r) : [], note = S.ciReason.trim(), prev = { ci: r.ci, time: r.ciTime || '', by: r.ciBy || '' };
+    const apply = (v, time, by) => { r.ci = v; r.ciTime = time; r.ciBy = by; if (t) { t.ci = v; t.ciTime = time; } };
+    apply(yes, yes ? new Date().toLocaleString([], { month: 'numeric', day: 'numeric', hour: 'numeric', minute: '2-digit' }) : '', yes ? ciWho() : '');
+    S.ciAsk = null; S.ciReason = ''; S.ciBusy = key; render();
+    const fail = (msg) => { S.ciBusy = null; apply(prev.ci, prev.time, prev.by); render(); showError(Array.isArray(msg) ? msg : [msg]); };
+    let x;
+    try {
+        x = await setRosterCheckin(token(), { teamKey: key, want, note, warnings: warns.join('; '), by: ciWho() });
+    } catch (e) {
+        fail((e.body && e.body.errors) || e.message || String(e));
+        return;
+    }
+    if (!x.ok) { fail(x.errors || ['Could not save.']); return; }
+    S.ciBusy = null; apply(x.ci, x.time || '', x.by || '');
+    if (!x.unchanged) addCiEntry(key, x.entry);
+    render();
+    toast(x.unchanged ? `${r.team} was already ${x.ci ? 'checked in' : 'not checked in'}` : `✓ ${r.team}${yes ? ' checked in' : ' check-in undone'}`);
+    if (x.verified === false) showError(['The change was written, but the sheet did not read back as expected.', 'Check the Registrations row and the Check-In Log tab.']);
+}
+
+async function addCiNote() {
+    const key = S.cur, inp = document.getElementById('roster-ci-note'), text = (inp ? inp.value : S.ciNote).trim();
+    if (!text || S.ciNoteBusy) return;
+    S.ciNoteBusy = true; render();
+    try {
+        const x = await addRosterCheckinNote(token(), { teamKey: key, note: text, by: ciWho() });
+        S.ciNoteBusy = false;
+        if (!x.ok) { render(); showError(x.errors || ['Could not save the note.']); return; }
+        if (S.ciNote.trim() === text) S.ciNote = '';
+        addCiEntry(key, x.entry); render(); document.getElementById('roster-ci-note')?.focus();
+        toast('✓ Note saved');
+    } catch (e) { S.ciNoteBusy = false; render(); showError([(e.body && e.body.error) || e.message || String(e)]); }
+}
+
+/** Called from Setup when the shared switch changes, so the Roster view follows at once. */
+export function setCheckinEnabled(on) {
+    on = on === true;
+    if (S.ciOn === on) return;
+    S.ciOn = on;
+    if (!on) { S.ciDiv = ''; S.ciOut = false; S.ciAsk = null; S.ciReason = ''; }
+    if (S.data) render();
+}
+
 /* ---------- render + wiring ---------- */
 
 function render() {
@@ -303,6 +454,7 @@ function render() {
     const keepQ = document.activeElement && document.activeElement.id === 'roster-q';
     el.innerHTML = S.cur ? renderDetail() : renderList();
     if (keepQ) { const q = document.getElementById('roster-q'); q.focus(); q.setSelectionRange(q.value.length, q.value.length); }
+    if (S.cur && S.ciOn && S.ciLog[S.cur] === undefined && !S.ciLoading[S.cur]) loadCiLog(S.cur);
     if (S.cur) {
         const focus = (id, sel) => { const x = document.getElementById(id); if (x) { x.focus(); if (sel) x.select(); } };
         if (S.editing) focus('roster-edit-name', true);
@@ -312,7 +464,7 @@ function render() {
 }
 
 function open(key, hlName) {
-    S.cur = key; S.editing = null; S.ask = null; S.draft = ''; S.editSub = false; S.subAsk = null; S.confirmPaid = false; S.openWaiver = null; S.hl = hlName || null;
+    S.cur = key; S.editing = null; S.ask = null; S.draft = ''; S.editSub = false; S.subAsk = null; S.confirmPaid = false; S.openWaiver = null; S.hl = hlName || null; S.ciAsk = null; S.ciReason = ''; S.ciNote = '';
     render();
     window.scrollTo?.({ top: 0 });
 }
@@ -373,7 +525,7 @@ async function run(action, ui) {
     try {
         const res = await applyRosterAction(token(), { ...action, quick: true, ack: true });
         done();
-        if (res.needsReview) { render(); openReview(action); return; }
+        if (res.needsReview) { render(); openReview(action, res.preview); return; }
         finish(res);
     } catch (e) {
         done(); render();
@@ -408,11 +560,13 @@ function showError(lines) {
     modal(`${kicker('Something went wrong')}<div class="grid gap-1.5 text-[13px] text-white/80">${lines.map(l => `<div>${esc(l)}</div>`).join('')}</div><div class="flex justify-end"><button data-m="close" class="${smBtn}">Close</button></div>`);
 }
 
-async function openReview(action) {
-    modal(`${kicker('Review')}<div class="py-6 text-center text-sm text-white/50">Checking the sheet…</div>`);
-    let p;
-    try { p = await previewRosterAction(token(), action); }
-    catch (e) { showError([e.message || String(e)]); return; }
+async function openReview(action, preview) {
+    let p = preview;                                  // the apply call already planned it: no second read of the sheet
+    if (!p) {
+        modal(`${kicker('Review')}<div class="py-6 text-center text-sm text-white/50">Checking the sheet…</div>`);
+        try { p = await previewRosterAction(token(), action); }
+        catch (e) { showError([e.message || String(e)]); return; }
+    }
     if (p.errors && p.errors.length) { showError(p.errors); return; }
     const bySheet = {};
     (p.changes || []).forEach(c => { (bySheet[c.sheet] = bySheet[c.sheet] || []).push(c.text); });
@@ -441,23 +595,38 @@ async function setPaid(want) {
     const r = S.data.rosters[S.cur], t = S.data.teams.find(x => x.key === S.cur), prev = r.paid, yes = want === 'Yes';
     const apply = (v) => { r.paid = v; if (t) t.paid = v; };
     apply(yes); S.confirmPaid = false; S.paidBusy = true; render();           // show it immediately; the sheet write happens behind it
+    let res;
     try {
-        const res = await applyRosterAction(token(), { type: 'setPaid', teamKey: S.cur, paid: want });
-        S.paidBusy = false;
-        if (!res.ok) { apply(prev); render(); showError(res.errors || ['Could not save.']); return; }
-        render(); toast(`✓ ${r.team} marked ${yes ? 'paid' : 'not paid'}`);
-    } catch (e) { S.paidBusy = false; apply(prev); render(); showError([e.message || String(e)]); }
+        res = await applyRosterAction(token(), { type: 'setPaid', teamKey: S.cur, paid: want });
+    } catch (e) { S.paidBusy = false; apply(prev); render(); showError([e.message || String(e)]); return; }
+    S.paidBusy = false;
+    if (!res.ok) { apply(prev); render(); showError(res.errors || ['Could not save.']); return; }
+    render(); toast(`✓ ${r.team} marked ${yes ? 'paid' : 'not paid'}`);
+}
+/** Sub divisions in use, rebuilt from the team list (so saving one needs no second trip to the sheet). */
+function recomputeSubOptions() {
+    const seen = {}, out = [];
+    S.data.teams.forEach(t => {
+        const v = (t.sub || '').trim(); if (!v) return;
+        const k = v.toLowerCase();
+        if (!seen[k]) { seen[k] = { name: v, count: 0 }; out.push(seen[k]); }
+        seen[k].count++;
+    });
+    out.sort((a, b) => a.name.toLowerCase().localeCompare(b.name.toLowerCase()));
+    S.data.subOptions = out;
+    Object.keys(S.data.rosters).forEach(k => { S.data.rosters[k].subOptions = out; });
 }
 async function setSub(val) {
-    const r = S.data.rosters[S.cur], t = S.data.teams.find(x => x.key === S.cur);
-    S.editSub = false; S.subAsk = null; S.paidBusy = false; render();
-    try {
-        const res = await applyRosterAction(token(), { type: 'setSub', teamKey: S.cur, sub: val });
-        if (!res.ok) { showError(res.errors || ['Could not save.']); return; }
-        // adopt the saved spelling (the server reuses an existing "Chaos" for "chaos") and refresh sub options
-        const fresh = await getRoster(token());
-        adopt(fresh); render(); toast(`✓ ${r.team}: sub division ${val ? 'set to ' + val : 'cleared'}`);
-    } catch (e) { showError([e.message || String(e)]); }
+    const key = S.cur, r = S.data.rosters[key], t = S.data.teams.find(x => x.key === key);
+    S.editSub = false; S.subAsk = null; render();
+    let res;
+    try { res = await applyRosterAction(token(), { type: 'setSub', teamKey: key, sub: val }); }
+    catch (e) { showError([e.message || String(e)]); return; }
+    if (!res.ok) { showError(res.errors || ['Could not save.']); return; }
+    const saved = res.value != null ? res.value : val;       // the server reuses an existing spelling ("chaos" -> "Chaos")
+    r.sub = saved; if (t) t.sub = saved;
+    recomputeSubOptions(); render();
+    toast(`✓ ${r.team}: sub division ${saved ? 'set to ' + saved : 'cleared'}`);
 }
 
 /* ---------- events (one delegated listener; wired once) ---------- */
@@ -475,7 +644,7 @@ function wire() {
         switch (act) {
             case 'open': open(b.getAttribute('data-k'), b.getAttribute('data-n')); break;
             case 'back': S.cur = null; S.ask = null; S.editing = null; render(); break;
-            case 'refresh': S.ask = null; load(!!S.data); break;
+            case 'refresh': S.ask = null; S.ciLog = {}; load(!!S.data, true); break;
             case 'waiver': S.openWaiver = S.openWaiver === m.name ? null : m.name; render(); break;
             case 'edit': S.ask = null; S.editing = m.name; render(); break;
             case 'move': S.editing = null; S.ask = { kind: 'moveSel', name: m.name, to: '' }; render(); break;
@@ -498,16 +667,28 @@ function wire() {
                 S.subAsk = v; render(); break;
             }
             case 'sub-yes': { const v = S.subAsk; setSub(v); break; }
+            case 'ci-act': S.ciAsk = S.cur; S.ciReason = ''; render(); document.getElementById('roster-ci-reason')?.focus(); break;
+            case 'ci-no': S.ciAsk = null; S.ciReason = ''; render(); break;
+            case 'ci-ok': setCheckin(r.ci ? 'No' : 'Yes'); break;
+            case 'ci-note-add': addCiNote(); break;
         }
     });
     el.addEventListener('input', (e) => {
         if (e.target.id === 'roster-q') { S.q = e.target.value; const keep = e.target.selectionStart; render(); const q = document.getElementById('roster-q'); if (q) { q.focus(); q.setSelectionRange(keep, keep); } }
         else if (e.target.id === 'roster-new-name') S.draft = e.target.value;
+        else if (e.target.id === 'roster-ci-reason') S.ciReason = e.target.value;
+        else if (e.target.id === 'roster-ci-note') S.ciNote = e.target.value;
     });
-    el.addEventListener('change', (e) => { if (e.target.id === 'roster-move-to' && S.ask) S.ask.to = e.target.value; });
+    el.addEventListener('change', (e) => {
+        if (e.target.id === 'roster-move-to' && S.ask) S.ask.to = e.target.value;
+        else if (e.target.id === 'roster-ci-div') { S.ciDiv = e.target.value; render(); }
+        else if (e.target.id === 'roster-ci-out') { S.ciOut = e.target.checked; render(); }
+    });
     el.addEventListener('keydown', (e) => {
         if (e.target.id === 'roster-edit-name') { if (e.key === 'Enter') startEdit(); if (e.key === 'Escape') { S.editing = null; render(); } }
         else if (e.target.id === 'roster-new-name' && e.key === 'Enter') startAdd();
+        else if (e.target.id === 'roster-ci-reason' && e.key === 'Enter') el.querySelector('[data-act="ci-ok"]')?.click();
+        else if (e.target.id === 'roster-ci-note' && e.key === 'Enter') addCiNote();
         else if (e.target.id === 'roster-sub' && !e.target.readOnly) {
             if (e.key === 'Enter') el.querySelector('[data-act="sub-ok"]')?.click();
             if (e.key === 'Escape') { S.editSub = false; render(); }
@@ -517,9 +698,18 @@ function wire() {
 
 export function initRoster() { wire(); }
 
+// Best effort: other superadmin devices flip the shared switch through the featureSettingsUpdate socket event (local-backend mode only).
+let socketWired = false;
+function wireSocket() {
+    if (socketWired) return;
+    socketWired = true;
+    try { getSocket().on('featureSettingsUpdate', (settings) => setCheckinEnabled(settings && settings.checkinEnabled === true)); }
+    catch (e) { /* no socket in this mode: Refresh picks the setting up */ }
+}
+
 /** Called on logout / role change so a different login never sees cached roster data. */
 export function resetRoster() {
-    Object.assign(S, { data: null, loadedAt: 0, loading: false, error: '', cur: null, q: '', editing: null, ask: null, draft: '', editSub: false, subAsk: null, confirmPaid: false, paidBusy: false, openWaiver: null, busyRows: {}, adding: [] });
+    Object.assign(S, { ciOn: false, ciDiv: '', ciOut: false, ciAsk: null, ciReason: '', ciBusy: null, ciLog: {}, ciLoading: {}, ciNote: '', ciNoteBusy: false, data: null, loadedAt: 0, loading: false, error: '', cur: null, q: '', editing: null, ask: null, draft: '', editSub: false, subAsk: null, confirmPaid: false, paidBusy: false, openWaiver: null, busyRows: {}, adding: [] });
     const el = body(); if (el) el.innerHTML = '';
     closeModal();
 }
