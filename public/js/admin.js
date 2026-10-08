@@ -6,6 +6,7 @@ import {
     isReported as isReportedOfficial
 } from './schedule.js';
 import { switchView, enterApp } from './navigation.js';
+import { resetRoster } from './roster.js';
 import { getSocket } from './socketClient.js';
 
 // --- Result discrepancies (superadmin) -------------------------------------
@@ -748,6 +749,7 @@ function updateAdminUI() {
     const chatTab = document.getElementById('chat-tab');
     const scheduleTab = document.getElementById('schedule-tab');
     const infoTab = document.getElementById('info-tab');
+    const rosterTab = document.getElementById('roster-tab');
 
     if (!adminButton || !adminStatusText || !adminEntryTab) return;
 
@@ -780,6 +782,9 @@ function updateAdminUI() {
             infoTab.classList.toggle('hidden', !!App.state.isSuperAdmin);
             if (App.state.isSuperAdmin && App.state.currentView === 'info') switchView('admin-entry');
         }
+        // Roster (Registrations sheet) is superadmin-only; the server enforces it too.
+        if (rosterTab) rosterTab.classList.toggle('hidden', !App.state.isSuperAdmin);
+        if (!App.state.isSuperAdmin) { if (App.state.currentView === 'roster') switchView('admin-entry'); resetRoster(); }
         if (App.state.isSuperAdmin) {
             if (setupGear) setupGear.classList.remove('hidden');
             if (chatSetupGear) chatSetupGear.classList.remove('hidden');
@@ -796,6 +801,9 @@ function updateAdminUI() {
         if (setupGear) setupGear.classList.add('hidden');
         if (chatSetupGear) chatSetupGear.classList.add('hidden');
         if (chatTab) chatTab.classList.add('hidden');
+        if (rosterTab) rosterTab.classList.add('hidden');
+        if (App.state.currentView === 'roster') switchView('standings');
+        resetRoster();
         window.closeTimerOverlay?.();
     }
 }

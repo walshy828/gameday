@@ -9,6 +9,7 @@ import * as SheetsSync from './sheetsSync.js';
 import { applySyncSettings, computeAutoSyncExpiry, initSyncScheduler, scheduleResultSync } from './syncScheduler.js';
 import { initSocket, broadcastDiscrepancyPing } from './socket.js';
 import { listOpenDiscrepancies, dismissDiscrepancy, notifyIfHighImpact } from './discrepancies.js';
+import * as Roster from './rosterSheets.js';
 import { controlTimer, initTimerControl, TimerError, TIMER_ACTION_NAMES } from './timerControl.js';
 import crypto from 'crypto';
 import axios from 'axios';
@@ -454,6 +455,49 @@ app.post('/api/discrepancies/dismiss', async (req, res) => {
   } catch (e) {
     console.error('dismiss discrepancy error', e);
     res.status(500).json({ success: false, error: e.toString() });
+  }
+});
+
+// --- Roster / Team Management (Registrations sheet), superadmin only ---
+
+function rosterGuard(req, res) {
+  if (!requireSuperAdmin(req, res)) return false;
+  if (!Roster.isRosterConfigured()) {
+    res.status(503).json({ success: false, error: 'Roster is not configured (set ROSTER_SPREADSHEET_ID and share the sheet with the service account).' });
+    return false;
+  }
+  return true;
+}
+
+app.get('/api/roster', async (req, res) => {
+  if (!rosterGuard(req, res)) return;
+  try {
+    res.json({ success: true, ...(await Roster.getRosterData()) });
+  } catch (e) {
+    console.error('roster load error', e);
+    res.status(500).json({ success: false, error: e.message || e.toString() });
+  }
+});
+
+app.post('/api/roster/preview', async (req, res) => {
+  if (!rosterGuard(req, res)) return;
+  try {
+    res.json({ success: true, ...(await Roster.previewAction(req.body?.action)) });
+  } catch (e) {
+    console.error('roster preview error', e);
+    res.status(500).json({ success: false, error: e.message || e.toString() });
+  }
+});
+
+app.post('/api/roster/apply', async (req, res) => {
+  if (!rosterGuard(req, res)) return;
+  try {
+    const result = await Roster.applyAction(req.body?.action);
+    if (!result.ok && !result.needsReview) return res.status(400).json({ success: false, error: (result.errors || []).join(' '), errors: result.errors });
+    res.json({ success: result.ok, ...result });
+  } catch (e) {
+    console.error('roster apply error', e);
+    res.status(500).json({ success: false, error: e.message || e.toString() });
   }
 });
 

@@ -1465,6 +1465,11 @@
                         </div>
                     </div>
 
+                    <!-- ROSTER VIEW (Superadmin only) — populated by roster.js -->
+                    <div id="roster-view" class="screen hidden">
+                        <div id="roster-body"></div>
+                    </div>
+
                     <!-- GAME MANAGEMENT VIEW (Superadmin only) — populated by gameManagerUI.js -->
                     <div id="game-manager-view" class="screen hidden">
                         <div class="screen-head">
@@ -1775,6 +1780,9 @@
         </button>
         <button id="info-tab" onclick="switchView('info')" class="tab-button">
             <span class="tab-icon">📣</span><span class="tab-label">INFO</span>
+        </button>
+        <button id="roster-tab" onclick="switchView('roster')" class="tab-button hidden">
+            <span class="tab-icon">📋</span><span class="tab-label">ROSTER</span>
         </button>
         <button id="admin-entry-tab" onclick="switchView('admin-entry')" class="tab-button hidden">
             <span class="tab-icon">🛠️<span id="discrepancy-dot" class="hidden" title="Results need review"></span></span><span class="tab-label">ADMIN</span>

@@ -4,6 +4,7 @@ import { onChatTabOpened } from './chat.js';
 import { renderPlayoffsView } from './playoffs.js';
 import { renderGameManager } from './gameManagerUI.js';
 import { renderStandings } from './standings.js';
+import { renderRoster } from './roster.js';
 
 /**
  * Fetches all division (sheet) names via the /api/divisions REST endpoint.
@@ -597,13 +598,15 @@ function switchView(view) {
         'admin-entry': document.getElementById('admin-match-entry-view'),
         'chat': document.getElementById('chat-view'),
         'settings': document.getElementById('settings-view'),
-        'game-manager': document.getElementById('game-manager-view')
+        'game-manager': document.getElementById('game-manager-view'),
+        'roster': document.getElementById('roster-view')
     };
     const tabs = {
         'standings': document.getElementById('standings-tab'),
         'schedule': document.getElementById('schedule-tab'),
         'playoffs': document.getElementById('playoffs-tab'),
         'info': document.getElementById('info-tab'),
+        'roster': document.getElementById('roster-tab'),
         'admin-entry': document.getElementById('admin-entry-tab'),
         'chat': document.getElementById('chat-tab')
         // 'settings' has no bottom-tab entry — it's reached via the gear
@@ -618,14 +621,16 @@ function switchView(view) {
         if (v === view) {
             viewEl.classList.remove('hidden');
             if (tab) {
-                tab.classList.add(v === 'admin-entry' || v === 'settings' || v === 'game-manager' ? 'tab-admin-active' : 'tab-active');
-                tab.classList.remove(v === 'admin-entry' || v === 'settings' || v === 'game-manager' ? 'tab-active' : 'tab-admin-active');
+                const adminStyled = v === 'admin-entry' || v === 'settings' || v === 'game-manager' || v === 'roster';
+                tab.classList.add(adminStyled ? 'tab-admin-active' : 'tab-active');
+                tab.classList.remove(adminStyled ? 'tab-active' : 'tab-admin-active');
             }
             // Trigger specific view update
             if (v === 'schedule') updateScheduleView();
             if (v === 'admin-entry') updateAdminMatchEntryView();
             if (v === 'settings') initSettingsView();
             if (v === 'game-manager') renderGameManager();
+            if (v === 'roster') renderRoster();
             if (v === 'chat') onChatTabOpened();
             if (v === 'playoffs') renderPlayoffsView();
 

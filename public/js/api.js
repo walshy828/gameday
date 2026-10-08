@@ -138,6 +138,29 @@ export async function dismissDiscrepancy(authToken, division, firebaseIndex, by)
   return await apiPost(`/discrepancies/dismiss`, { authToken, division, firebaseIndex, by });
 }
 
+// Roster (Team Management) — superadmin only. getRoster uses fetch directly so a 503
+// "not configured" / 500 message from the server reaches the UI instead of a bare status.
+export async function getRoster(authToken) {
+  const res = await fetch(`${window.location.origin}/api/roster`, { headers: authHeaders(authToken) });
+  const body = await res.json().catch(() => ({}));
+  if (!res.ok || body.success === false) throw new Error(body.error || `Roster failed to load (${res.status})`);
+  return body;
+}
+
+export async function previewRosterAction(authToken, action) {
+  return await apiPost(`/roster/preview`, { authToken, action });
+}
+
+// Resolves with the server body even for 400s (validation errors) so callers can show `errors`.
+export async function applyRosterAction(authToken, action) {
+  try {
+    return await apiPost(`/roster/apply`, { authToken, action });
+  } catch (e) {
+    if (e.body && typeof e.body === 'object') return { ok: false, ...e.body, errors: e.body.errors || [e.body.error || e.message] };
+    throw e;
+  }
+}
+
 export async function getAnnouncements() {
   return await apiGet(`/announcements`);
 }
