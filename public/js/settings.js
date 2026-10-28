@@ -10,7 +10,7 @@
 // updates in local mode — 'syncStatusUpdate' is broadcast to every client
 // regardless of DATA_BACKEND, so this works the same whether the server is
 // running against Firebase or MariaDB.
-import { getSheetSyncConfig, getSheetSyncStatus, updateSheetSyncSettings, updateFeatureSettings, runSheetSync, pruneSheetSyncDivisions, getActiveSessions, getLoginHistory } from './api.js';
+import { getSheetSyncConfig, getSheetSyncStatus, updateSheetSyncSettings, updateFeatureSettings, runSheetSync, pruneSheetSyncDivisions, getActiveSessions, getLoginHistory, getRolePasswords } from './api.js';
 import { getSocket } from './socketClient.js';
 import { setCheckinEnabled } from './roster.js';
 
@@ -30,6 +30,9 @@ let syncLogShown = SYNC_LOG_PAGE_SIZE;
 let lastSessions = [];
 let showInactiveUsers = false;
 let autoSyncExpiresAt = null;
+const PASSWORD_REVEAL_MS = 10000;
+let passwordRoles = null;
+const passwordHideTimers = {};
 
 function formatRelativeTime(ts) {
     if (!ts) return 'Never';
@@ -370,6 +373,7 @@ function initSettingsView() {
     renderFeatureSettings(App.settings);
     const prefSelect = document.getElementById('discrepancy-pref-select');
     if (prefSelect && window.getDiscrepancyPref) prefSelect.value = window.getDiscrepancyPref();
+    renderRolePasswords();
     startSessionsPoller();
     refreshActiveSessions();
     refreshSessionHistory();
@@ -626,6 +630,68 @@ function toggleSyncDivision(name, checked) {
     persistSettings({ selectedDivisions: next });
 }
 
+
+// ---- Role passwords: fetched on demand, shown briefly, never kept ----
+const PASSWORD_ROW_ROLES = [
+    ['admin', 'Referee', 'Match entry + crew chat'],
+    ['superadmin', 'Tournament admin', 'Everything, incl. Setup'],
+    ['parent', 'Parent', 'Crew chat only'],
+    ['raffle', 'Raffle', 'Sell raffle tickets'],
+    ['concessions', 'Concessions', 'Run the stand']
+];
+
+function renderRolePasswords() {
+    const body = document.getElementById('role-passwords-body');
+    if (!body) return;
+    body.innerHTML = PASSWORD_ROW_ROLES.map(([key, label, note]) => `
+        <div class="flex items-center justify-between gap-3 rounded-lg border border-gray-800 bg-gray-800/40 px-3 py-2">
+            <div class="min-w-0">
+                <div class="text-sm font-semibold text-white">${escapeHtml(label)}</div>
+                <div class="text-[11px] text-white/50">${escapeHtml(note)}</div>
+            </div>
+            <div class="flex items-center gap-2 flex-none">
+                <code id="role-pw-${key}" class="hidden rounded bg-black/40 px-2 py-1 text-sm text-gold-l break-all select-all"></code>
+                <button type="button" id="role-pw-btn-${key}" onclick="showRolePassword('${key}')"
+                    class="rounded-full border border-white/20 bg-white/[.06] px-3 py-1.5 text-[11px] font-semibold text-white/75">Show</button>
+            </div>
+        </div>`).join('');
+}
+
+function hideRolePassword(key) {
+    clearTimeout(passwordHideTimers[key]);
+    delete passwordHideTimers[key];
+    const code = document.getElementById(`role-pw-${key}`);
+    const btn = document.getElementById(`role-pw-btn-${key}`);
+    if (code) { code.textContent = ''; code.classList.add('hidden'); }
+    if (btn) btn.textContent = 'Show';
+}
+
+async function showRolePassword(key) {
+    const code = document.getElementById(`role-pw-${key}`);
+    const btn = document.getElementById(`role-pw-btn-${key}`);
+    if (!code || !btn) return;
+    if (!code.classList.contains('hidden')) return hideRolePassword(key);
+    const authToken = sessionStorage.getItem('adminAuthToken');
+    if (!authToken || !App.state.isSuperAdmin) return;
+    btn.disabled = true;
+    try {
+        const { roles } = await getRolePasswords(authToken);
+        const pw = (roles.find(r => r.key === key) || {}).password;
+        code.textContent = pw || 'Not set';
+        code.classList.remove('hidden');
+        btn.textContent = 'Hide';
+        clearTimeout(passwordHideTimers[key]);
+        passwordHideTimers[key] = setTimeout(() => hideRolePassword(key), PASSWORD_REVEAL_MS);
+    } catch (e) {
+        console.error('Failed to load role passwords', e);
+        showStatus('Could not load the password.', true);
+        setTimeout(() => showStatus(null), 3000);
+    } finally {
+        btn.disabled = false;
+    }
+}
+
+
 /** Generic "show more" disclosure: button's data-target is the panel id. */
 function toggleSetupPanel(btn) {
     const panel = document.getElementById(btn.dataset.target);
@@ -650,6 +716,7 @@ function toggleInactiveUsers() {
 
 export {
     initSettingsView,
+    showRolePassword,
     toggleSetupPanel,
     loadMoreSyncLog,
     toggleInactiveUsers,

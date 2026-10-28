@@ -98,6 +98,10 @@ export async function getLoginHistory(authToken) {
   return await apiGet(`/session/history`, authToken);
 }
 
+export async function getRolePasswords(authToken) {
+  return await apiGet(`/rolePasswords`, authToken);
+}
+
 export async function getPresence(authToken) {
   return await apiGet(`/presence`, authToken);
 }

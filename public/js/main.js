@@ -63,7 +63,8 @@ import {
     saveGoogleSheetId,
     toggleSetupPanel,
     loadMoreSyncLog,
-    toggleInactiveUsers
+    toggleInactiveUsers,
+    showRolePassword
 } from './settings.js';
 
 import { getSocket } from './socketClient.js';
@@ -671,7 +672,8 @@ exposeGlobals({
   saveGoogleSheetId,
   toggleSetupPanel,
   loadMoreSyncLog,
-  toggleInactiveUsers
+  toggleInactiveUsers,
+  showRolePassword
 });
 
 // Expose announcements + chat handlers (used by inline onclick handlers)

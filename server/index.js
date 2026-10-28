@@ -1032,6 +1032,22 @@ function requireSuperAdmin(req, res) {
   return true;
 }
 
+// Role passwords, for the superadmin's Setup screen. Fetched only when the
+// superadmin taps Show and never cached by the browser or any proxy.
+app.get('/api/rolePasswords', (req, res) => {
+  if (!requireSuperAdmin(req, res)) return;
+  res.set('Cache-Control', 'no-store');
+  res.json({
+    roles: [
+      { key: 'admin', label: 'Referee', note: 'Match entry + crew chat', password: ADMIN_PASSWORD || null },
+      { key: 'superadmin', label: 'Tournament admin', note: 'Everything, incl. Setup', password: SUPERADMIN_PASSWORD || null },
+      { key: 'parent', label: 'Parent', note: 'Crew chat only', password: PARENT_PASSWORD || null },
+      { key: 'raffle', label: 'Raffle', note: 'Sell raffle tickets', password: RAFFLE_PASSWORD || null },
+      { key: 'concessions', label: 'Concessions', note: 'Run the stand', password: CONCESSIONS_PASSWORD || null }
+    ]
+  });
+});
+
 app.get('/api/sheetSync/config', async (req, res) => {
   if (!requireSuperAdmin(req, res)) return;
   try {
