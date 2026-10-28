@@ -17,7 +17,7 @@ import { setCheckinEnabled } from './roster.js';
 const PRESET_INTERVALS = [30, 60, 300];
 const SESSIONS_POLL_INTERVAL_MS = 15000;
 const SYNC_LOG_PAGE_SIZE = 10;
-const ROLE_LABELS = { admin: 'Referee', superadmin: 'Tournament Admin', parent: 'Parent' };
+const ROLE_LABELS = { admin: 'Referee', superadmin: 'Tournament Admin', parent: 'Parent', raffle: 'Raffle manager', concessions: 'Concessions' };
 
 let socketWired = false;
 let relativeTimeTicker = null;

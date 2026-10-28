@@ -10,6 +10,11 @@ import { applySyncSettings, computeAutoSyncExpiry, initSyncScheduler, scheduleRe
 import { initSocket, broadcastDiscrepancyPing } from './socket.js';
 import { listOpenDiscrepancies, dismissDiscrepancy, notifyIfHighImpact } from './discrepancies.js';
 import * as Roster from './rosterSheets.js';
+import * as Raffle from './raffleSheets.js';
+import * as RaffleDb from './raffleDb.js';
+import { compare as compareRaffle } from './raffleReconcile.js';
+import * as Concessions from './concessionsDb.js';
+import * as Seasons from './seasons.js';
 import { controlTimer, initTimerControl, TimerError, TIMER_ACTION_NAMES } from './timerControl.js';
 import crypto from 'crypto';
 import axios from 'axios';
@@ -32,9 +37,11 @@ dotenv.config();
   need('SUPERADMIN_PASSWORD', 8);
   need('SECRET_SALT', 16);
   if (process.env.PARENT_PASSWORD) need('PARENT_PASSWORD', 8);
+  if (process.env.RAFFLE_PASSWORD) need('RAFFLE_PASSWORD', 8);
+  if (process.env.CONCESSIONS_PASSWORD) need('CONCESSIONS_PASSWORD', 8);
   if (process.env.SECRET_SALT === 'secret-salt') problems.push('SECRET_SALT must not be the default value');
-  const pws = [process.env.ADMIN_PASSWORD, process.env.SUPERADMIN_PASSWORD, process.env.PARENT_PASSWORD].filter(Boolean);
-  if (new Set(pws).size !== pws.length) problems.push('ADMIN_PASSWORD, SUPERADMIN_PASSWORD and PARENT_PASSWORD must all differ');
+  const pws = [process.env.ADMIN_PASSWORD, process.env.SUPERADMIN_PASSWORD, process.env.PARENT_PASSWORD, process.env.RAFFLE_PASSWORD, process.env.CONCESSIONS_PASSWORD].filter(Boolean);
+  if (new Set(pws).size !== pws.length) problems.push('ADMIN_PASSWORD, SUPERADMIN_PASSWORD, PARENT_PASSWORD, RAFFLE_PASSWORD and CONCESSIONS_PASSWORD must all differ');
   if (problems.length) {
     console.error('Refusing to start — fix your .env:\n  - ' + problems.join('\n  - '));
     process.exit(1);
@@ -84,6 +91,8 @@ app.get('/config.js', (req, res) => {
 const ADMIN_PASSWORD = process.env.ADMIN_PASSWORD;
 const SUPERADMIN_PASSWORD = process.env.SUPERADMIN_PASSWORD;
 const PARENT_PASSWORD = process.env.PARENT_PASSWORD;
+const RAFFLE_PASSWORD = process.env.RAFFLE_PASSWORD;
+const CONCESSIONS_PASSWORD = process.env.CONCESSIONS_PASSWORD;
 const SECRET_SALT = process.env.SECRET_SALT;
 
 // route: getAllData
@@ -269,8 +278,20 @@ app.post('/api/validateAdmin', async (req, res) => {
     await recordLoginIfPossible('parent');
     return res.json({ isAdmin: false, isSuperAdmin: false, isParent: true, token });
   }
+  if (RAFFLE_PASSWORD && safeEqual(password, RAFFLE_PASSWORD)) {
+    const token = computeToken(RAFFLE_PASSWORD);
+    // Raffle managers can only sell/view raffle tickets (see requireRaffle): no match entry, timer or chat.
+    await recordLoginIfPossible('raffle');
+    return res.json({ isAdmin: false, isSuperAdmin: false, isParent: false, isRaffle: true, token });
+  }
+  if (CONCESSIONS_PASSWORD && safeEqual(password, CONCESSIONS_PASSWORD)) {
+    const token = computeToken(CONCESSIONS_PASSWORD);
+    // Concessions staff can only run the concession stand (see requireConcessions): no match entry, timer or chat.
+    await recordLoginIfPossible('concessions');
+    return res.json({ isAdmin: false, isSuperAdmin: false, isParent: false, isRaffle: false, isConcessions: true, token });
+  }
   recordLoginFailure(ip);
-  res.json({ isAdmin: false, isSuperAdmin: false, isParent: false, error: 'Invalid password.' });
+  res.json({ isAdmin: false, isSuperAdmin: false, isParent: false, isRaffle: false, isConcessions: false, error: 'Invalid password.' });
 });
 
 // Validates and normalizes the match-result payload. Returns { value } or { error }.
@@ -541,6 +562,156 @@ app.post('/api/roster/apply', async (req, res) => {
   }
 });
 
+// --- Raffle (raffle spreadsheet), raffle managers + superadmin ---
+// Selling and viewing only: bundles, rolls and winners are configured in the sheet itself. The seller
+// recorded on each sale is the name the person signed in with (client-supplied, like the crew chat).
+
+function requireRaffle(req, res) {
+  const authToken = getAuthToken(req);
+  const ok = authToken && (
+    safeEqual(authToken, computeToken(SUPERADMIN_PASSWORD)) ||
+    (!!RAFFLE_PASSWORD && safeEqual(authToken, computeToken(RAFFLE_PASSWORD))));
+  if (!ok) { res.status(401).json({ success: false, error: 'Raffle manager sign-in required.' }); return false; }
+  if (!Raffle.isRaffleConfigured()) {
+    res.status(503).json({ success: false, error: 'Raffle is not configured (set RAFFLE_SPREADSHEET_ID and share the sheet with the service account).' });
+    return false;
+  }
+  return true;
+}
+
+app.get('/api/raffle', async (req, res) => {
+  if (!requireRaffle(req, res)) return;
+  try {
+    res.json({ success: true, ...(await Raffle.getRaffleData({ refresh: req.query.refresh === '1' })) });
+  } catch (e) {
+    console.error('raffle load error', e);
+    res.status(500).json({ success: false, error: e.message || e.toString() });
+  }
+});
+
+app.post('/api/raffle/sale', async (req, res) => {
+  if (!requireRaffle(req, res)) return;
+  try {
+    const b = req.body || {};
+    const result = await Raffle.sell(cleanText(b.seller, 60), b);
+    if (!result.ok) return res.status(400).json({ success: false, error: (result.errors || []).join(' '), errors: result.errors });
+    res.json({ success: true, ...result });
+  } catch (e) {
+    console.error('raffle sale error', e);
+    res.status(500).json({ success: false, error: e.message || e.toString() });
+  }
+});
+
+// --- Seasons (superadmin starts a new one; concessions + raffle records are stamped with the current season) ---
+app.get('/api/seasons', async (req, res) => {
+  if (!requireSuperAdmin(req, res)) return;
+  try {
+    res.json({ success: true, seasons: await Seasons.list() });
+  } catch (e) {
+    console.error('seasons list error', e);
+    res.status(500).json({ success: false, error: e.message || e.toString() });
+  }
+});
+
+app.post('/api/seasons/start', async (req, res) => {
+  if (!requireSuperAdmin(req, res)) return;
+  try {
+    res.json({ success: true, seasons: await Seasons.start(req.body?.label) });
+  } catch (e) {
+    res.status(400).json({ success: false, error: e.message || e.toString() });
+  }
+});
+
+// --- Test data reset (superadmin, DISABLED unless ALLOW_TEST_DATA_RESET=true) ---
+// Deletes concession sales and/or raffle backup rows from the database for retesting. Never touches the sheets,
+// items/settings or seasons. Leave the env var unset in production so this cannot be run by accident.
+const TEST_RESET_ENABLED = () => String(process.env.ALLOW_TEST_DATA_RESET || '').toLowerCase() === 'true';
+
+app.get('/api/admin/test-reset', (req, res) => {
+  if (!requireSuperAdmin(req, res)) return;
+  res.json({ success: true, enabled: TEST_RESET_ENABLED(), dbConfigured: Concessions.isDbConfigured() });
+});
+
+app.post('/api/admin/test-reset', async (req, res) => {
+  if (!requireSuperAdmin(req, res)) return;
+  if (!TEST_RESET_ENABLED()) return res.status(403).json({ success: false, error: 'Test data reset is disabled (set ALLOW_TEST_DATA_RESET=true on the server to enable it).' });
+  if (!Concessions.isDbConfigured()) return res.status(503).json({ success: false, error: 'No database configured.' });
+  const b = req.body || {};
+  if (b.confirm !== 'DELETE') return res.status(400).json({ success: false, error: 'Confirmation missing.' });
+  if (!b.concessions && !b.raffle) return res.status(400).json({ success: false, error: 'Choose concessions and/or raffle.' });
+  try {
+    const deleted = {};
+    if (b.concessions) deleted.concessions = await Concessions.clearAllSales();
+    if (b.raffle) deleted.raffle = await RaffleDb.clearAllSales();
+    console.warn('TEST DATA RESET by superadmin:', JSON.stringify(deleted));
+    res.json({ success: true, deleted });
+  } catch (e) {
+    console.error('test reset error', e);
+    res.status(500).json({ success: false, error: e.message || e.toString() });
+  }
+});
+
+// --- Concessions stand (MariaDB only), concessions staff + superadmin ---
+// Phones sell offline and post queued sales later; every write is idempotent (see concessionsDb.js). The seller
+// recorded on a sale is the signed-in name the phone sends, like the raffle and crew chat.
+
+function requireConcessions(req, res) {
+  const authToken = getAuthToken(req);
+  const ok = authToken && (
+    safeEqual(authToken, computeToken(SUPERADMIN_PASSWORD)) ||
+    (!!CONCESSIONS_PASSWORD && safeEqual(authToken, computeToken(CONCESSIONS_PASSWORD))));
+  if (!ok) { res.status(401).json({ success: false, error: 'Concessions sign-in required.' }); return false; }
+  if (!Concessions.isDbConfigured()) {
+    res.status(503).json({ success: false, error: 'Concessions needs the database (set DB_HOST / DB_USER / DB_PASSWORD / DB_NAME).' });
+    return false;
+  }
+  return true;
+}
+
+function concessionsRoute(handler) {
+  return async (req, res) => {
+    if (!requireConcessions(req, res)) return;
+    try {
+      res.json({ success: true, ...(await handler(req)) });
+    } catch (e) {
+      console.error('concessions error', e);
+      res.status(e instanceof Concessions.UserError ? 400 : 500).json({ success: false, error: e.message || e.toString() });
+    }
+  };
+}
+
+app.get('/api/concessions', concessionsRoute(() => Concessions.getCatalog()));
+app.get('/api/concessions/sales', concessionsRoute((req) => Concessions.listSales(req.query.season)));
+app.post('/api/concessions/sale', concessionsRoute((req) => Concessions.addSale(req.body, cleanText(req.body?.seller, 60) || 'Unknown')));
+app.post('/api/concessions/void', concessionsRoute(async (req) => ({ sale: await Concessions.voidSale(req.body?.clientId, cleanText(req.body?.by, 60) || 'Unknown', req.body?.reason, req.body?.at) })));
+app.post('/api/concessions/items', concessionsRoute((req) => Concessions.saveItems(req.body?.items)));
+app.post('/api/concessions/settings', concessionsRoute((req) => Concessions.saveSettings(req.body || {})));
+
+// Superadmin troubleshooting: what the database backup holds, and how it differs from the sheet.
+// Listing is database-only (no Sheets calls); reconcile costs one Sheets read.
+app.get('/api/raffle/backup', async (req, res) => {
+  if (!requireSuperAdmin(req, res)) return;
+  try {
+    const season = await Seasons.resolve(req.query.season);
+    res.json({ success: true, season, seasons: await Seasons.list(), rows: await RaffleDb.listAll(season.id) });
+  } catch (e) {
+    console.error('raffle backup list error', e);
+    res.status(500).json({ success: false, error: e.message || e.toString() });
+  }
+});
+
+app.get('/api/raffle/reconcile', async (req, res) => {
+  if (!requireSuperAdmin(req, res)) return;
+  if (!Raffle.isRaffleConfigured()) return res.status(503).json({ success: false, error: 'Raffle is not configured (set RAFFLE_SPREADSHEET_ID and share the sheet with the service account).' });
+  try {
+    const [rows, sheetSales] = await Promise.all([RaffleDb.listAll(), Raffle.getSheetSales()]);
+    res.json({ success: true, checkedAt: Date.now(), ...compareRaffle(rows, sheetSales) });
+  } catch (e) {
+    console.error('raffle reconcile error', e);
+    res.status(500).json({ success: false, error: e.message || e.toString() });
+  }
+});
+
 // --- Timer control endpoints (local mode only) ---
 // In firebase mode the browser talks to Firebase RTDB directly for all timer
 // state, so these endpoints exist purely for DATA_BACKEND=local, where the
@@ -653,16 +824,18 @@ app.delete('/api/announcements/:id', async (req, res) => {
 
 function requireChatAuth(req, res) {
   const authToken = getAuthToken(req);
-  const isParent = !!PARENT_PASSWORD && safeEqual(authToken, computeToken(PARENT_PASSWORD));
-  if (!isValidToken(authToken) && !isParent) {
+  if (!isValidToken(authToken) && !chatRoleOf(authToken)) {
     res.status(401).json({ success: false, error: 'Authentication failed.' });
     return false;
   }
   return true;
 }
 
-// Two channels: 'crew' (everyone — referees, superadmin, parents) and 'lead'
-// (superadmin + parents only; referees are refused on both read and write).
+// Presence/logout for any signed-in role. Raffle and concessions staff can chat too, so this is the same check.
+const requireSessionAuth = requireChatAuth;
+
+// Two channels: 'crew' (everyone — referees, superadmin, parents, raffle, concessions) and 'lead'
+// (everyone except referees; referees are refused on both read and write).
 const CHAT_CHANNELS = ['crew', 'lead'];
 
 function chatChannelOf(value) {
@@ -673,12 +846,14 @@ function chatRoleOf(authToken) {
   if (!authToken || typeof authToken !== 'string') return null;
   if (safeEqual(authToken, computeToken(SUPERADMIN_PASSWORD))) return 'superadmin';
   if (PARENT_PASSWORD && safeEqual(authToken, computeToken(PARENT_PASSWORD))) return 'parent';
+  if (RAFFLE_PASSWORD && safeEqual(authToken, computeToken(RAFFLE_PASSWORD))) return 'raffle';
+  if (CONCESSIONS_PASSWORD && safeEqual(authToken, computeToken(CONCESSIONS_PASSWORD))) return 'concessions';
   if (safeEqual(authToken, computeToken(ADMIN_PASSWORD))) return 'admin';
   return null;
 }
 
 function canUseLeadChat(role) {
-  return role === 'superadmin' || role === 'parent';
+  return role === 'superadmin' || role === 'parent' || role === 'raffle' || role === 'concessions';
 }
 
 // Crew channel stays readable without a token, same as before.
@@ -717,7 +892,9 @@ app.post('/api/chat', async (req, res) => {
     const isParent = role === 'parent';
     const reporterName = cleanText(req.body?.reporterName, 40) || 'Staff';
     const court = /^[A-Za-z0-9 ._-]{1,16}$/.test(req.body?.court ?? '') ? req.body.court : null;
-    const who = isMgr ? `Admin · ${reporterName}` : isParent ? `Parent · ${reporterName}` : `Court ${court || '?'} · ${reporterName}`;
+    const who = isMgr ? `Admin · ${reporterName}` : isParent ? `Parent · ${reporterName}`
+      : role === 'raffle' ? `Raffle · ${reporterName}` : role === 'concessions' ? `Concessions · ${reporterName}`
+      : `Court ${court || '?'} · ${reporterName}`;
 
     const chat = await Store.postChatMessage({ who, mgr: isMgr, text, channel });
     res.json({ success: true, chat });
@@ -755,6 +932,8 @@ function presenceWho({ role, name, court }) {
   const label = (name || '').trim() || 'Staff';
   if (role === 'superadmin') return `Admin · ${label}`;
   if (role === 'parent') return `Parent · ${label}`;
+  if (role === 'raffle') return `Raffle · ${label}`;
+  if (role === 'concessions') return `Concessions · ${label}`;
   return `Court ${court || '?'} · ${label}`;
 }
 
@@ -790,7 +969,7 @@ app.get('/api/presence', async (req, res) => {
 // explicitly ended by logout.
 
 app.post('/api/session/heartbeat', async (req, res) => {
-  if (!requireChatAuth(req, res)) return;
+  if (!requireSessionAuth(req, res)) return;
   try {
     const { sessionId } = req.body || {};
     if (!SESSION_ID_RE.test(sessionId ?? '')) return res.status(400).json({ success: false, error: 'valid sessionId is required' });
@@ -802,7 +981,7 @@ app.post('/api/session/heartbeat', async (req, res) => {
 });
 
 app.post('/api/session/logout', async (req, res) => {
-  if (!requireChatAuth(req, res)) return;
+  if (!requireSessionAuth(req, res)) return;
   try {
     const { sessionId } = req.body || {};
     if (!SESSION_ID_RE.test(sessionId ?? '')) return res.status(400).json({ success: false, error: 'valid sessionId is required' });

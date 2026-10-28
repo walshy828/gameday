@@ -189,3 +189,69 @@ CREATE TABLE IF NOT EXISTS discrepancy_dismissals (
   dismissed_by VARCHAR(191),
   dismissed_at BIGINT NOT NULL
 );
+
+-- Database backup of every raffle sale made through the app (server/raffleDb.js). sync_status: pending = saved
+-- before the sheet write, synced = sheet write confirmed, failed = sheet refused it (the sale did not happen).
+CREATE TABLE IF NOT EXISTS raffle_sales (
+  id INT AUTO_INCREMENT PRIMARY KEY,
+  client_id VARCHAR(64) NULL UNIQUE,
+  receipt VARCHAR(16) NOT NULL,
+  seller VARCHAR(191),
+  buyer_name VARCHAR(191),
+  phone VARCHAR(64),
+  email VARCHAR(191),
+  tickets INT NOT NULL,
+  price DECIMAL(10,2) NOT NULL,
+  payment VARCHAR(64),
+  notes TEXT,
+  `lines` TEXT,
+  sold_wall BIGINT NOT NULL,
+  created_at BIGINT NOT NULL,
+  sync_status VARCHAR(16) NOT NULL DEFAULT 'pending',
+  sync_error TEXT NULL,
+  season_id INT NULL,
+  INDEX idx_raffle_receipt (receipt)
+);
+
+-- Seasons separate one year's concessions/raffle records from the next (server/seasons.js). One row is current;
+-- the app creates the first one (the current year) on first use.
+CREATE TABLE IF NOT EXISTS seasons (
+  id INT AUTO_INCREMENT PRIMARY KEY,
+  label VARCHAR(64) NOT NULL UNIQUE,
+  created_at BIGINT NOT NULL,
+  is_current TINYINT(1) NOT NULL DEFAULT 0
+);
+
+-- Concession stand (server/concessionsDb.js). Items are hidden, never deleted; sale lines keep the name/price as sold.
+CREATE TABLE IF NOT EXISTS concession_items (
+  id INT AUTO_INCREMENT PRIMARY KEY,
+  name VARCHAR(80) NOT NULL,
+  price DECIMAL(10,2) NOT NULL,
+  category VARCHAR(40) NOT NULL DEFAULT 'Other',
+  sort_order INT NOT NULL DEFAULT 0,
+  active TINYINT(1) NOT NULL DEFAULT 1
+);
+
+CREATE TABLE IF NOT EXISTS concession_settings (
+  k VARCHAR(64) PRIMARY KEY,
+  v TEXT
+);
+
+-- client_id is generated on the phone so a sale queued offline can be posted any number of times safely.
+CREATE TABLE IF NOT EXISTS concession_sales (
+  id INT AUTO_INCREMENT PRIMARY KEY,
+  client_id VARCHAR(64) NOT NULL UNIQUE,
+  season_id INT NOT NULL,
+  seq INT NOT NULL,
+  seller VARCHAR(191),
+  line_items TEXT NOT NULL,
+  total DECIMAL(10,2) NOT NULL,
+  payment VARCHAR(16) NOT NULL,
+  sold_at BIGINT NOT NULL,
+  created_at BIGINT NOT NULL,
+  voided TINYINT(1) NOT NULL DEFAULT 0,
+  void_by VARCHAR(191) NULL,
+  void_at BIGINT NULL,
+  void_reason VARCHAR(191) NULL,
+  INDEX idx_cs_season (season_id, sold_at)
+);

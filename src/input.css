@@ -248,6 +248,11 @@
     @apply w-full box-border rounded-2xl border border-white/15 bg-white/[.07] px-3.5 py-3
            text-[13px] leading-[1.45] text-[#F1F1F2] outline-none backdrop-blur-lg;
   }
+  .field-dark:focus {
+    border-color: var(--gold);
+    background-color: rgba(224, 184, 99, 0.1);
+    box-shadow: 0 0 0 1px var(--gold);
+  }
   .field-dark::placeholder {
     color: rgba(255, 255, 255, 0.4);
   }
@@ -315,3 +320,19 @@
 .setup-link:hover { color: #fff; text-decoration: underline; }
 .setup-link .chev { display: inline-block; transition: transform .15s; }
 .setup-link.open .chev { transform: rotate(90deg); }
+
+/* Global press feedback: every button shrinks and brightens while held (add .press to other clickable elements). */
+button, [role="button"], .press {
+  transition: transform .08s ease, filter .08s ease, opacity .08s ease;
+  -webkit-tap-highlight-color: transparent;
+  touch-action: manipulation;
+}
+button:not(:disabled):active,
+[role="button"]:not([aria-disabled="true"]):active,
+.press:active { transform: scale(.95); filter: brightness(1.25); }
+@media (prefers-reduced-motion: reduce) {
+  button:active, [role="button"]:active, .press:active { transform: none; }
+}
+/* Raffle: busy buttons show a spinner. */
+.rf-spin { display: inline-block; width: 11px; height: 11px; margin-right: 4px; vertical-align: -1px; border: 2px solid currentColor; border-right-color: transparent; border-radius: 50%; animation: rf-spin .7s linear infinite; }
+@keyframes rf-spin { to { transform: rotate(360deg); } }

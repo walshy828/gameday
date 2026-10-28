@@ -5,6 +5,11 @@ import { renderPlayoffsView } from './playoffs.js';
 import { renderGameManager } from './gameManagerUI.js';
 import { renderStandings } from './standings.js';
 import { renderRoster } from './roster.js';
+import { renderRaffle } from './raffle.js';
+import { renderRaffleBackup } from './raffleBackup.js';
+import { renderConcessions } from './concessions.js';
+import { renderSeasons } from './seasons.js';
+import { renderDanger } from './danger.js';
 
 /**
  * Fetches all division (sheet) names via the /api/divisions REST endpoint.
@@ -25,6 +30,9 @@ async function fetchDivisionNames() {
 
     renderGateDivisions();
 
+    // Concessions staff live in the stand view (no division needed); don't pull them off it.
+    if ((App.state.isConcessions && App.state.currentView === 'concessions') || (App.state.isRaffle && App.state.currentView === 'raffle')) return;
+
     const storedDivision = localStorage.getItem(DIVISION_STORAGE_KEY);
     if (storedDivision && App.data.allDivisionNames.includes(storedDivision)) {
         // Returning visitor — skip the gate and go straight back into the app.
@@ -37,7 +45,10 @@ async function fetchDivisionNames() {
 
     } catch (error) {
     console.error("Error fetching division names:", error);
-    if (App.state.isSuperAdmin) {
+    if (App.state.isConcessions || App.state.isRaffle) {
+        // Likely offline: the stand / raffle desk doesn't need divisions, so stay quiet and keep selling.
+        showStatus(null);
+    } else if (App.state.isSuperAdmin) {
         // If superadmin, bypass the gate and go directly to settings to fix the setup
         App.state.screen = 'app';
         document.getElementById('gate-screen')?.classList.add('hidden');
@@ -90,6 +101,28 @@ function openSettingsFromGate() {
     document.getElementById('app-screen')?.classList.remove('hidden');
     document.getElementById('bottom-tab-bar')?.classList.remove('hidden');
     switchView('settings');
+}
+
+/** Shows the app shell without needing a division (used by the concessions/raffle views, which are division-free). */
+function showAppShell() {
+    App.state.screen = 'app';
+    document.getElementById('gate-screen')?.classList.add('hidden');
+    document.getElementById('app-screen')?.classList.remove('hidden');
+    document.getElementById('bottom-tab-bar')?.classList.remove('hidden');
+}
+
+/** Gate → Concessions (concessions staff after login, or superadmin from the Admin Panel). Works offline. */
+function openConcessionsFromGate() {
+    if (!App.state.isSuperAdmin && !App.state.isConcessions) return;
+    showAppShell();
+    switchView('concessions');
+}
+
+/** Gate → Raffle (raffle managers after login or a reload, or superadmin from the Admin Panel). Works offline. */
+function openRaffleFromGate() {
+    if (!App.state.isSuperAdmin && !App.state.isRaffle) return;
+    showAppShell();
+    switchView('raffle');
 }
 
 /**
@@ -599,7 +632,10 @@ function switchView(view) {
         'chat': document.getElementById('chat-view'),
         'settings': document.getElementById('settings-view'),
         'game-manager': document.getElementById('game-manager-view'),
-        'roster': document.getElementById('roster-view')
+        'roster': document.getElementById('roster-view'),
+        'raffle': document.getElementById('raffle-view'),
+        'concessions': document.getElementById('concessions-view'),
+        'raffle-backup': document.getElementById('raffle-backup-view')
     };
     const tabs = {
         'standings': document.getElementById('standings-tab'),
@@ -607,6 +643,8 @@ function switchView(view) {
         'playoffs': document.getElementById('playoffs-tab'),
         'info': document.getElementById('info-tab'),
         'roster': document.getElementById('roster-tab'),
+        'raffle': document.getElementById('raffle-tab'),
+        'concessions': document.getElementById('concessions-tab'),
         'admin-entry': document.getElementById('admin-entry-tab'),
         'chat': document.getElementById('chat-tab')
         // 'settings' has no bottom-tab entry — it's reached via the gear
@@ -621,16 +659,19 @@ function switchView(view) {
         if (v === view) {
             viewEl.classList.remove('hidden');
             if (tab) {
-                const adminStyled = v === 'admin-entry' || v === 'settings' || v === 'game-manager' || v === 'roster';
+                const adminStyled = v === 'admin-entry' || v === 'settings' || v === 'game-manager' || v === 'roster' || v === 'raffle' || v === 'concessions';
                 tab.classList.add(adminStyled ? 'tab-admin-active' : 'tab-active');
                 tab.classList.remove(adminStyled ? 'tab-active' : 'tab-admin-active');
             }
             // Trigger specific view update
             if (v === 'schedule') updateScheduleView();
             if (v === 'admin-entry') updateAdminMatchEntryView();
-            if (v === 'settings') initSettingsView();
+            if (v === 'settings') { initSettingsView(); renderSeasons(); renderDanger(); }
             if (v === 'game-manager') renderGameManager();
             if (v === 'roster') renderRoster();
+            if (v === 'raffle') renderRaffle();
+            if (v === 'concessions') renderConcessions();
+            if (v === 'raffle-backup' && App.state.isSuperAdmin) renderRaffleBackup();
             if (v === 'chat') onChatTabOpened();
             if (v === 'playoffs') renderPlayoffsView();
 
@@ -658,5 +699,7 @@ export {
     openSettingsFromGate,
     openGameManagerFromGate,
     openInfoFromGate,
+    openConcessionsFromGate,
+    openRaffleFromGate,
     enterApp
 };

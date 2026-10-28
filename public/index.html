@@ -36,6 +36,8 @@
             state: {
                 isAdmin: false,
                 isParent: false,
+                isRaffle: false,
+                isConcessions: false,
                 currentView: 'standings',
                 // 'gate' (division picker landing) or 'app' (tab-bar app shell).
                 // Returning visitors with a previously-selected division skip
@@ -945,13 +947,17 @@
         <div>
             <div class="flex items-center gap-3">
                 <img src="/assets/algonquin-hockey.png" alt="Algonquin Hockey" class="w-12 h-12 object-contain">
-                <div>
+                <div class="flex-1 min-w-0">
                     <div class="text-[10px] tracking-[.18em] font-semibold text-gold uppercase ">Algonquin Hockey Annual
                     </div>
                     <div class="text-2xl md:text-3xl text-gray-50 mt-1.5 font-['Luckiest_Guy']">
                         Dodgeball Tournament
                     </div>
                 </div>
+                <button type="button" onclick="openShareModal()" title="Share this app" aria-label="Share this app"
+                    class="flex-none w-10 h-10 inline-flex items-center justify-center rounded-full border border-white/20 bg-white/[.06] text-white/70">
+                    <svg class="w-[18px] h-[18px]" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 12v7a1 1 0 0 0 1 1h14a1 1 0 0 0 1-1v-7"/><path d="M16 6l-4-4-4 4"/><path d="M12 2v13"/></svg>
+                </button>
             </div>
             <p class="text-sm text-white/60 mt-5 max-w-[36ch]"><strong>Let's play!</strong> Pick your division below
                 to see standings and the schedule.</p>
@@ -979,6 +985,12 @@
                     <button type="button" onclick="openGameManagerFromGate()"
                         class="rounded-xl border border-white/20 bg-white/[.06] px-4 py-3 text-sm font-semibold text-white/85 text-left">
                         Game Management<span class="block text-[11px] font-normal text-white/50">Pace vs. schedule &amp; how to finish on time</span></button>
+                    <button type="button" onclick="openConcessionsFromGate()"
+                        class="rounded-xl border border-white/20 bg-white/[.06] px-4 py-3 text-sm font-semibold text-white/85 text-left">
+                        Concessions<span class="block text-[11px] font-normal text-white/50">Sell, history, reports &amp; items</span></button>
+                    <button type="button" onclick="openRaffleFromGate()"
+                        class="rounded-xl border border-white/20 bg-white/[.06] px-4 py-3 text-sm font-semibold text-white/85 text-left">
+                        Raffle<span class="block text-[11px] font-normal text-white/50">Sell tickets, sales &amp; report</span></button>
                     <button type="button" onclick="openInfoFromGate()"
                         class="rounded-xl border border-white/20 bg-white/[.06] px-4 py-3 text-sm font-semibold text-white/85 text-left">
                         Info<span class="block text-[11px] font-normal text-white/50">Tournament info &amp; announcements</span></button>
@@ -1019,7 +1031,13 @@
                 class="w-[38px] h-[38px] flex-none object-contain">
 
             <div class="flex-1 min-w-0">
-                <div class="text-sm font-semibold tracking-tight text-gray-50 truncate">Dodgeball Tournament</div>
+                <div class="flex items-center gap-1.5 min-w-0">
+                    <div class="text-sm font-semibold tracking-tight text-gray-50 truncate">Dodgeball Tournament</div>
+                    <button type="button" onclick="openShareModal()" title="Share this app" aria-label="Share this app"
+                        class="flex-none inline-flex items-center justify-center w-6 h-6 rounded-full text-white/50">
+                        <svg class="w-[15px] h-[15px]" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 12v7a1 1 0 0 0 1 1h14a1 1 0 0 0 1-1v-7"/><path d="M16 6l-4-4-4 4"/><path d="M12 2v13"/></svg>
+                    </button>
+                </div>
                 <div class="mt-1.5 flex items-center gap-2 min-w-0">
                     <button onclick="goToGate()"
                         class="pill-gold flex-none inline-flex items-center gap-1.5 px-2.5 py-1 text-[10px] font-semibold">
@@ -1355,6 +1373,21 @@
                                 </div>
                             </section>
 
+                            <section class="card-dark p-4">
+                                <div class="text-[10px] tracking-[.14em] font-semibold text-white/50 uppercase">
+                                    Share this app</div>
+                                <div class="mt-3 flex items-center gap-3.5">
+                                    <div id="share-qr-inline" class="flex-none w-[116px] h-[116px] rounded-xl bg-white p-2"></div>
+                                    <div class="min-w-0 flex-1 grid gap-2">
+                                        <p class="text-xs text-white/60">Scan with a phone camera, or copy the link.</p>
+                                        <input type="text" id="share-link-field-inline" readonly onfocus="this.select()"
+                                            class="w-full min-w-0 rounded-xl border border-white/20 bg-white/[.06] px-3 py-2 text-xs text-white/80 outline-none">
+                                        <button type="button" id="share-copy-btn-inline" onclick="copyShareLink('-inline')"
+                                            class="pill-gold px-4 py-2.5 text-xs font-semibold">Copy link</button>
+                                    </div>
+                                </div>
+                            </section>
+
                             <section class="p-4 rounded-[26px]"
                                 style="background:linear-gradient(140deg,var(--mar) 0%,#3A171C 100%)">
                                 <div class="text-[10px] tracking-[.14em] font-semibold text-gold uppercase">Hockey Team
@@ -1470,6 +1503,16 @@
                         <div id="roster-body"></div>
                     </div>
 
+                    <!-- RAFFLE VIEW (raffle managers + superadmin) — populated by raffle.js -->
+                    <div id="raffle-view" class="screen hidden">
+                        <div id="raffle-body"></div>
+                    </div>
+
+                    <!-- CONCESSIONS VIEW (concessions staff + superadmin) — populated by concessions.js -->
+                    <div id="concessions-view" class="screen hidden">
+                        <div id="concessions-body"></div>
+                    </div>
+
                     <!-- GAME MANAGEMENT VIEW (Superadmin only) — populated by gameManagerUI.js -->
                     <div id="game-manager-view" class="screen hidden">
                         <div class="screen-head">
@@ -1479,6 +1522,17 @@
                                 Admin</button>
                         </div>
                         <div id="game-manager-body" class="mt-3.5 grid gap-2.5"></div>
+                    </div>
+
+                    <!-- RAFFLE BACKUP & RECONCILIATION (Superadmin only; reached from the bottom of Setup) — raffleBackup.js -->
+                    <div id="raffle-backup-view" class="screen hidden">
+                        <div class="screen-head">
+                            <h2 class="screen-title">Raffle backup</h2>
+                            <button onclick="switchView('settings')"
+                                class="flex-none rounded-full border border-white/20 bg-white/[.06] px-3.5 py-2.5 text-[11px] font-semibold leading-none text-white/75">←
+                                Setup</button>
+                        </div>
+                        <div id="raffle-backup-body"></div>
                     </div>
 
                     <!-- SETTINGS VIEW (Superadmin only) -->
@@ -1776,6 +1830,31 @@
                                     </select>
                                 </div>
                             </section>
+
+                            <!-- 8. Seasons (concessions + raffle records by year) -->
+                            <section class="card-dark p-4">
+                                <h3 class="text-lg font-bold text-white">📅 Seasons</h3>
+                                <p class="text-[11px] text-white/50">Concessions and raffle records are kept by season (year). Start a new one for a new tournament; past seasons stay viewable.</p>
+                                <div id="seasons-body" class="mt-3"></div>
+                            </section>
+
+                            <!-- 9. Danger zone: test data reset (hidden unless the server enables it) -->
+                            <section id="danger-card" class="hidden rounded-2xl border border-red-500/50 bg-red-950/30 p-4">
+                                <h3 class="text-lg font-bold text-red-200">⚠️ Danger zone</h3>
+                                <div id="danger-body" class="mt-3"></div>
+                            </section>
+
+                            <!-- 7. Raffle backup & reconciliation -->
+                            <section class="card-dark p-4">
+                                <div class="flex items-center justify-between gap-3">
+                                    <div class="min-w-0">
+                                        <h3 class="text-lg font-bold text-white">🎟️ Raffle backup</h3>
+                                        <p class="text-[11px] text-white/50">Raffle sales saved in the database, and a comparison with the raffle sheet if something looks off.</p>
+                                    </div>
+                                    <button onclick="switchView('raffle-backup')"
+                                        class="flex-none rounded-full border border-white/20 bg-white/[.06] px-3.5 py-2.5 text-[11px] font-semibold leading-none text-white/75">Open →</button>
+                                </div>
+                            </section>
                         </div>
                     </div>
 
@@ -1801,6 +1880,12 @@
         <button id="roster-tab" onclick="switchView('roster')" class="tab-button hidden">
             <span class="tab-icon">📋</span><span class="tab-label">ROSTER</span>
         </button>
+        <button id="raffle-tab" onclick="switchView('raffle')" class="tab-button hidden">
+            <span class="tab-icon">🎟️</span><span class="tab-label">RAFFLE</span>
+        </button>
+        <button id="concessions-tab" onclick="switchView('concessions')" class="tab-button hidden">
+            <span class="tab-icon">🍕</span><span class="tab-label">STAND</span>
+        </button>
         <button id="admin-entry-tab" onclick="switchView('admin-entry')" class="tab-button hidden">
             <span class="tab-icon">🛠️<span id="discrepancy-dot" class="hidden" title="Results need review"></span></span><span class="tab-label">ADMIN</span>
         </button>
@@ -1809,6 +1894,27 @@
                 class="tab-label">CHAT</span>
         </button>
     </nav>
+
+    <!-- Share Modal (open to everyone; share.js) -->
+    <div id="share-modal" class="modal-backdrop hidden" onclick="if (event.target === this) closeShareModal()">
+        <div class="modal-sheet">
+            <div class="modal-head">
+                <div class="kicker !tracking-[.16em] text-gold">Share</div>
+                <div class="mt-2 text-[17px] font-bold leading-[1.3] tracking-[-.02em] text-[#F7F7F8]">Scan or copy the link</div>
+            </div>
+            <div class="modal-body">
+                <div id="share-qr" class="mx-auto w-[220px] h-[220px] rounded-2xl bg-white p-3 border" style="border-color:var(--line)"></div>
+                <input type="text" id="share-link-field" readonly class="field-light text-center" onfocus="this.select()">
+                <div class="grid grid-cols-[1fr_1.7fr] gap-2">
+                    <button onclick="closeShareModal()"
+                        class="rounded-[18px] border bg-[#F3F3F4] p-4 text-[13px] font-semibold leading-none text-ink"
+                        style="border-color:var(--line)">Close</button>
+                    <button onclick="copyShareLink()" id="share-copy-btn"
+                        class="btn-primary !rounded-[18px] p-4 text-[13px] leading-none">Copy link</button>
+                </div>
+            </div>
+        </div>
+    </div>
 
     <!-- Admin Login Modal -->
     <div id="admin-login-modal" class="modal-backdrop hidden">
@@ -1931,6 +2037,7 @@
     <!-- Only used when DATA_BACKEND=local (see server/index.js /config.js and public/js/main.js) -->
     <script src="https://cdn.socket.io/4.7.5/socket.io.min.js"></script>
 
+    <script src="/js/vendor/qrcode.js"></script>
     <script src="/config.js"></script>
     <script type="module" src="./js/main.js"></script>
 

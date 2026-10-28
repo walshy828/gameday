@@ -173,6 +173,71 @@ export async function getRosterCheckinLog(authToken, teamKey) {
   return await apiGet(`/roster/checkin/log?teamKey=${encodeURIComponent(teamKey)}`, authToken);
 }
 
+// Raffle (raffle manager / superadmin). Both use fetch directly so the server's message (sheet not
+// configured, "Roll is Full", ...) reaches the UI instead of a bare status code.
+export async function getRaffle(authToken, refresh = false) {
+  const res = await fetch(`${window.location.origin}/api/raffle${refresh ? '?refresh=1' : ''}`, { headers: authHeaders(authToken) });
+  const body = await res.json().catch(() => ({}));
+  if (!res.ok || body.success === false) throw new Error(body.error || `Raffle failed to load (${res.status})`);
+  return body;
+}
+
+export async function sellRaffle(authToken, sale) {
+  const res = await fetch(`${window.location.origin}/api/raffle/sale`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...authHeaders(authToken) },
+    body: JSON.stringify(sale)
+  });
+  const body = await res.json().catch(() => ({}));
+  if (!res.ok || body.success === false) throw new Error(body.error || `The sale was not saved (${res.status})`);
+  return body;
+}
+
+// Superadmin raffle troubleshooting: the database copy of every sale, and a fresh comparison with the sheet.
+export async function getRaffleBackup(authToken, seasonId) {
+  const res = await fetch(`${window.location.origin}/api/raffle/backup${seasonId ? `?season=${encodeURIComponent(seasonId)}` : ''}`, { headers: authHeaders(authToken) });
+  const body = await res.json().catch(() => ({}));
+  if (!res.ok || body.success === false) throw new Error(body.error || `Backup failed to load (${res.status})`);
+  return body;
+}
+
+export async function reconcileRaffle(authToken) {
+  const res = await fetch(`${window.location.origin}/api/raffle/reconcile`, { headers: authHeaders(authToken) });
+  const body = await res.json().catch(() => ({}));
+  if (!res.ok || body.success === false) throw new Error(body.error || `Reconcile failed (${res.status})`);
+  return body;
+}
+
+// Concessions + seasons. `status` is 0 for a network failure (the phone keeps the sale and retries later) and the
+// HTTP status otherwise (400 = the server rejected what was sent, 401/403 = sign-in problem, 5xx = try again).
+async function cnFetch(path, token, body) {
+  let res;
+  try {
+    res = await fetch(`${window.location.origin}/api${path}`, body === undefined
+      ? { headers: authHeaders(token) }
+      : { method: 'POST', headers: { 'Content-Type': 'application/json', ...authHeaders(token) }, body: JSON.stringify(body) });
+  } catch (e) {
+    const err = new Error('No connection'); err.status = 0; throw err;
+  }
+  const out = await res.json().catch(() => ({}));
+  if (!res.ok || out.success === false) { const err = new Error(out.error || `Request failed (${res.status})`); err.status = res.status; throw err; }
+  return out;
+}
+
+// Raffle with status codes (0 = no connection, 400 = rejected for good, 401/403 = sign-in, 5xx = try again later),
+// for the local-first raffle store.
+export const getRaffleSnap = (token, refresh) => cnFetch(`/raffle${refresh ? '?refresh=1' : ''}`, token);
+export const postRaffleSale = (token, sale) => cnFetch('/raffle/sale', token, sale);
+export const getConcessions = (token) => cnFetch('/concessions', token);
+export const getConcessionSales = (token, seasonId) => cnFetch(`/concessions/sales${seasonId ? `?season=${encodeURIComponent(seasonId)}` : ''}`, token);
+export const postConcessionSale = (token, sale) => cnFetch('/concessions/sale', token, sale);
+export const postConcessionVoid = (token, v) => cnFetch('/concessions/void', token, v);
+export const saveConcessionItems = (token, items) => cnFetch('/concessions/items', token, { items });
+export const saveConcessionSettings = (token, patch) => cnFetch('/concessions/settings', token, patch);
+
+export const getSeasons = (token) => cnFetch('/seasons', token);
+export const startSeason = (token, label) => cnFetch('/seasons/start', token, { label });
+
 export async function getAnnouncements() {
   return await apiGet(`/announcements`);
 }
@@ -205,3 +270,6 @@ export async function postChatMessage(authToken, text, reporterName, court, sess
 export async function deleteChatMessage(authToken, id, channel = 'crew') {
   return await apiDelete(`/chat/${id}`, { authToken, channel });
 }
+
+export const getTestReset = (token) => cnFetch('/admin/test-reset', token);
+export const runTestReset = (token, opts) => cnFetch('/admin/test-reset', token, { ...opts, confirm: 'DELETE' });

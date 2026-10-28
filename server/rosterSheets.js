@@ -15,7 +15,7 @@
 //     deletes, formula copy-down, new columns / tab), so an action either fully applies or doesn't.
 //   * The post-write check re-reads once, and that read doubles as the cache refresh.
 //   * Structural facts (tab ids, log headers, which columns hold formulas) are cached.
-//   * Calls are throttled under the quota and retried with backoff on "too many requests".
+//   * Calls are throttled under the quota (shared with the raffle adapter) and retried with backoff on "too many requests".
 //
 // Requires ROSTER_SPREADSHEET_ID and the existing Google service account
 // (GOOGLE_CLIENT_EMAIL / GOOGLE_PRIVATE_KEY), with the sheet shared to that account as Editor.
@@ -24,6 +24,7 @@ import { google } from 'googleapis';
 import {
   RM_CFG, rmClean_, rmNK_, rmG_, rmFindTeam_, rmCheckin_, rmSafeText_, rmPlan_, rmVerify_, rmFresh_, rmCleanAction_
 } from './rosterCore.js';
+import { call } from './sheetsQuota.js';
 dotenv.config();
 
 let sheets = null;
@@ -50,42 +51,10 @@ const sid = () => process.env.ROSTER_SPREADSHEET_ID;
 const MAX_AGE_MS = (Number(process.env.ROSTER_CACHE_SECONDS) || 300) * 1000;   // safety net: re-read at least this often
 const STRUCT_TTL_MS = 15 * 60 * 1000;                                           // tab ids, headers, formula columns
 const MIN_REFRESH_MS = 2000;                                                    // a Refresh within this of the last read reuses it
-const QUOTA_PER_MIN = Number(process.env.ROSTER_MAX_REQUESTS_PER_MIN) || 50;    // stay under Google's 60 per kind per minute
-const MAX_QUEUE_WAIT_MS = 25000;
-
-const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 const valuesOf = (o) => Object.keys(o).map((k) => o[k]);
 
-/* ---------- throttled, retrying API calls ---------- */
+/* ---------- throttled, retrying API calls (shared with the raffle adapter: sheetsQuota.js) ---------- */
 
-const stamps = { read: [], write: [] };
-async function throttle(kind) {
-  for (;;) {
-    const now = Date.now(), a = stamps[kind];
-    while (a.length && now - a[0] >= 60000) a.shift();
-    if (a.length < QUOTA_PER_MIN) { a.push(now); return; }
-    const wait = 60000 - (now - a[0]) + 50;
-    if (wait > MAX_QUEUE_WAIT_MS) throw new Error('Google Sheets is busy (too many requests right now). Wait a few seconds and try again.');
-    await sleep(wait);
-  }
-}
-const statusOf = (e) => e && (e.code || (e.response && e.response.status));
-
-/** Reads retry on 429 and 5xx. Writes retry only on 429 (not processed), so an action is never applied twice. */
-async function call(kind, fn) {
-  await throttle(kind);
-  let delay = 1500;
-  for (let i = 0; ; i++) {
-    try { return await fn(); }
-    catch (e) {
-      const code = statusOf(e);
-      const retryable = code === 429 || (kind === 'read' && (code === 500 || code === 502 || code === 503));
-      if (retryable && i < 3) { await sleep(delay); delay *= 2; continue; }
-      if (code === 429) throw new Error('Google Sheets is busy (too many requests right now). Wait a few seconds and try again.');
-      throw e;
-    }
-  }
-}
 async function batchGet(ranges, render = 'FORMATTED_VALUE') {
   const r = await call('read', () => sheets.spreadsheets.values.batchGet({ spreadsheetId: sid(), ranges, valueRenderOption: render, majorDimension: 'ROWS' }));
   return r.data.valueRanges || [];

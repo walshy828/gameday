@@ -45,7 +45,7 @@ function authToken() {
 
 /** Superadmins and parents may use the leadership channel; referees may not. */
 function canLead() {
-  return !!(App.state.isSuperAdmin || App.state.isParent);
+  return !!(App.state.isSuperAdmin || App.state.isParent || App.state.isRaffle || App.state.isConcessions);
 }
 
 const seenFor = (ch) => Number(localStorage.getItem(SEEN_KEYS[ch]) || 0);
@@ -55,6 +55,8 @@ function meLabel() {
   const name = App.state.reporterName || 'Staff';
   if (App.state.isSuperAdmin) return `Admin · ${name}`;
   if (App.state.isParent) return `Parent · ${name}`;
+  if (App.state.isRaffle) return `Raffle · ${name}`;
+  if (App.state.isConcessions) return `Concessions · ${name}`;
   return `Court ${App.state.selectedCourt || '?'} · ${name}`;
 }
 

@@ -5,8 +5,14 @@ import {
     getRoundOrder, getRosterTeams, getByeTeams,
     isReported as isReportedOfficial
 } from './schedule.js';
-import { switchView, enterApp } from './navigation.js';
+import { switchView, enterApp, openConcessionsFromGate } from './navigation.js';
 import { resetRoster } from './roster.js';
+import { resetRaffle } from './raffle.js';
+import { resetRaffleBackup } from './raffleBackup.js';
+import { resetConcessions, unsyncedCount } from './concessions.js';
+import { saveAuth, clearAuth, loadAuth } from './concessionsStore.js';
+import { resetSeasons } from './seasons.js';
+import { resetDanger } from './danger.js';
 import { getSocket } from './socketClient.js';
 
 // --- Result discrepancies (superadmin) -------------------------------------
@@ -715,6 +721,8 @@ function updateGateAdminUI(loggedIn) {
     const name = App.state.reporterName || 'Staff';
     const role = App.state.isSuperAdmin ? 'Tournament manager'
         : App.state.isAdmin ? `Court manager${App.state.selectedCourt ? ' · court ' + App.state.selectedCourt : ''}`
+        : App.state.isRaffle ? 'Raffle manager'
+        : App.state.isConcessions ? 'Concessions'
         : 'Parent';
 
     if (btn) {
@@ -750,10 +758,12 @@ function updateAdminUI() {
     const scheduleTab = document.getElementById('schedule-tab');
     const infoTab = document.getElementById('info-tab');
     const rosterTab = document.getElementById('roster-tab');
+    const raffleTab = document.getElementById('raffle-tab');
+    const concessionsTab = document.getElementById('concessions-tab');
 
     if (!adminButton || !adminStatusText || !adminEntryTab) return;
 
-    const loggedIn = App.state.isAdmin || App.state.isParent;
+    const loggedIn = App.state.isAdmin || App.state.isParent || App.state.isRaffle || App.state.isConcessions;
 
     updateGateAdminUI(loggedIn);
     if (App.state.isSuperAdmin && loggedIn) startDiscrepancyWatch(); else { App.data.discrepancies = []; updateDiscrepancyBadge(); }
@@ -776,7 +786,14 @@ function updateAdminUI() {
             adminEntryTab.classList.add('hidden');
             if (scheduleTab) scheduleTab.classList.remove('hidden');
         }
-        if (chatTab) chatTab.classList.remove('hidden'); // Show Chat Tab (staff + parents)
+        // Raffle and concessions staff get chat (crew + leadership) alongside their stand.
+        // Superadmins reach Raffle and Concessions from the gate's Admin Panel instead of the tab bar.
+        if (chatTab) chatTab.classList.remove('hidden');
+        if (raffleTab) raffleTab.classList.toggle('hidden', !App.state.isRaffle);
+        if (concessionsTab) concessionsTab.classList.toggle('hidden', !App.state.isConcessions);
+        if (!App.state.isRaffle && !App.state.isSuperAdmin) { if (App.state.currentView === 'raffle') switchView('standings'); resetRaffle(); }
+        if (!App.state.isConcessions && !App.state.isSuperAdmin) { if (App.state.currentView === 'concessions') switchView('standings'); resetConcessions(); }
+        if (!App.state.isSuperAdmin) { if (App.state.currentView === 'raffle-backup') switchView('standings'); resetRaffleBackup(); }
         // Superadmins reach Info from the gate's Admin Panel instead of the tab bar.
         if (infoTab) {
             infoTab.classList.toggle('hidden', !!App.state.isSuperAdmin);
@@ -802,7 +819,14 @@ function updateAdminUI() {
         if (chatSetupGear) chatSetupGear.classList.add('hidden');
         if (chatTab) chatTab.classList.add('hidden');
         if (rosterTab) rosterTab.classList.add('hidden');
-        if (App.state.currentView === 'roster') switchView('standings');
+        if (raffleTab) raffleTab.classList.add('hidden');
+        if (concessionsTab) concessionsTab.classList.add('hidden');
+        if (['roster', 'raffle', 'raffle-backup', 'concessions'].includes(App.state.currentView)) switchView('standings');
+        resetRaffle();
+        resetConcessions();
+        resetSeasons();
+        resetDanger();
+        resetRaffleBackup();
         resetRoster();
         window.closeTimerOverlay?.();
     }
@@ -941,7 +965,7 @@ async function loginAdmin() {
         const result = await validateAdmin(password, reporterName, App.state.selectedCourt, sessionId);
 
         // One-day tournament: remember the password on this device (expires after 24h).
-        if (result && (result.isParent || (result.isAdmin && !result.isSuperAdmin))) {
+        if (result && (result.isParent || result.isRaffle || result.isConcessions || (result.isAdmin && !result.isSuperAdmin))) {
             // Superadmin password is never stored on the device.
             try { localStorage.setItem('savedAdminPassword', JSON.stringify({ p: password, t: Date.now() })); } catch (e) { /* storage unavailable */ }
         }
@@ -960,6 +984,42 @@ async function loginAdmin() {
             updateAdminUI();
             switchView('chat');
             showStatus(`Signed in as ${reporterName} (Parent).`, false);
+            setTimeout(() => showStatus(null), 3000);
+
+        } else if (result && result.isRaffle) {
+            App.state.isRaffle = true;
+            App.state.reporterName = reporterName;
+            localStorage.setItem('lastAdminName', reporterName);
+            sessionStorage.setItem('reporterName', reporterName);
+            sessionStorage.setItem('isRaffle', 'true');
+            sessionStorage.setItem('adminAuthToken', result.token);
+            sessionStorage.setItem('sessionId', sessionId);
+            // Kept on the device too, so a phone that reloads with no signal can still reach the raffle and sync later.
+            saveAuth(result.token, reporterName, 'raffle');
+            startSessionHeartbeat();
+
+            hideAdminLoginModal();
+            updateAdminUI();
+            switchView('raffle');
+            showStatus(`Signed in as ${reporterName} (Raffle).`, false);
+            setTimeout(() => showStatus(null), 3000);
+
+        } else if (result && result.isConcessions) {
+            App.state.isConcessions = true;
+            App.state.reporterName = reporterName;
+            localStorage.setItem('lastAdminName', reporterName);
+            sessionStorage.setItem('reporterName', reporterName);
+            sessionStorage.setItem('isConcessions', 'true');
+            sessionStorage.setItem('adminAuthToken', result.token);
+            sessionStorage.setItem('sessionId', sessionId);
+            // Kept on the device too, so a phone that reloads with no signal can still reach the stand and sync later.
+            saveAuth(result.token, reporterName);
+            startSessionHeartbeat();
+
+            hideAdminLoginModal();
+            updateAdminUI();
+            openConcessionsFromGate();
+            showStatus(`Signed in as ${reporterName} (Concessions).`, false);
             setTimeout(() => showStatus(null), 3000);
 
         } else if (result && result.isAdmin) {
@@ -1032,6 +1092,8 @@ async function loginAdmin() {
         } else {
             App.state.isAdmin = false;
             App.state.isParent = false;
+            App.state.isRaffle = false;
+            App.state.isConcessions = false;
             loginMessage.textContent = 'Invalid password.';
             sessionStorage.removeItem('adminAuthToken'); // Clear any old token
             try { localStorage.removeItem('savedAdminPassword'); } catch (e) { /* ignore */ }
@@ -1053,6 +1115,8 @@ async function loginAdmin() {
 }
 
 function logoutAdmin() {
+    const waiting = unsyncedCount();
+    if (waiting && !confirm(`${waiting} concession ${waiting === 1 ? 'change is' : 'changes are'} still waiting to sync. They stay safely on this phone and upload the next time a concessions or tournament manager signs in with a connection.\n\nLog out anyway?`)) return;
     stopSessionHeartbeat();
     const token = sessionStorage.getItem('adminAuthToken');
     const sessionId = sessionStorage.getItem('sessionId');
@@ -1063,12 +1127,17 @@ function logoutAdmin() {
     App.state.isAdmin = false;
     App.state.isSuperAdmin = false;
     App.state.isParent = false;
+    App.state.isRaffle = false;
+    App.state.isConcessions = false;
     App.state.reporterName = '';
     App.state.selectedCourt = '';
     //remove admin persistance
     sessionStorage.removeItem('isAdmin');
     sessionStorage.removeItem('isSuperAdmin');
     sessionStorage.removeItem('isParent');
+    sessionStorage.removeItem('isRaffle');
+    sessionStorage.removeItem('isConcessions');
+    clearAuth();
     sessionStorage.removeItem('firebaseToken');
     sessionStorage.removeItem('reporterName');
     sessionStorage.removeItem('selectedCourt');
@@ -1081,7 +1150,7 @@ function logoutAdmin() {
     // closes it for non-superadmins.
     updateAdminUI();
     // If the user was in a staff-only tab, switch them out
-    if (['admin-entry', 'settings', 'game-manager', 'chat'].includes(App.state.currentView)) {
+    if (['admin-entry', 'settings', 'game-manager', 'chat', 'concessions', 'raffle'].includes(App.state.currentView)) {
         switchView('standings');
     }
     showStatus('Logged out of Admin Mode.', false);
@@ -1356,6 +1425,7 @@ function checkLoginStatus() {
     const isAdmin = sessionStorage.getItem('isAdmin');
     const isSuperAdmin = sessionStorage.getItem('isSuperAdmin');
     const isParent = sessionStorage.getItem('isParent');
+    const isRaffle = sessionStorage.getItem('isRaffle');
     const firebaseToken = sessionStorage.getItem('firebaseToken');
 
     // Normalize stored strings to booleans for app state
@@ -1363,12 +1433,32 @@ function checkLoginStatus() {
     if (firebaseToken) App.state.firebaseToken = firebaseToken;
     App.state.isAdmin = (isAdmin === 'true');
     App.state.isParent = (isParent === 'true');
+    App.state.isRaffle = (isRaffle === 'true');
+    App.state.isConcessions = (sessionStorage.getItem('isConcessions') === 'true');
     App.state.reporterName = sessionStorage.getItem('reporterName') || '';
     App.state.selectedCourt = sessionStorage.getItem('selectedCourt') || '';
 
+    // A concessions or raffle phone that was closed/reloaded (possibly with no signal) picks its sign-in back up from the
+    // device copy, so the stand is reachable offline. It expires after 24 hours.
+    if (!App.state.isAdmin && !App.state.isParent && !App.state.isRaffle && !App.state.isConcessions && !App.state.isSuperAdmin) {
+        const saved = loadAuth();
+        if (saved && saved.name) {
+            if (saved.role === 'raffle') {
+                App.state.isRaffle = true;
+                sessionStorage.setItem('isRaffle', 'true');
+            } else {
+                App.state.isConcessions = true;
+                sessionStorage.setItem('isConcessions', 'true');
+            }
+            sessionStorage.setItem('adminAuthToken', saved.token);
+            sessionStorage.setItem('reporterName', saved.name);
+            App.state.reporterName = saved.name;
+        }
+    }
+
     // Resume the heartbeat after a page reload so the session doesn't go
     // stale in the Setup page's "Signed-in users" view.
-    if (App.state.isAdmin || App.state.isParent) startSessionHeartbeat();
+    if (App.state.isAdmin || App.state.isParent || App.state.isRaffle || App.state.isConcessions) startSessionHeartbeat();
 
     // The updateAdminUI() call below will handle showing the correct buttons.
 }

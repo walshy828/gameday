@@ -29,8 +29,13 @@ import {
     goToGate,
     openSettingsFromGate,
     openGameManagerFromGate,
-    openInfoFromGate
+    openInfoFromGate,
+    openConcessionsFromGate,
+    openRaffleFromGate
 } from './navigation.js';
+
+import { openShareModal, closeShareModal, copyShareLink } from './share.js';
+import { initOffline } from './offline.js';
 
 import {
     updateScheduleView,
@@ -523,11 +528,19 @@ function getCurrentFilteredTeam() {
     return teamSelect ? teamSelect.value : 'all';
 }
 
+initOffline();
+
 document.addEventListener('DOMContentLoaded', () => {
   checkLoginStatus();
 
   if (App.state.isAdmin) {
     switchView('admin-entry');
+  } else if (App.state.isConcessions) {
+    // Straight back to the stand after a reload, even with no connection (needs no division or network).
+    openConcessionsFromGate();
+  } else if (App.state.isRaffle) {
+    // Same for the raffle desk: straight back to selling (and syncing anything saved on the phone).
+    openRaffleFromGate();
   } else {
     switchView('standings');
   }
@@ -635,9 +648,13 @@ exposeGlobals({
   openSettingsFromGate,
   openGameManagerFromGate,
   openInfoFromGate,
+  openConcessionsFromGate,
+  openRaffleFromGate,
   setGameManagerAllowance,
   getCurrentFilteredTeam
 });
+
+exposeGlobals({ openShareModal, closeShareModal, copyShareLink });
 
 // Expose settings view handlers (used by inline onclick handlers in index.html)
 exposeGlobals({
