@@ -17,7 +17,9 @@ import * as Concessions from './concessionsDb.js';
 import * as Seasons from './seasons.js';
 import { controlTimer, initTimerControl, TimerError, TIMER_ACTION_NAMES } from './timerControl.js';
 import crypto from 'crypto';
-import axios from 'axios';
+import compression from 'compression';
+import helmet from 'helmet';
+import rateLimit from 'express-rate-limit';
 
 
 
@@ -56,11 +58,23 @@ const app = express();
 // come from the socket and can't be spoofed with a header.
 const TRUST_PROXY = process.env.TRUST_PROXY;
 app.set('trust proxy', TRUST_PROXY ? (/^\d+$/.test(TRUST_PROXY) ? Number(TRUST_PROXY) : TRUST_PROXY === 'true' ? 1 : TRUST_PROXY) : false);
-app.use(express.json());
+// CSP is off: the app relies on inline scripts/handlers and several CDNs. The
+// remaining helmet headers (nosniff, frame/referrer policy, HSTS...) stay on.
+app.use(helmet({ contentSecurityPolicy: false, crossOriginEmbedderPolicy: false, crossOriginResourcePolicy: false }));
+app.use(compression());
+app.use(express.json({ limit: '256kb' }));
+// Generous per-IP cap on writes (a venue's phones share one NAT address); login has its own stricter throttle.
+app.use('/api', rateLimit({
+  windowMs: 60 * 1000,
+  limit: Number(process.env.API_WRITE_LIMIT_PER_MIN) || 600,
+  skip: (req) => req.method === 'GET',
+  standardHeaders: true,
+  legacyHeaders: false
+}));
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
-app.use(express.static(path.join(__dirname, '../public')));
+app.use(express.static(path.join(__dirname, '../public'), { maxAge: '5m' }));
 
 // Fallback route to serve the generated Tailwind CSS with correct MIME type.
 // Some hosting setups may rewrite unknown paths to index.html which results in
@@ -107,9 +121,11 @@ app.get('/api/allData', async (req, res) => {
       autoUpdateOfficialResultsEnabled: featureSettings.autoUpdateOfficialResultsEnabled,
       checkinEnabled: featureSettings.checkinEnabled
     };
-    const standings = await Store.getStandings(sheetName);
-    const schedule = await Store.getSchedule(sheetName);
-    const scheduleConfig = await Store.getScheduleConfig(sheetName);
+    const [standings, schedule, scheduleConfig] = await Promise.all([
+      Store.getStandings(sheetName),
+      Store.getSchedule(sheetName),
+      Store.getScheduleConfig(sheetName)
+    ]);
     res.json({ settings, standings, schedule, scheduleConfig });
   } catch (e) {
     console.error('getAllData error', e);
@@ -1155,34 +1171,6 @@ function isValidToken(tokenFromClient) {
 }
 
 
-const GA_MEASUREMENT_ID = process.env.GA_MEASUREMENT_ID;
-const GA_API_SECRET = process.env.GA_API_SECRET;
-
-export async function trackServerEvent(eventName, params = {}, clientId = 'system') {
-  if (!GA_MEASUREMENT_ID || !GA_API_SECRET) {
-    console.log('Google Analytics not configured — skipping event');
-    return;
-  }
-
-  try {
-    await axios.post(
-      `https://www.google-analytics.com/mp/collect?measurement_id=${GA_MEASUREMENT_ID}&api_secret=${GA_API_SECRET}`,
-      {
-        client_id: clientId,
-        events: [
-          {
-            name: eventName,
-            params
-          }
-        ]
-      }
-    );
-    console.log(`✅ Sent GA event: ${eventName}`);
-  } catch (err) {
-    console.error('❌ Failed to send GA event:', err.response?.data || err.message);
-  }
-}
-
 const PORT = process.env.PORT || 8888;
 const httpServer = http.createServer(app);
 initSocket(httpServer);
@@ -1193,9 +1181,6 @@ httpServer.listen(PORT, () => console.log(`Server started at http://localhost:${
 if (DATA_BACKEND === 'local') {
   // Re-arm expiry for any clock that was running across a restart.
   await initTimerControl();
-} else {
-  const { initRealtimeListeners } = await import('./firebase-listener.js');
-  initRealtimeListeners();
 }
 
 // Google Sheet auto-sync works against either backend (Store abstraction),

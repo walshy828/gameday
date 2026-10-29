@@ -177,26 +177,6 @@ export async function getRosterCheckinLog(authToken, teamKey) {
   return await apiGet(`/roster/checkin/log?teamKey=${encodeURIComponent(teamKey)}`, authToken);
 }
 
-// Raffle (raffle manager / superadmin). Both use fetch directly so the server's message (sheet not
-// configured, "Roll is Full", ...) reaches the UI instead of a bare status code.
-export async function getRaffle(authToken, refresh = false) {
-  const res = await fetch(`${window.location.origin}/api/raffle${refresh ? '?refresh=1' : ''}`, { headers: authHeaders(authToken) });
-  const body = await res.json().catch(() => ({}));
-  if (!res.ok || body.success === false) throw new Error(body.error || `Raffle failed to load (${res.status})`);
-  return body;
-}
-
-export async function sellRaffle(authToken, sale) {
-  const res = await fetch(`${window.location.origin}/api/raffle/sale`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json', ...authHeaders(authToken) },
-    body: JSON.stringify(sale)
-  });
-  const body = await res.json().catch(() => ({}));
-  if (!res.ok || body.success === false) throw new Error(body.error || `The sale was not saved (${res.status})`);
-  return body;
-}
-
 // Superadmin raffle troubleshooting: the database copy of every sale, and a fresh comparison with the sheet.
 export async function getRaffleBackup(authToken, seasonId) {
   const res = await fetch(`${window.location.origin}/api/raffle/backup${seasonId ? `?season=${encodeURIComponent(seasonId)}` : ''}`, { headers: authHeaders(authToken) });

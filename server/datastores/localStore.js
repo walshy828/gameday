@@ -384,17 +384,18 @@ export async function writeDivisionData(name, { standings, schedule, scheduleCon
       );
     }
 
-    for (const [idx, m] of (schedule || []).entries()) {
+    if (schedule && schedule.length) {
+      const rows = schedule.map((m, idx) => [name, idx, m.roundTime || '', m.court || '', m.match || '', m.team1 || '', m.team2 || '',
+        m.winner || '', m.playersRemaining || '', m.rowIndex ?? null, m.subDivision || '']);
       await conn.query(
         `INSERT INTO schedule (division, match_index, round_time, court, match_number, team1, team2, winner, players_remaining, row_index, sub_division)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+         VALUES ?
          ON DUPLICATE KEY UPDATE
            round_time = VALUES(round_time), court = VALUES(court), match_number = VALUES(match_number),
            team1 = VALUES(team1), team2 = VALUES(team2), winner = VALUES(winner),
            players_remaining = VALUES(players_remaining), row_index = VALUES(row_index),
            sub_division = VALUES(sub_division)`,
-        [name, idx, m.roundTime || '', m.court || '', m.match || '', m.team1 || '', m.team2 || '',
-          m.winner || '', m.playersRemaining || '', m.rowIndex ?? null, m.subDivision || '']
+        [rows]
       );
     }
 

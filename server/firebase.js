@@ -16,16 +16,6 @@ if (!admin.apps.length) {
   });
 }
 
-export async function pushMatchUpdate(sheetName, firebaseIndex, payload) {
-  if (!process.env.FIREBASE_DATABASE_URL) throw new Error('FIREBASE_DATABASE_URL not set');
-  // Use the raw sheetName as the division key so it matches the sheet title
-  // Note: Firebase RTDB keys cannot contain the characters . # $ [ ] / .
-  // We assume sheet names don't contain those; if they do, consider a deterministic map.
-  const refPath = `dodgeball-tournament/divisions/${sheetName}/schedule/${firebaseIndex}`;
-  await admin.database().ref(refPath).update(payload);
-  return true;
-}
-
 export async function createCustomToken(uid, claims = {}) {
   return admin.auth().createCustomToken(uid, claims);
 }
