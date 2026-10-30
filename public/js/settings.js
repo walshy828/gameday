@@ -12,7 +12,7 @@
 // running against Firebase or MariaDB.
 import { getSheetSyncConfig, getSheetSyncStatus, updateSheetSyncSettings, updateFeatureSettings, runSheetSync, pruneSheetSyncDivisions, getActiveSessions, getLoginHistory, getRolePasswords } from './api.js';
 import { getSocket } from './socketClient.js';
-import { setCheckinEnabled } from './roster.js';
+import { setCheckinEnabled, setRosterEditEnabled } from './roster.js';
 
 const PRESET_INTERVALS = [30, 60, 300];
 const SESSIONS_POLL_INTERVAL_MS = 15000;
@@ -330,6 +330,11 @@ function renderFeatureSettings(settings) {
     const checkinToggle = document.getElementById('checkin-toggle');
     if (checkinToggle) checkinToggle.checked = App.settings.checkinEnabled;
 
+    App.settings.rosterEditEnabled = settings.rosterEditEnabled !== false;
+    setRosterEditEnabled(App.settings.rosterEditEnabled);
+    const rosterEditToggle = document.getElementById('roster-edit-toggle');
+    if (rosterEditToggle) rosterEditToggle.checked = App.settings.rosterEditEnabled;
+
     const officialResultsToggle = document.getElementById('auto-update-official-results-toggle');
     if (officialResultsToggle) officialResultsToggle.checked = App.settings.autoUpdateOfficialResultsEnabled;
 }
@@ -598,6 +603,24 @@ async function toggleCheckin(checked) {
     }
 }
 
+async function toggleRosterEdit(checked) {
+    const authToken = sessionStorage.getItem('adminAuthToken');
+    if (!authToken) {
+        showStatus('Please log in as superadmin.', true);
+        return;
+    }
+    try {
+        const settings = await updateFeatureSettings(authToken, { rosterEditEnabled: !!checked });
+        renderFeatureSettings(settings);
+    } catch (e) {
+        console.error('Failed to update roster editing setting', e);
+        const toggle = document.getElementById('roster-edit-toggle');
+        if (toggle) toggle.checked = !checked;
+        showStatus('Failed to update roster editing setting: ' + e.message, true);
+        setTimeout(() => showStatus(null), 4000);
+    }
+}
+
 function setSyncInterval(seconds) {
     const value = Math.max(Number(seconds) || 0, 10);
     persistSettings({ intervalSeconds: value });
@@ -726,6 +749,7 @@ export {
     toggleChampionCelebration,
     toggleAutoUpdateOfficialResults,
     toggleCheckin,
+    toggleRosterEdit,
     setSyncInterval,
     setCustomSyncInterval,
     setSyncScope,

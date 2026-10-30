@@ -200,7 +200,8 @@ export async function getFeatureSettings() {
   return {
     championCelebrationEnabled: val.championCelebrationEnabled !== false,
     autoUpdateOfficialResultsEnabled: val.autoUpdateOfficialResultsEnabled === true,
-    checkinEnabled: val.checkinEnabled === true
+    checkinEnabled: val.checkinEnabled === true,
+    rosterEditEnabled: val.rosterEditEnabled !== false
   };
 }
 

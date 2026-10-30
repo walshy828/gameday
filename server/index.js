@@ -119,7 +119,8 @@ app.get('/api/allData', async (req, res) => {
       ga_measurement_id: process.env.GA_MEASUREMENT_ID || null,
       championCelebrationEnabled: featureSettings.championCelebrationEnabled,
       autoUpdateOfficialResultsEnabled: featureSettings.autoUpdateOfficialResultsEnabled,
-      checkinEnabled: featureSettings.checkinEnabled
+      checkinEnabled: featureSettings.checkinEnabled,
+      rosterEditEnabled: featureSettings.rosterEditEnabled
     };
     const [standings, schedule, scheduleConfig] = await Promise.all([
       Store.getStandings(sheetName),
@@ -507,11 +508,19 @@ function rosterGuard(req, res) {
   return true;
 }
 
+// Roster edits (move/rename/remove/add player, Paid, Sub Division) can be switched off in Setup (read-only mode).
+async function rosterEditAllowed(res) {
+  const features = await Store.getFeatureSettings();
+  if (features.rosterEditEnabled !== false) return true;
+  res.status(403).json({ success: false, error: 'Roster editing is turned off (read-only mode). A superadmin can turn it on in Setup.' });
+  return false;
+}
+
 app.get('/api/roster', async (req, res) => {
   if (!rosterGuard(req, res)) return;
   try {
     const [data, features] = await Promise.all([Roster.getRosterData({ refresh: req.query.refresh === '1' }), Store.getFeatureSettings()]);
-    res.json({ success: true, ...data, ciOn: features.checkinEnabled === true });
+    res.json({ success: true, ...data, ciOn: features.checkinEnabled === true, editOn: features.rosterEditEnabled !== false });
   } catch (e) {
     console.error('roster load error', e);
     res.status(500).json({ success: false, error: e.message || e.toString() });
@@ -559,6 +568,7 @@ app.get('/api/roster/checkin/log', async (req, res) => {
 app.post('/api/roster/preview', async (req, res) => {
   if (!rosterGuard(req, res)) return;
   try {
+    if (!(await rosterEditAllowed(res))) return;
     res.json({ success: true, ...(await Roster.previewAction(req.body?.action)) });
   } catch (e) {
     console.error('roster preview error', e);
@@ -569,6 +579,7 @@ app.post('/api/roster/preview', async (req, res) => {
 app.post('/api/roster/apply', async (req, res) => {
   if (!rosterGuard(req, res)) return;
   try {
+    if (!(await rosterEditAllowed(res))) return;
     const result = await Roster.applyAction(req.body?.action);
     if (!result.ok && !result.needsReview) return res.status(400).json({ success: false, error: (result.errors || []).join(' '), errors: result.errors });
     res.json({ success: result.ok, ...result });
@@ -1145,11 +1156,12 @@ app.post('/api/sheetSync/settings', async (req, res) => {
 app.post('/api/featureSettings', async (req, res) => {
   if (!requireSuperAdmin(req, res)) return;
   try {
-    const { championCelebrationEnabled, autoUpdateOfficialResultsEnabled, checkinEnabled } = req.body || {};
+    const { championCelebrationEnabled, autoUpdateOfficialResultsEnabled, checkinEnabled, rosterEditEnabled } = req.body || {};
     const patch = {};
     if (typeof championCelebrationEnabled === 'boolean') patch.championCelebrationEnabled = championCelebrationEnabled;
     if (typeof autoUpdateOfficialResultsEnabled === 'boolean') patch.autoUpdateOfficialResultsEnabled = autoUpdateOfficialResultsEnabled;
     if (typeof checkinEnabled === 'boolean') patch.checkinEnabled = checkinEnabled;
+    if (typeof rosterEditEnabled === 'boolean') patch.rosterEditEnabled = rosterEditEnabled;
 
     const settings = await Store.updateFeatureSettings(patch);
     res.json(settings);

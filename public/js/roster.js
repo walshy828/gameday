@@ -20,6 +20,7 @@ const S = {
     confirmPaid: false, paidBusy: false,
     openWaiver: null,    // member name whose waiver detail is expanded
     busyRows: {},        // 'teamKey|name' -> label while a write is in flight
+    editOn: true,        // roster edits allowed (shared app setting; off = read-only)
     ciOn: false,         // team check-in switched on (shared app setting, off by default)
     ciDiv: '', ciOut: false,          // counter's division picker / "only teams not checked in"
     ciAsk: null, ciReason: '', ciBusy: null,   // inline check-in confirm (team key), its note box, team being saved
@@ -95,6 +96,7 @@ async function load(quiet, refresh) {
 function adopt(d) {
     S.data = d; S.loadedAt = Date.now() - (Number(d.ageMs) || 0);      // the server may serve a cached copy: show how old the DATA is
     if (typeof d.ciOn === 'boolean') S.ciOn = d.ciOn;
+    if (typeof d.editOn === 'boolean') S.editOn = d.editOn;
     if (S.cur && !d.rosters[S.cur]) S.cur = null;
 }
 
@@ -160,12 +162,13 @@ function paidChip(r) {
     let act;
     if (S.paidBusy) act = '<span class="text-[11px] text-white/50">Saving…</span>';
     else if (S.confirmPaid) act = `<span class="flex items-center gap-1.5"><button data-act="paid-ok" class="${goldBtn}" style="${r.paid ? dangerStyle : goldStyle}">${r.paid ? 'Confirm not paid' : 'Confirm paid'}</button><button data-act="paid-no" class="${smBtn}" aria-label="Cancel">✕</button></span>`;
+    else if (!S.editOn) act = '';
     else act = `<button data-act="paid" class="${smBtn}" title="${r.paid ? 'Mark as not paid' : 'Mark as paid'}" aria-label="${r.paid ? 'Mark as not paid' : 'Mark as paid'}">${r.paid ? '↺' : '$'}</button>`;
     return statChip(`<div><div class="text-[16px] font-bold" style="color:${color}">${r.paid ? 'Yes' : 'No'}</div><div class="text-[11px] text-white/50">Paid</div></div>${act}`);
 }
 
 function subChip(r) {
-    if (S.editSub && r.hasSubCol) {
+    if (S.editSub && r.hasSubCol && S.editOn) {
         const opts = r.subOptions || [], ask = S.subAsk != null;
         const known = (v) => opts.some(o => o.name.toLowerCase() === v.toLowerCase());
         const hint = ask
@@ -182,7 +185,7 @@ function subChip(r) {
           <div class="mt-2 flex flex-wrap items-center gap-1.5 text-[11px] text-white/50">${opts.length ? 'In use:' : 'No sub divisions in use yet.'}${opts.map(o => `<button type="button" data-act="sub-chip" data-v="${esc(o.name)}" class="rounded-full border border-white/15 bg-white/[.06] px-2.5 py-1 text-white/80">${esc(o.name)} (${o.count})</button>`).join('')}</div>
           <div class="mt-1.5 min-h-[16px] text-[12px]" style="color:var(--gold-l)" aria-live="polite">${hint}</div></div>`;
     }
-    return statChip(`<div><div class="text-[16px] font-bold text-white">${r.sub ? esc(r.sub) : '<span class="font-normal italic text-white/40">none</span>'}</div><div class="text-[11px] text-white/50">Sub division${r.hasSubCol ? '' : ' (no “Sub Division” column)'}</div></div>${r.hasSubCol ? `<button data-act="sub-edit" class="${smBtn}" title="Change sub division" aria-label="Change sub division">✎</button>` : ''}`);
+    return statChip(`<div><div class="text-[16px] font-bold text-white">${r.sub ? esc(r.sub) : '<span class="font-normal italic text-white/40">none</span>'}</div><div class="text-[11px] text-white/50">Sub division${r.hasSubCol ? '' : ' (no “Sub Division” column)'}</div></div>${r.hasSubCol && S.editOn ? `<button data-act="sub-edit" class="${smBtn}" title="Change sub division" aria-label="Change sub division">✎</button>` : ''}`);
 }
 
 function notesFor(kind, r, m, k) {
@@ -257,9 +260,9 @@ function memberRow(r, m, i) {
           ${m.waiverName && m.waiverName.toLowerCase() !== m.name.toLowerCase() ? `<div class="truncate text-[12px] text-white/50">waiver says “${esc(m.waiverName)}”</div>` : ''}
           ${m.provisional ? '<div class="text-[11px]" style="color:var(--gold-l)">Unconfirmed — waiver only</div>' : ''}</div>
         ${waiverTag}
-        <button data-act="move" data-i="${i}" class="${smBtn}" title="Move to another team" aria-label="Move ${esc(m.name)} to another team">⇄</button>
+        ${S.editOn ? `<button data-act="move" data-i="${i}" class="${smBtn}" title="Move to another team" aria-label="Move ${esc(m.name)} to another team">⇄</button>
         <button data-act="edit" data-i="${i}" class="${smBtn}" title="Edit name" aria-label="Edit ${esc(m.name)}">✎</button>
-        <button data-act="del" data-i="${i}" class="${smBtn}" title="Remove from team" aria-label="Remove ${esc(m.name)}">🗑</button>
+        <button data-act="del" data-i="${i}" class="${smBtn}" title="Remove from team" aria-label="Remove ${esc(m.name)}">🗑</button>` : ''}
       </div>${detail}</div>`;
 }
 
@@ -293,6 +296,7 @@ function renderDetail() {
     S.adding.filter(x => x.team === r.key).forEach(x => { h += `<div class="rounded-2xl bg-white/[.05] px-3 py-2.5"><div class="text-[14px] text-white">${esc(x.name)}</div><div class="text-[12px] text-white/50">Adding…</div></div>`; });
     h += '</div>';
 
+    if (!S.editOn) return h + '<div class="mt-4 px-1 text-[12px] text-white/45">Read-only mode — roster editing is turned off in Setup.</div>';
     const ak = S.ask && S.ask.kind === 'add' ? S.ask : null;
     h += `<div class="mt-4 mb-1.5 px-1">${kicker('Add a player')}</div><section class="card-dark p-3.5">`;
     if (ak) {
@@ -434,6 +438,14 @@ async function addCiNote() {
 }
 
 /** Called from Setup when the shared switch changes, so the Roster view follows at once. */
+export function setRosterEditEnabled(on) {
+    on = on !== false;
+    if (S.editOn === on) return;
+    S.editOn = on;
+    if (!on) { S.editing = null; S.ask = null; S.draft = ''; S.editSub = false; S.subAsk = null; S.confirmPaid = false; }
+    if (S.data) render();
+}
+
 export function setCheckinEnabled(on) {
     on = on === true;
     if (S.ciOn === on) return;
@@ -705,13 +717,13 @@ let socketWired = false;
 function wireSocket() {
     if (socketWired) return;
     socketWired = true;
-    try { getSocket().on('featureSettingsUpdate', (settings) => setCheckinEnabled(settings && settings.checkinEnabled === true)); }
+    try { getSocket().on('featureSettingsUpdate', (settings) => { setCheckinEnabled(settings && settings.checkinEnabled === true); setRosterEditEnabled(settings && settings.rosterEditEnabled); }); }
     catch (e) { /* no socket in this mode: Refresh picks the setting up */ }
 }
 
 /** Called on logout / role change so a different login never sees cached roster data. */
 export function resetRoster() {
-    Object.assign(S, { ciOn: false, ciDiv: '', ciOut: false, ciAsk: null, ciReason: '', ciBusy: null, ciLog: {}, ciLoading: {}, ciNote: '', ciNoteBusy: false, data: null, loadedAt: 0, loading: false, error: '', cur: null, q: '', editing: null, ask: null, draft: '', editSub: false, subAsk: null, confirmPaid: false, paidBusy: false, openWaiver: null, busyRows: {}, adding: [] });
+    Object.assign(S, { editOn: true, ciOn: false, ciDiv: '', ciOut: false, ciAsk: null, ciReason: '', ciBusy: null, ciLog: {}, ciLoading: {}, ciNote: '', ciNoteBusy: false, data: null, loadedAt: 0, loading: false, error: '', cur: null, q: '', editing: null, ask: null, draft: '', editSub: false, subAsk: null, confirmPaid: false, paidBusy: false, openWaiver: null, busyRows: {}, adding: [] });
     const el = body(); if (el) el.innerHTML = '';
     closeModal();
 }
