@@ -7,7 +7,7 @@
 // report are computed here and cost no sheet calls; only a sale (and the occasional refresh) touches Sheets.
 import * as Store from './raffleStore.js';
 import { priceSale, allocate, strip } from './raffleLogic.js';
-import { stepper } from './concessionsUi.js';
+import { toast } from './concessionsUi.js';
 
 const REFRESH_MS = 60000;      // quiet refresh while the tab is open (the server serves its own cached copy)
 const PAGE = 40;
@@ -16,7 +16,7 @@ const S = {
     data: null, loadedAt: 0, loading: false, error: '',
     tab: 'sell',
     cart: {}, f: blankForm(), busy: false, err: '', result: null,
-    custom: false, pre: false, notes: false, touched: { phone: false, email: false },
+    custom: false, pre: false, rollOpen: false, buyerOpen: false, touched: { phone: false, email: false },
     q: '', mine: false, open: null, shown: PAGE,
     metric: 'usd', gran: 'hour'
 };
@@ -44,15 +44,6 @@ const fmtTime = (t) => new Date(t).toLocaleString('en-US', { timeZone: 'UTC', we
 const hourLabel = (t, withDay) => new Date(t).toLocaleString('en-US', { timeZone: 'UTC', ...(withDay ? { weekday: 'short' } : {}), hour: 'numeric', ...(S.gran === 'half' ? { minute: '2-digit' } : {}) });
 const digits = (s) => String(s || '').replace(/\D/g, '');
 const range = (l) => (l[2] === l[3] ? String(l[2]) : `${l[2]}–${l[3]}`);
-
-function toast(msg, bad) {
-    const t = document.createElement('div');
-    t.className = 'fixed left-1/2 -translate-x-1/2 bottom-24 z-[120] rounded-full px-4 py-2.5 text-[12px] font-semibold text-white shadow-lg';
-    t.style.background = bad ? 'var(--mar)' : '#2b2b2e';
-    t.textContent = msg;
-    document.body.appendChild(t);
-    setTimeout(() => t.remove(), 3200);
-}
 
 /* ---------- shared UI snippets ---------- */
 
@@ -98,6 +89,15 @@ function chip(label, on, attrs, extra) {
 
 /* ---------- loading ---------- */
 
+/** Selects the remembered roll (or the sheet's default) and the last payment method if the form has none yet. */
+function pickDefaults() {
+    const d = S.data, last = loadLast(), f = S.f;
+    if (!d) return;
+    const active = d.rolls.filter(r => r.status === 'Active' && r.remaining > 0);
+    if (!active.some(r => r.id === f.roll)) f.roll = active.some(r => r.id === last.roll) ? last.roll : d.defaultRoll;
+    if (!f.pay && d.payments.includes(last.pay)) f.pay = last.pay;
+}
+
 async function load(quiet, refresh) {
     if (S.loading) return null;
     S.loading = true; S.error = '';
@@ -108,10 +108,7 @@ async function load(quiet, refresh) {
         const d = Store.view();
         if (!d) throw new Error(r.error || 'Could not load the raffle.');
         S.data = d; S.loadedAt = Store.snapshotAt();
-        const last = loadLast(), f = S.f;
-        const active = d.rolls.filter(r => r.status === 'Active' && r.remaining > 0);
-        if (!active.some(r => r.id === f.roll)) f.roll = active.some(r => r.id === last.roll) ? last.roll : d.defaultRoll;
-        if (!f.pay && d.payments.includes(last.pay)) f.pay = last.pay;
+        pickDefaults();
     } catch (e) {
         S.error = e.message || String(e);
     } finally {
@@ -127,7 +124,7 @@ async function refreshNow() {
     const r = await load(false, true);
     if (!r) return;
     if (r.ok) toast('Up to date');
-    else if (Store.pendingCount()) toast(`${Store.pendingCount()} sale(s) still waiting to sync`, true);
+    else if (Store.pendingCount()) toast(`${Store.pendingCount()} sale(s) still waiting to upload`, true);
     else toast(S.error ? S.error : 'Could not reach the server. Showing the saved copy.', true);
 }
 
@@ -135,11 +132,11 @@ async function refreshNow() {
 async function syncNow() {
     if (Store.getState().syncing) return;
     const before = Store.pendingCount();
-    if (!before) { toast('Nothing waiting. Everything is synced'); return; }
-    toast('Syncing…');
+    if (!before) { toast('Nothing waiting. Everything is uploaded'); return; }
+    toast('Uploading…');
     await Store.sync();
     const left = Store.pendingCount();
-    toast(left ? `${left} still waiting${Store.getState().online === false ? ' (offline)' : ''}` : `Synced ${before} sale${before === 1 ? '' : 's'}`, !!left);
+    toast(left ? `${left} still waiting${Store.getState().online === false ? ' (offline)' : ''}` : `Uploaded ${before} sale${before === 1 ? '' : 's'}`, !!left);
 }
 
 function stamp(short) {
@@ -148,18 +145,19 @@ function stamp(short) {
     return `${short ? '' : 'Sales as of '}${new Date(S.loadedAt).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' })} · ${mins < 1 ? 'just now' : mins + ' min ago'}`;
 }
 
-/** Connection / sync state, always visible: what is on this phone and whether it has reached the sheet. */
+/** Connection / sync state as one colored dot at the end of the tab bar (a count when sales are waiting); tap it for the words. */
+function statusInfo() {
+    const st = Store.getState(), n = Store.pendingCount();
+    if (st.authProblem) return { label: n ? `Sign in again to upload ${n}` : 'Sign in again to upload', color: 'var(--mar)' };
+    if (st.online === false) return { label: n ? `Offline · ${n} saved on this phone` : 'Offline · sales are saved on this phone', color: '#b45309' };
+    if (st.syncing || n) return { label: n ? `Uploading ${n}…` : 'Uploading…', color: '#b45309' };
+    if (st.online === true) return { label: 'Online · everything saved', color: '#15803d' };
+    return { label: 'Checking connection…', color: '#52525b' };
+}
 function statusHtml() {
-    const st = Store.getState(), n = Store.pendingCount(), bad = Store.attention().length;
-    let label, color;
-    if (st.authProblem) { label = n ? `Sign in again to sync ${n}` : 'Sign in again to sync'; color = 'var(--mar)'; }
-    else if (st.online === false) { label = n ? `Offline · ${n} saved on this phone` : 'Offline · sales saved on this phone'; color = '#b45309'; }
-    else if (st.syncing || n) { label = n ? `Syncing ${n}…` : 'Syncing…'; color = '#b45309'; }
-    else if (st.online === true) { label = 'Online · all synced'; color = '#15803d'; }
-    else { label = 'Checking connection…'; color = '#52525b'; }
-    return `<span class="inline-flex items-center gap-1.5 rounded-full px-2.5 py-1 text-[11px] font-semibold text-white" style="background:${color}"><span class="h-1.5 w-1.5 rounded-full bg-white/80"></span>${esc(label)}</span>
-      ${bad ? `<button data-act="tab" data-v="device" class="ml-1.5 rounded-full px-3 py-1.5 text-[11px] font-bold text-white" style="background:var(--mar)">${bad} need${bad === 1 ? 's' : ''} a look</button>` : ''}
-      ${Store.isPersistent() ? '' : '<span class="ml-1.5 text-[11px] font-semibold" style="color:var(--warn)">⚠ Private mode: sales are NOT kept if this tab closes</span>'}`;
+    const { label, color } = statusInfo(), n = Store.pendingCount(), bad = Store.attention().length;
+    return `<button type="button" data-act="status" class="flex h-full min-w-[40px] items-center justify-center rounded-[13px] px-2 text-[12px] font-bold tabular-nums text-white" style="background:${color}" aria-label="${esc(label)}" title="${esc(label)}">${n ? n : '<span class="h-2 w-2 rounded-full bg-white/90"></span>'}</button>
+      ${bad ? `<button data-act="tab" data-v="device" class="ml-1 rounded-[13px] px-2.5 text-[11px] font-bold text-white" style="background:var(--mar)">${bad} to check</button>` : ''}`;
 }
 function updateStatus() { const el = document.getElementById('raffle-status'); if (el) el.innerHTML = statusHtml(); }
 
@@ -189,7 +187,7 @@ export function renderRaffle() {
     startTimer();
     Store.startSync();
     if (!unsub) unsub = Store.onChange(onStore);
-    if (!S.data && Store.hasSnapshot()) { S.data = Store.view(); S.loadedAt = Store.snapshotAt(); }    // open instantly from the saved copy, then refresh
+    if (!S.data && Store.hasSnapshot()) { S.data = Store.view(); S.loadedAt = Store.snapshotAt(); pickDefaults(); }    // open instantly from the saved copy, then refresh
     if (!S.data && !S.loading) { load(); return; }
     if (S.data && Date.now() - S.loadedAt > REFRESH_MS / 2 && !S.loading) load(true, false);   // coming back to the tab: catch up quietly
     render();
@@ -197,7 +195,7 @@ export function renderRaffle() {
 
 /** Called on logout / role change so a different login never sees this person's data or draft. */
 export function resetRaffle() {
-    Object.assign(S, { data: null, loadedAt: 0, loading: false, error: '', tab: 'sell', cart: {}, f: blankForm(), busy: false, err: '', result: null, custom: false, pre: false, notes: false, touched: touchedBlank(), q: '', mine: false, open: null, shown: PAGE });
+    Object.assign(S, { data: null, loadedAt: 0, loading: false, error: '', tab: 'sell', cart: {}, f: blankForm(), busy: false, err: '', result: null, custom: false, pre: false, rollOpen: false, buyerOpen: false, touched: touchedBlank(), q: '', mine: false, open: null, shown: PAGE });
     const el = body(); if (el) el.innerHTML = '';
 }
 
@@ -225,7 +223,7 @@ function plan() {
     if (d.require.contact && !f.phone.trim() && !f.email.trim()) need.push('Phone or email');
     if (phoneErr(f.phone)) need.push('Fix the phone number');
     if (emailErr(f.email)) need.push('Fix the email');
-    if (d.require.pay && !f.pay) need.push('Payment');
+    if (d.require.pay && !f.pay && !payBtns()) need.push('Payment');
     let lines = null, note = '';
     if (!priced.error) {
         if (manual) {
@@ -237,68 +235,88 @@ function plan() {
             if (lines) note = lines.map(l => `${l.roll}: ${l.start}–${l.end}`).join('  +  ');
         }
     }
-    const parts = S.custom ? [] : cartParts(d.bundles);
-    const summary = priced.error ? '' : `${parts.length ? parts.map(b => `${b.count} × ${b.qty}`).join(' + ') + ' = ' : ''}${priced.qty} ${priced.qty === 1 ? 'ticket' : 'tickets'} · ${money(priced.price)}`;
-    return { priced, need, note, summary, ready: !priced.error && need.length === 0 && !(note && !lines && !manual) };
+    return { priced, need, note, ready: !priced.error && need.length === 0 && !(note && !lines && !manual) };
 }
 
 function dirty() { S.err = ''; }
 
 /* ---------- SELL ---------- */
 
+/** Up to 3 payment methods become the commit buttons themselves (one tap = payment + sell); more falls back to chips + Sell. */
+const payBtns = () => !!S.data && S.data.payments.length > 0 && S.data.payments.length <= 3;
+const PAY_ICON = (m) => (/cash/i.test(m) ? '💵 ' : /venmo|zelle|paypal/i.test(m) ? '📱 ' : /card|credit|debit/i.test(m) ? '💳 ' : '');
+const stickyStyle = 'bottom:calc(96px + env(safe-area-inset-bottom,0px));background:rgba(14,14,16,.82);backdrop-filter:blur(14px);-webkit-backdrop-filter:blur(14px)';
+
 function renderSell() {
-    const d = S.data, f = S.f, p = plan(), last = loadLast();
+    const d = S.data, f = S.f, p = plan();
     const active = d.rolls.filter(r => r.status === 'Active' || (S.pre && r.status === 'Pre-torn'));
-    const rolls = active.length ? `<div class="-mx-1 flex gap-2 overflow-x-auto px-1 pb-1">${active.map(r =>
-        chip(`<span class="inline-flex items-center gap-2">${dot(r.color)}${esc(r.id)}<span class="font-medium opacity-70">${r.remaining} left</span></span>`, f.roll === r.id, `data-act="roll" data-v="${esc(r.id)}"`, r.remaining <= 0 ? 'opacity-40' : '')).join('')}</div>`
-        : `<div class="${card} px-3.5 py-3 text-[13px] text-white/60">No Active rolls. Mark a roll Active on the Rolls tab of the sheet${S.pre ? '' : ', or use a pre-torn strip'}.</div>`;
-
-    const bundles = `<div class="grid grid-cols-2 gap-2">${d.bundles.map(b => {
-        const q = S.custom ? 0 : (S.cart[b.qty] || 0);
-        return `<div class="rounded-2xl border ${q ? 'border-transparent' : 'border-white/15 bg-white/[.06] text-white'}" style="${q ? 'box-shadow:0 0 0 2px var(--gold);background:rgba(224,184,99,.14)' : ''}">
-          <button type="button" data-act="badd" data-v="${b.qty}" class="block w-full px-3 py-4 text-center" aria-label="Add ${b.qty} ${b.qty === 1 ? 'ticket' : 'tickets'} for ${money(b.price)}">
-            <span class="block text-[22px] font-bold leading-none tabular-nums">${b.qty}</span>
-            <span class="mt-1.5 block text-[12px] font-semibold text-white/60">${b.qty === 1 ? 'ticket' : 'tickets'} · ${money(b.price)}${q > 1 ? `<span style="color:var(--gold-l)"> · ${money(Math.round(b.price * 100) * q / 100)}</span>` : ''}</span></button>
-          ${q ? stepper('bdec', 'badd', b.qty, q, `${b.qty}-ticket bundle`) : ''}</div>`;
-    }).join('')}
-      <button type="button" data-act="custom" class="rounded-2xl border px-3 py-4 text-center ${S.custom ? 'border-transparent' : 'border-white/15 bg-white/[.06] text-white'}" style="${S.custom ? goldStyle : ''}">
-        <span class="block text-[22px] font-bold leading-none">…</span><span class="mt-1.5 block text-[12px] font-semibold ${S.custom ? '' : 'text-white/60'}">Custom</span></button></div>
-      ${S.custom ? `<div class="mt-2 grid grid-cols-2 gap-2">
-        <input data-f="cq" type="number" inputmode="numeric" min="1" placeholder="Tickets" value="${esc(f.cq)}" class="field-dark" aria-label="Custom quantity">
-        <input data-f="cp" type="number" inputmode="decimal" min="0" step="0.01" placeholder="Price (optional)" value="${esc(f.cp)}" class="field-dark" aria-label="Custom price"></div>` : ''}`;
-
-    const pays = `<div class="-mx-1 flex flex-wrap gap-2 px-1">${d.payments.map(m => chip(esc(m), f.pay === m, `data-act="pay" data-v="${esc(m)}"`)).join('')}</div>`;
-
     const sr = selRoll(), hex = sr && (COLORS[String(sr.color).toLowerCase()] || '#9ca3af');
-    const banner = sr ? `<div class="mt-2 flex items-center gap-3 rounded-2xl border border-white/10 py-3 pl-4 pr-3" style="border-left:6px solid ${hex};background:linear-gradient(90deg,${hex}30 0%,rgba(255,255,255,.04) 70%)">
-        <div class="min-w-0 flex-1">
-          <div class="flex items-center gap-2 text-[12px] font-bold uppercase tracking-[.12em] text-white/80">${dot(sr.color)}${esc(sr.color || 'Roll')} tickets · ${esc(sr.id)}</div>
-          <div class="mt-1 text-[26px] font-bold leading-none tabular-nums text-white">${sr.remaining > 0 ? `Next #${sr.next}` : 'Roll is out'}</div>
-          <div class="mt-1.5 text-[15px] font-semibold tabular-nums text-white/75">Range ${sr.start}–${sr.end} · ${sr.remaining} left</div></div>
-        <button type="button" data-act="editnext" class="flex-none rounded-full border border-white/20 bg-white/[.08] px-3.5 py-2.5 text-[13px] font-semibold text-white" aria-label="Change the first ticket number (pre-torn strip)">✎ Edit</button></div>` : '';
 
-    const pre = S.pre ? `<div class="${card} p-3"><div class="mb-2 flex items-baseline justify-between">${kicker('Pre-torn strip')}<button data-act="pre" class="text-[11px] font-semibold text-white/50">Cancel</button></div>
+    // Roll: one compact line (it is remembered between sales); the chips and pre-torn options open under "Change".
+    const chips = `<div class="-mx-1 flex gap-2 overflow-x-auto px-1 pb-1">${active.map(r =>
+        chip(`<span class="inline-flex items-center gap-2">${dot(r.color)}${esc(r.id)}<span class="font-medium opacity-70">${r.remaining} left</span></span>`, f.roll === r.id, `data-act="roll" data-v="${esc(r.id)}"`, r.remaining <= 0 ? 'opacity-40' : '')).join('')}</div>`;
+    let rollBlock;
+    if (!active.length) {
+        rollBlock = `<div class="${card} px-3.5 py-3 text-[13px] text-white/60">No Active rolls. Mark a roll Active on the Rolls tab of the sheet${S.pre ? '' : ', or use a pre-torn strip'}.</div>`;
+    } else if (!sr) {
+        rollBlock = chips;
+    } else {
+        const low = sr.remaining > 0 && sr.remaining <= 10;
+        rollBlock = `<div class="flex items-center gap-3 rounded-2xl border border-white/10 py-2.5 pl-3.5 pr-2.5" style="border-left:6px solid ${hex};background:linear-gradient(90deg,${hex}30 0%,rgba(255,255,255,.04) 70%)">
+          <div class="min-w-0 flex-1">
+            <div class="text-[22px] font-bold leading-none tabular-nums text-white">${sr.remaining > 0 ? `Next #${sr.next}` : 'Roll is out'}</div>
+            <div class="mt-1.5 flex items-center gap-2 truncate text-[12px] font-semibold text-white/70">${dot(sr.color)}<span class="truncate">${esc(sr.color || 'Roll')} · ${esc(sr.id)} · <span style="${low ? 'color:var(--gold-l)' : ''}">${low ? '⚠ only ' : ''}${sr.remaining} left</span></span></div></div>
+          <button type="button" data-act="rolls" class="flex-none rounded-full border border-white/20 bg-white/[.08] px-4 py-3 text-[13px] font-semibold leading-none text-white" aria-expanded="${S.rollOpen}">${S.rollOpen ? 'Done' : 'Change'}</button></div>
+        ${S.rollOpen ? `<div class="mt-2">${chips}
+          <div class="mt-1 flex flex-wrap gap-2">
+            <button type="button" data-act="editnext" class="${pillBtn} !text-[12px]">✎ Edit next ticket #</button>
+            <button type="button" data-act="pre" class="${pillBtn} !text-[12px]">${S.pre ? 'Cancel pre-torn strip' : 'Selling a pre-torn strip?'}</button></div></div>` : ''}`;
+    }
+
+    const pre = S.pre ? `<div class="${card} p-3"><div class="mb-2 flex items-baseline justify-between">${kicker('Pre-torn strip')}<button data-act="pre" class="px-1 py-1 text-[12px] font-semibold text-white/50">Cancel</button></div>
         <input data-f="preStart" type="text" inputmode="numeric" pattern="[0-9]*" autocomplete="off" placeholder="First ticket #" value="${esc(f.preStart)}" class="field-dark text-[20px] font-bold tabular-nums" aria-label="First ticket number">
         <div id="raffle-prehint" class="mt-2 text-[13px] font-semibold">${preHint(p)}</div></div>`
         : '';
 
-    return `<div class="mt-3.5 grid gap-4">
-      <div>${kicker('Roll')}<div class="mt-2">${rolls}</div>${banner}
-        ${S.pre ? '' : `<button data-act="pre" class="mt-2 text-[12px] font-semibold text-white/50 underline underline-offset-2">Selling a pre-torn strip?</button>`}</div>
+    // Bundles: 3 columns; a selected tile shows ×count top-left and a − top-right (no layout shift, separate targets).
+    const bundles = `<div class="grid grid-cols-3 gap-2">${d.bundles.map(b => {
+        const q = S.custom ? 0 : (S.cart[b.qty] || 0);
+        return `<div class="relative rounded-2xl border ${q ? 'border-transparent' : 'border-white/15 bg-white/[.06] text-white'}" style="${q ? 'box-shadow:0 0 0 2px var(--gold);background:rgba(224,184,99,.14)' : ''}">
+          <button type="button" data-act="badd" data-v="${b.qty}" class="block w-full px-2 py-3.5 text-center" aria-label="Add ${b.qty} ${b.qty === 1 ? 'ticket' : 'tickets'} for ${money(b.price)}">
+            <span class="block text-[24px] font-bold leading-none tabular-nums">${b.qty}<span class="ml-1 text-[11px] font-semibold opacity-60">${b.qty === 1 ? 'ticket' : 'tix'}</span></span>
+            <span class="mt-1.5 block text-[14px] font-semibold ${q ? '' : 'text-white/60'}" style="${q ? 'color:var(--gold-l)' : ''}">${money(q > 1 ? Math.round(b.price * 100) * q / 100 : b.price)}</span></button>
+          ${q > 1 ? `<span class="pointer-events-none absolute left-2.5 top-2 text-[13px] font-bold tabular-nums" style="color:var(--gold-l)">×${q}</span>` : ''}
+          ${q ? `<button type="button" data-act="bdec" data-v="${b.qty}" class="absolute right-0 top-0 flex h-11 w-11 items-center justify-center text-[24px] font-bold leading-none text-white" aria-label="Remove one ${b.qty}-ticket bundle">−</button>` : ''}</div>`;
+    }).join('')}
+      <button type="button" data-act="custom" class="rounded-2xl border px-2 py-3.5 text-center ${S.custom ? 'border-transparent' : 'border-white/15 bg-white/[.06] text-white'}" style="${S.custom ? goldStyle : ''}">
+        <span class="block text-[24px] font-bold leading-none">…</span><span class="mt-1.5 block text-[14px] font-semibold ${S.custom ? '' : 'text-white/60'}">Custom</span></button></div>
+      ${S.custom ? `<div class="mt-2 grid grid-cols-2 gap-2">
+        <input data-f="cq" type="number" inputmode="numeric" min="1" placeholder="Tickets" value="${esc(f.cq)}" class="field-dark" aria-label="Custom quantity">
+        <input data-f="cp" type="number" inputmode="decimal" min="0" step="0.01" placeholder="Price (optional)" value="${esc(f.cp)}" class="field-dark" aria-label="Custom price"></div>` : ''}`;
+
+    // Payment chips only when there are too many methods to be the commit buttons.
+    const pays = payBtns() ? '' : `<div data-sec="pay" style="scroll-margin-top:72px">${kicker('Payment')}<div class="-mx-1 mt-2 flex flex-wrap gap-2 px-1">${d.payments.map(m => chip(esc(m), f.pay === m, `data-act="pay" data-v="${esc(m)}"`)).join('')}</div></div>`;
+
+    // Buyer: only the fields the sheet requires; everything else (and the note) sits behind one link.
+    const showName = d.require.name || S.buyerOpen, showContact = d.require.contact || S.buyerOpen;
+    const contact = showContact ? `<input data-f="phone" type="tel" inputmode="numeric" pattern="[0-9]*" enterkeyhint="next" autocomplete="off" placeholder="Phone (555) 123-4567" value="${esc(f.phone)}" class="field-dark" aria-label="Phone">
+        <div id="raffle-phonehint" class="empty:hidden -mt-1 px-1 text-[12px] font-semibold" style="color:var(--warn)">${hint('phone')}</div>
+        <input data-f="email" type="email" inputmode="email" enterkeyhint="done" autocomplete="off" autocapitalize="off" autocorrect="off" spellcheck="false" placeholder="Email" value="${esc(f.email)}" class="field-dark" aria-label="Email">
+        <div id="raffle-emailquick" class="empty:hidden -mx-1 flex gap-1.5 overflow-x-auto px-1">${emailQuick()}</div>
+        <div id="raffle-emailhint" class="empty:hidden -mt-1 px-1 text-[12px] font-semibold" style="color:var(--warn)">${hint('email')}</div>` : '';
+    const name = showName ? `<input data-f="name" type="text" autocomplete="off" autocapitalize="words" enterkeyhint="next" placeholder="Buyer name${d.require.name ? '' : ' (optional)'}" value="${esc(f.name)}" class="field-dark" aria-label="Buyer name">
+        <div id="raffle-namequick" class="empty:hidden -mx-1 flex gap-1.5 overflow-x-auto px-1">${nameQuick()}</div>` : '';
+    const more = S.buyerOpen
+        ? `<input data-f="notes" type="text" placeholder="Note (optional)" value="${esc(f.notes)}" class="field-dark" aria-label="Notes">`
+        : `<button type="button" data-act="details" class="py-1 text-left text-[12px] font-semibold text-white/50 underline underline-offset-2">${d.require.name && d.require.contact ? '+ Add a note' : '+ Buyer details or note'}</button>`;
+
+    return `<div class="mt-2.5 grid gap-3">
+      <div>${rollBlock}</div>
       ${pre}
-      <div>${kicker('Bundle')}<div class="mt-2">${bundles}</div></div>
-      <div data-sec="pay" style="scroll-margin-top:72px">${kicker('Payment')}<div class="mt-2">${pays}</div></div>
-      <div data-sec="buyer" style="scroll-margin-top:72px"><div class="flex items-baseline justify-between">${kicker('Buyer')}${last.buyer ? `<button data-act="repeat" class="text-[12px] font-semibold" style="color:var(--gold-l)">↺ Same as last: ${esc(last.buyer.name || last.buyer.phone || last.buyer.email)}</button>` : ''}</div>
-        <div class="mt-2 grid gap-2">
-          <input data-f="name" type="text" autocomplete="off" autocapitalize="words" enterkeyhint="next" placeholder="Name${d.require.name ? '' : ' (optional)'}" value="${esc(f.name)}" class="field-dark" aria-label="Buyer name">
-          <input data-f="phone" type="tel" inputmode="numeric" pattern="[0-9]*" enterkeyhint="next" autocomplete="off" placeholder="Phone (555) 123-4567" value="${esc(f.phone)}" class="field-dark" aria-label="Phone">
-          <div id="raffle-phonehint" class="empty:hidden -mt-1 px-1 text-[12px] font-semibold" style="color:var(--warn)">${hint('phone')}</div>
-          <input data-f="email" type="email" inputmode="email" enterkeyhint="done" autocomplete="off" autocapitalize="off" autocorrect="off" spellcheck="false" placeholder="Email" value="${esc(f.email)}" class="field-dark" aria-label="Email">
-          <div id="raffle-emailquick" class="empty:hidden -mx-1 flex gap-1.5 overflow-x-auto px-1">${emailQuick()}</div>
-          <div id="raffle-emailhint" class="empty:hidden -mt-1 px-1 text-[12px] font-semibold" style="color:var(--warn)">${hint('email')}</div>
-          ${S.notes ? `<input data-f="notes" type="text" placeholder="Notes" value="${esc(f.notes)}" class="field-dark" aria-label="Notes">` : `<button data-act="notes" class="text-left text-[12px] font-semibold text-white/50 underline underline-offset-2">+ Add a note</button>`}
-        </div></div>
-      <div id="raffle-sellbar" class="sticky z-40 -mx-1 rounded-3xl p-1.5" style="bottom:calc(96px + env(safe-area-inset-bottom,0px));background:rgba(14,14,16,.82);backdrop-filter:blur(14px);-webkit-backdrop-filter:blur(14px)">${sellBar(p)}</div>
+      ${bundles}
+      ${pays}
+      <div data-sec="buyer" class="grid gap-2" style="scroll-margin-top:72px">${name}${contact}${more}</div>
+      <div id="raffle-sellbar" class="sticky z-40 -mx-1 rounded-3xl p-1.5" style="${stickyStyle}">${sellBar(p)}</div>
     </div>`;
 }
 
@@ -311,7 +329,7 @@ function preHint(p) {
     return pc.error ? `<span style="color:var(--warn)">⚠ ${esc(pc.error)}</span>`
         : `<span style="color:var(--ok)">✔ ${pc.line.roll}: tickets ${pc.line.start}–${pc.line.end}</span>`;
 }
-/** Phone/email problems show once the field has been left (not while still typing); the Sell button blocks either way. */
+/** Phone/email problems show once the field has been left (not while still typing); the Sell buttons block either way. */
 function hint(k) { return S.touched[k] ? esc(k === 'phone' ? phoneErr(S.f.phone) : emailErr(S.f.email)) : ''; }
 /** Tap-to-finish email domains, shown while the address has no complete domain yet. */
 function emailQuick() {
@@ -322,52 +340,78 @@ function emailQuick() {
     const opts = DOMAINS.filter(dm => dm.startsWith(part.toLowerCase()));
     return opts.map(dm => `<button type="button" data-act="domain" data-v="${dm}" data-keepfocus class="${pillBtn} !text-[13px]" style="border-color:var(--gold);color:var(--gold-l);background:rgba(224,184,99,.12)">@${dm}</button>`).join('');
 }
+/** Past buyers matching the typed name: one tap fills the name and the contact. */
+let nameSug = [];
+function nameQuick() {
+    nameSug = [];
+    const q = S.f.name.trim().toLowerCase();
+    if (q.length < 2 || S.f.phone || S.f.email || !S.data) return '';
+    const seen = new Set();
+    for (const s of S.data.sales) {
+        if (s.void || !s.name || !s.name.toLowerCase().startsWith(q)) continue;
+        const key = `${s.name.toLowerCase()}|${digits(s.phone)}|${String(s.email || '').toLowerCase()}`;
+        if (seen.has(key)) continue;
+        seen.add(key);
+        nameSug.push({ name: s.name, phone: s.phone || '', email: s.email || '' });
+        if (nameSug.length >= 3) break;
+    }
+    return nameSug.map((s, i) => `<button type="button" data-act="buyer" data-v="${i}" data-keepfocus class="${pillBtn} !text-[13px]">${esc(s.name)}${s.phone ? ` · ${esc(digits(s.phone).slice(-4))}` : ''}</button>`).join('');
+}
 function updateHints() {
     const set = (id, h) => { const el = document.getElementById(id); if (el) el.innerHTML = h; };
-    set('raffle-prehint', preHint(plan())); set('raffle-phonehint', hint('phone')); set('raffle-emailhint', hint('email')); set('raffle-emailquick', emailQuick());
+    set('raffle-prehint', preHint(plan())); set('raffle-phonehint', hint('phone')); set('raffle-emailhint', hint('email')); set('raffle-emailquick', emailQuick()); set('raffle-namequick', nameQuick());
 }
 
-/** The sticky Sell button and the line above it (what will be written). Updated in place while typing. */
+/** The sticky commit area: one info line, one "what's missing" line, then the Cash/Venmo buttons (or a single Sell button). Updated in place while typing. */
 function sellBar(p) {
-    const label = S.busy ? 'Saving…' : p.ready ? `Sell ${p.priced.qty} ${p.priced.qty === 1 ? 'ticket' : 'tickets'} · ${money(p.priced.price)}` : (p.need[0] ? `Needed: ${p.need.join(' · ')}` : 'Check the sale');
+    const d = S.data, ready = p.ready && !S.busy;
+    const parts = S.custom ? [] : cartParts(d.bundles);
+    const tix = p.priced.error ? '' : `${parts.length > 1 ? parts.map(b => `${b.count}×${b.qty}`).join(' + ') + ' = ' : ''}${p.priced.qty} ${p.priced.qty === 1 ? 'ticket' : 'tickets'}`;
+    const info = [tix, p.note].filter(Boolean).join(' · ');
+    const blocked = !p.ready && !p.need.length && !p.priced.error;
+    const amount = p.priced.error ? '' : money(p.priced.price);
+    const buttons = payBtns()
+        ? `<div class="grid gap-2" style="grid-template-columns:repeat(${d.payments.length},minmax(0,1fr))">${d.payments.map(m => `<button data-act="sell" data-v="${esc(m)}" ${ready ? '' : 'disabled'} class="rounded-[20px] px-2 py-3 text-center leading-none ${ready ? '' : 'opacity-50'}" style="${goldStyle}"><span class="block text-[16px] font-bold">${PAY_ICON(m)}${esc(m)}</span>${amount ? `<span class="mt-1.5 block text-[14px] font-semibold opacity-75">${amount}</span>` : ''}</button>`).join('')}</div>`
+        : `<button data-act="sell" ${ready ? '' : 'disabled'} class="w-full rounded-[20px] px-4 py-4 text-[16px] font-bold leading-none ${ready ? '' : 'opacity-50'}" style="${goldStyle}">${S.busy ? 'Saving…' : p.ready ? `Sell ${p.priced.qty} ${p.priced.qty === 1 ? 'ticket' : 'tickets'} · ${amount}` : 'Sell'}</button>`;
     return `${S.err ? `<div class="mb-1.5 rounded-2xl px-3 py-2 text-[12px] font-semibold text-white" style="background:var(--mar)">${esc(S.err)}</div>` : ''}
-      ${p.summary ? `<div class="mb-1 px-2 text-center text-[13px] font-semibold text-white/85">${esc(p.summary)}</div>` : ''}
-      ${p.note ? `<div class="mb-1.5 px-2 text-center text-[12px] font-semibold ${p.priced.error ? 'text-white/50' : ''}" style="${p.priced.error ? '' : 'color:var(--gold-l)'}">${esc(p.note)}</div>` : ''}
-      <button data-act="sell" ${p.ready && !S.busy ? '' : 'disabled'} class="w-full rounded-[20px] px-4 py-4 text-[16px] font-bold leading-none ${p.ready && !S.busy ? '' : 'opacity-50'}" style="${goldStyle}">${esc(label)}</button>`;
+      ${info ? `<div class="mb-1.5 px-2 text-center text-[12px] font-semibold" style="color:${blocked ? 'var(--warn)' : 'var(--gold-l)'}">${esc(info)}</div>` : ''}
+      ${!p.ready && p.need[0] ? `<div class="mb-1.5 px-2 text-center text-[12px] font-semibold text-white/55">${esc(p.need[0])}</div>` : ''}
+      ${buttons}`;
 }
 function updateSellBar() { const el = document.getElementById('raffle-sellbar'); if (el) el.innerHTML = sellBar(plan()); }
 
 const receiptOf = (r) => { const e = Store.entry(r.clientId); return e && e.receipt ? e.receipt : `Local #${e ? e.seq : ''}`; };
-/** Whether this sale has reached the sheet yet, in words the seller can act on. */
+/** Only problems are shown: a normal sale is silently uploaded (a small ⏱ by the receipt says it is still on the way). */
 function syncNote(r) {
     const e = Store.entry(r.clientId);
     const warn = (t) => `<div class="rounded-2xl px-3.5 py-3 text-[13px] font-semibold" style="background:rgba(224,184,99,.16);color:var(--gold-l)">${t}</div>`;
     if (!e) return '';
-    if (e.status === 'failed') return warn(`⚠ The master list refused this sale: ${esc(e.error)} The tickets above are still the buyer's; see the Device tab.`);
-    if (e.status !== 'synced') return `<div class="rounded-2xl px-3.5 py-3 text-[13px] font-semibold text-white/70" style="background:rgba(255,255,255,.06)">Saved on this phone · will sync to the master list when there is a connection.</div>`;
+    if (e.status === 'failed') return warn(`⚠ This sale could not be uploaded: ${esc(e.error)} The tickets above are still the buyer's; see Details on the Sales tab.`);
+    if (e.status !== 'synced') return Store.getState().online === false ? `<div class="rounded-2xl px-3.5 py-3 text-[13px] font-semibold text-white/70" style="background:rgba(255,255,255,.06)">Saved on this phone. It will upload when you are back online.</div>` : '';
     return (e.conflicts && e.conflicts.length ? warn(`⚠ Another sale already used some of these tickets (${e.conflicts.map((c) => esc(`${c.roll} ${c.start}–${c.end}, ${c.receipt}`)).join('; ')}). Tell the tournament manager.`) : '')
-        + (e.backup === 'unavailable' ? warn('⚠ Saved to the master list, but the backup copy was unavailable. Tell the tournament manager.') : '');
+        + (e.backup === 'unavailable' ? warn('⚠ Saved to the sheet, but the backup copy was unavailable. Tell the tournament manager.') : '');
 }
 
 function renderResult() {
-    const r = S.result;
-    return `<div class="mt-4 grid gap-3">
-      <div class="${card} p-4 text-center" style="border-color:rgba(46,158,99,.5);background:rgba(46,158,99,.12)">
-        <div class="text-[34px] leading-none" style="color:var(--ok)">✔</div>
-        <div class="mt-2 text-[20px] font-bold text-white">Sold · ${esc(receiptOf(r))}</div>
-        <div class="mt-1 text-[14px] text-white/70">${r.qty} ${r.qty === 1 ? 'ticket' : 'tickets'} · ${money(r.price)} · ${esc(r.pay)}</div></div>
-      <div>${kicker('Tear these tickets')}<div class="mt-2 grid gap-2">${r.lines.map(l => `<div class="${card} flex items-center justify-between gap-3 px-4 py-3.5">
+    const r = S.result, e = Store.entry(r.clientId), uploading = e && e.status === 'pending';
+    return `<div class="mt-2.5 grid gap-3">
+      <div class="${card} flex items-center gap-3 px-4 py-3" style="border-color:rgba(46,158,99,.5);background:rgba(46,158,99,.12)">
+        <span class="text-[26px] leading-none" style="color:var(--ok)">✔</span>
+        <div class="min-w-0 flex-1"><div class="truncate text-[16px] font-bold text-white">Sold · ${esc(receiptOf(r))}${uploading ? ' <span class="opacity-60" title="Uploading">⏱</span>' : ''}</div>
+          <div class="text-[13px] text-white/70">${r.qty} ${r.qty === 1 ? 'ticket' : 'tickets'} · ${money(r.price)} · ${esc(r.pay)}</div></div></div>
+      <div>${kicker('Tear these tickets')}<div class="mt-2 grid gap-2">${r.lines.map(l => `<div class="${card} flex items-center justify-between gap-3 px-4 py-4">
         <span class="flex items-center gap-2 text-[13px] font-semibold text-white/70">${dot(l.color)}${esc(l.roll)}</span>
-        <span class="text-[24px] font-bold tabular-nums text-white">${l.start === l.end ? l.start : `${l.start}–${l.end}`}</span></div>`).join('')}</div></div>
+        <span class="text-[36px] font-bold leading-none tabular-nums text-white">${l.start === l.end ? l.start : `${l.start}–${l.end}`}</span></div>`).join('')}</div></div>
       ${r.split ? `<div class="rounded-2xl px-3.5 py-3 text-[13px] font-semibold" style="background:rgba(224,184,99,.16);color:var(--gold-l)">⚠ That roll ran out, so the sale is split. Tear the rest from the next roll.</div>` : ''}
       ${syncNote(r)}
       ${r.noRollLeft ? `<div class="rounded-2xl px-3.5 py-3 text-[13px] font-semibold" style="background:rgba(224,184,99,.16);color:var(--gold-l)">⚠ No Active roll left. Add one on the Rolls tab of the sheet.</div>` : ''}
-      <button data-act="next" class="w-full rounded-[20px] px-4 py-4 text-[16px] font-bold leading-none" style="${goldStyle}">Next sale</button>
+      <div class="sticky z-40 -mx-1 rounded-3xl p-1.5" style="${stickyStyle}"><button data-act="next" class="w-full rounded-[20px] px-4 py-4 text-[16px] font-bold leading-none" style="${goldStyle}">Next sale</button></div>
     </div>`;
 }
 
-function submit() {
+function submit(pay) {
     if (S.busy) return;
+    if (pay && payBtns()) S.f.pay = pay;
     const p = plan();
     if (!p.ready) return;
     const f = S.f;
@@ -381,11 +425,12 @@ function submit() {
     S.err = '';
     S.data = Store.view();
     S.result = r;
-    saveLast({ roll: r.suggestedRoll || f.roll, pay: f.pay, buyer: { name: f.name, phone: f.phone, email: f.email } });
-    // Fresh form for the next buyer; the roll, payment and bundle style carry over.
+    saveLast({ roll: r.suggestedRoll || f.roll, pay: f.pay });
+    // Fresh form for the next buyer; the roll and payment carry over.
     S.cart = {};
     Object.assign(S.f, { roll: r.suggestedRoll || S.f.roll, cq: '', cp: '', preStart: '', name: '', phone: '', email: '', notes: '' });
-    S.custom = false; S.notes = false; S.pre = false; S.touched = touchedBlank();
+    S.custom = false; S.buyerOpen = false; S.rollOpen = false; S.pre = false; S.touched = touchedBlank();
+    window.scrollTo({ top: 0 });
     render();
 }
 
@@ -408,7 +453,7 @@ function saleRow(s) {
     return `<div class="${card} ${s.void ? 'opacity-50' : ''}">
       <button data-act="open" data-v="${esc(s.receipt)}" class="flex w-full items-center justify-between gap-3 px-3.5 py-3 text-left">
         <span class="min-w-0"><span class="block truncate text-[14px] font-semibold text-white ${s.void ? 'line-through' : ''}">${esc(s.name || s.phone || s.email || '(no name)')}</span>
-          <span class="block truncate text-[12px] text-white/50">${esc(s.receipt)} · ${esc(fmtTime(s.t))} · ${esc(s.seller)}${s.local ? (s.status === 'failed' ? ' · <b style="color:#ff9d8e">NOT SAVED</b>' : ' · <b style="color:var(--gold-l)">on phone, syncing</b>') : ''}${s.conflicts && s.conflicts.length ? ' · <b style="color:#ff9d8e">check tickets</b>' : ''}</span></span>
+          <span class="block truncate text-[12px] text-white/50">${esc(s.receipt)} · ${esc(fmtTime(s.t))} · ${esc(s.seller)}${s.local ? (s.status === 'failed' ? ' · <b style="color:#ff9d8e">NOT SAVED</b>' : ' · <b style="color:var(--gold-l)">waiting to upload</b>') : ''}${s.conflicts && s.conflicts.length ? ' · <b style="color:#ff9d8e">check tickets</b>' : ''}</span></span>
         <span class="flex-none text-right"><span class="block text-[15px] font-bold tabular-nums text-white">${money(s.price)}</span><span class="block text-[11px] text-white/50">${s.qty} tix · ${esc(s.pay)}</span></span></button>
       ${open ? `<div class="grid gap-1.5 border-t border-white/10 px-3.5 py-3 text-[13px] text-white/75">
         ${s.void ? '<div class="font-semibold" style="color:var(--warn)">Voided</div>' : ''}
@@ -497,7 +542,7 @@ function deviceRow(e) {
     const bad = e.status === 'failed', warn = e.conflicts && e.conflicts.length;
     const badge = bad ? '<span class="rounded-full px-2 py-0.5 text-[10px] font-bold uppercase" style="background:rgba(217,80,60,.25);color:#ff9d8e">Not saved</span>'
         : e.status === 'pending' ? '<span class="rounded-full px-2 py-0.5 text-[10px] font-bold uppercase" style="background:rgba(224,184,99,.18);color:var(--gold-l)">Waiting</span>'
-        : '<span class="rounded-full px-2 py-0.5 text-[10px] font-bold uppercase" style="background:rgba(46,158,99,.2);color:#7be0a9">Synced</span>';
+        : '<span class="rounded-full px-2 py-0.5 text-[10px] font-bold uppercase" style="background:rgba(46,158,99,.2);color:#7be0a9">Uploaded</span>';
     return `<div class="${card} px-3.5 py-3 ${e.handled ? 'opacity-60' : ''}">
       <div class="flex items-center justify-between gap-2"><span class="min-w-0 truncate text-[14px] font-semibold text-white">${esc(e.receipt || 'Local #' + e.seq)} · ${esc(e.name || e.phone || e.email || '(no name)')}</span>${badge}</div>
       <div class="mt-1 text-[12px] text-white/55">${esc(new Date(e.t).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' }))} · ${e.qty} tix · ${money(e.price)} · ${esc(e.pay)}</div>
@@ -510,15 +555,16 @@ function deviceRow(e) {
 function renderDevice() {
     const all = Store.deviceEntries().slice().reverse(), waiting = all.filter((e) => e.status !== 'synced');
     const st = Store.getState();
-    return `<div class="mt-3.5 grid gap-3">
-      <div class="${card} px-4 py-3.5 text-[13px] text-white/75">Every sale is saved on this phone the moment you tap Sell, then sent to the master list automatically.
-        If the internet drops you can keep selling; nothing is lost. ${waiting.length ? `<b class="text-white">${waiting.length} not on the master list yet.</b>` : 'Everything on this phone is on the master list.'}</div>
+    return `<div class="grid gap-3">
+      <button data-act="tab" data-v="sell" class="justify-self-start px-1 py-1 text-[13px] font-semibold text-white/60">← Back to selling</button>
+      <div class="${card} px-4 py-3.5 text-[13px] text-white/75">Every sale is saved on this phone the moment you tap Sell, then uploaded to the raffle sheet automatically.
+        If the internet drops you can keep selling; nothing is lost. ${waiting.length ? `<b class="text-white">${waiting.length} not uploaded yet.</b>` : 'Everything on this phone is uploaded.'}</div>
       <div class="flex flex-wrap gap-2">
-        <button data-act="dsync" class="${pillBtn}" ${st.syncing ? 'disabled' : ''}>${st.syncing ? '<span class="rf-spin"></span> Syncing…' : '↻ Sync now'}</button>
+        <button data-act="dsync" class="${pillBtn}" ${st.syncing ? 'disabled' : ''}>${st.syncing ? '<span class="rf-spin"></span> Uploading…' : '↻ Upload now'}</button>
         <button data-act="dcsv" class="${pillBtn}" ${all.length ? '' : 'disabled'}>⬇ Download all (CSV)</button>
-        <button data-act="dcopy" data-v="tsv" class="${pillBtn}" ${waiting.length ? '' : 'disabled'}>Copy unsynced for master list</button>
-        <button data-act="dcopy" data-v="text" class="${pillBtn}" ${waiting.length ? '' : 'disabled'}>Copy unsynced as text</button></div>
-      ${waiting.length ? `<div>${kicker('Not on the master list yet')}<div class="mt-2 grid gap-2">${waiting.map(deviceRow).join('')}</div></div>` : ''}
+        <button data-act="dcopy" data-v="tsv" class="${pillBtn}" ${waiting.length ? '' : 'disabled'}>Copy not-uploaded (for the sheet)</button>
+        <button data-act="dcopy" data-v="text" class="${pillBtn}" ${waiting.length ? '' : 'disabled'}>Copy not-uploaded as text</button></div>
+      ${waiting.length ? `<div>${kicker('Not uploaded yet')}<div class="mt-2 grid gap-2">${waiting.map(deviceRow).join('')}</div></div>` : ''}
       <div>${kicker('Sold on this phone')}<div class="mt-2 grid gap-2">${all.filter((e) => e.status === 'synced').map(deviceRow).join('') || '<div class="py-6 text-center text-sm text-white/50">Nothing yet.</div>'}</div></div>
     </div>`;
 }
@@ -543,6 +589,17 @@ async function copy(text, okMsg) {
 
 /* ---------- shell ---------- */
 
+const TABS = [['sell', 'Sell'], ['sales', 'Sales'], ['report', 'Report']];
+
+/** "Sales as of" + refresh, only where stale data matters (Sales / Report), plus a pointer to anything not uploaded yet. */
+function asOfRow() {
+    const n = Store.pendingCount();
+    return `<div class="mt-2.5 flex items-center gap-2">
+        <span class="min-w-0 flex-1 truncate text-[11px] text-white/45">${esc(stamp())}</span>
+        ${n ? `<button data-act="tab" data-v="device" class="flex-none rounded-full px-3 py-2 text-[11px] font-bold" style="background:rgba(224,184,99,.18);color:var(--gold-l)">⏱ ${n} waiting · Details</button>` : ''}
+        <button data-act="refresh" aria-label="Refresh" title="Refresh" class="flex h-9 w-9 flex-none items-center justify-center rounded-full border border-white/20 bg-white/[.06] text-[15px] leading-none text-white/75" ${S.loading ? 'disabled' : ''}>${S.loading ? '<span class="rf-spin" style="margin:0"></span>' : '↻'}</button></div>`;
+}
+
 function render() {
     const el = body(); if (!el) return;
     if (S.error && !S.data) {
@@ -554,20 +611,19 @@ function render() {
 
     const keep = document.activeElement && document.activeElement.id === 'raffle-q';
     const inner = S.tab === 'sell' ? (S.result ? renderResult() : renderSell()) : S.tab === 'sales' ? renderSales() : S.tab === 'device' ? renderDevice() : renderReport();
-    // Tabs first, then ONE status row: sync pill, "as of" time, refresh icon.
-    el.innerHTML = `<div class="grid grid-cols-4 gap-1 rounded-[18px] p-1" style="background:rgba(255,255,255,.06)">${[['sell', 'Sell'], ['sales', 'Sales'], ['report', 'Report'], ['device', 'Device']].map(([k, l]) =>
-        `<button data-act="tab" data-v="${k}" class="rounded-[14px] py-2 text-[13px] font-semibold ${S.tab === k ? '' : 'text-white/65'}" style="${S.tab === k ? goldStyle : ''}">${l}</button>`).join('')}</div>
-      <div class="mt-2 flex items-center gap-2">
-        <div id="raffle-status" class="flex min-w-0 flex-wrap items-center gap-y-1">${statusHtml()}</div>
-        <span class="ml-auto flex-none whitespace-nowrap text-[11px] text-white/40" title="${esc(stamp())}">${esc(stamp(true))}</span>
-        <button data-act="refresh" aria-label="Refresh" title="Refresh" class="flex h-8 w-8 flex-none items-center justify-center rounded-full border border-white/20 bg-white/[.06] text-[15px] leading-none text-white/75" ${S.loading ? 'disabled' : ''}>${S.loading ? '<span class="rf-spin" style="margin:0"></span>' : '↻'}</button>
-      </div>
-      <div class="mt-2.5">${inner}</div>`;
+    // Tabs with the status dot at the end (same as concessions); sync details live behind the dot.
+    el.innerHTML = `${Store.isPersistent() ? '' : `<div class="mb-2 rounded-2xl px-3 py-2 text-[12px] font-semibold text-white" style="background:var(--mar)">This browser can't keep data (private mode?). Sales are NOT kept if this tab closes.</div>`}
+      <div class="flex items-stretch gap-1.5 rounded-[18px] p-1.5" style="background:rgba(255,255,255,.06)">
+        <div class="grid min-w-0 flex-1 grid-cols-3 gap-1.5">${TABS.map(([k, l]) =>
+        `<button data-act="tab" data-v="${k}" class="rounded-[13px] py-2.5 text-[13px] font-semibold ${S.tab === k ? '' : 'text-white/65'}" style="${S.tab === k ? goldStyle : ''}">${l}</button>`).join('')}</div>
+        <div id="raffle-status" class="flex flex-none items-stretch">${statusHtml()}</div></div>
+      ${S.tab === 'sales' || S.tab === 'report' ? asOfRow() : ''}
+      <div class="${S.tab === 'sell' ? '' : 'mt-2.5'}">${inner}</div>`;
 
     if (keep) { const q = document.getElementById('raffle-q'); if (q) { q.focus(); q.setSelectionRange(q.value.length, q.value.length); } }
 }
 
-/* ---------- guided flow: bundle -> payment -> buyer (name, phone, email) ---------- */
+/* ---------- guided flow: bundle -> buyer -> tap how they paid ---------- */
 
 /** Scrolls a section of the sell form into view, and optionally puts the cursor in one of its fields (opens the keyboard). */
 function goTo(sec, field) {
@@ -577,6 +633,7 @@ function goTo(sec, field) {
     if (i && !i.value) i.focus({ preventScroll: true });
 }
 const NEXT_FIELD = { name: 'phone', phone: 'email' };
+const focusField = (k) => { const i = body() && body().querySelector(`[data-f="${k}"]`); if (i) i.focus(); return i; };
 
 /* ---------- events ---------- */
 
@@ -591,24 +648,39 @@ function wire() {
         let after = null;
         switch (act) {
             case 'refresh': refreshNow(); return;
-            case 'tab': S.tab = v; S.open = null; S.shown = PAGE; break;
-            case 'roll': f.roll = v; saveLast({ roll: v }); dirty(); break;
+            case 'status': {
+                const n = Store.pendingCount();
+                toast(statusInfo().label, false, n || Store.attention().length ? { label: 'Details', run: () => { S.tab = 'device'; render(); } } : null);
+                return;
+            }
+            case 'tab': S.tab = v; S.open = null; S.shown = PAGE; window.scrollTo({ top: 0 }); break;
+            case 'roll': f.roll = v; S.rollOpen = false; saveLast({ roll: v }); dirty(); break;
+            case 'rolls': S.rollOpen = !S.rollOpen; break;
             case 'badd': if (S.custom) { S.custom = false; f.cq = ''; f.cp = ''; } S.cart[v] = Math.min(99, (S.cart[v] || 0) + 1); dirty(); break;
             case 'bdec': S.cart[v] = Math.max(0, (S.cart[v] || 0) - 1); if (!S.cart[v]) delete S.cart[v]; dirty(); break;
             case 'custom': S.custom = !S.custom; if (S.custom) S.cart = {}; else { f.cq = ''; f.cp = ''; } dirty(); break;
             case 'pay': f.pay = v; saveLast({ pay: v }); dirty(); after = () => goTo('buyer', 'name'); break;
-            case 'editnext': { const r = selRoll(); S.pre = true; f.preStart = r && r.remaining > 0 ? String(r.next) : ''; dirty(); render(); const i = body().querySelector('[data-f="preStart"]'); if (i) { i.focus(); i.select(); } return; }
+            case 'editnext': { const r = selRoll(); S.pre = true; S.rollOpen = false; f.preStart = r && r.remaining > 0 ? String(r.next) : ''; dirty(); render(); const i = body().querySelector('[data-f="preStart"]'); if (i) { i.focus(); i.select(); } return; }
             case 'domain': { f.email = f.email.split('@')[0] + '@' + v; const i = body().querySelector('[data-f="email"]'); if (i) i.value = f.email; dirty(); updateHints(); updateSellBar(); return; }
-            case 'pre': S.pre = !S.pre; f.preStart = ''; f.preColor = ''; dirty(); break;
-            case 'notes': S.notes = true; break;
-            case 'repeat': { const l = loadLast().buyer || {}; Object.assign(f, { name: l.name || '', phone: l.phone || '', email: l.email || '' }); dirty(); break; }
-            case 'sell': submit(); return;
+            case 'pre': S.pre = !S.pre; S.rollOpen = false; f.preStart = ''; f.preColor = ''; dirty(); break;
+            case 'details': S.buyerOpen = true; after = () => { const first = ['name', 'phone', 'email'].find((k) => { const i = body().querySelector(`[data-f="${k}"]`); return i && !i.value; }); if (first) focusField(first); }; break;
+            case 'buyer': {
+                const s = nameSug[Number(v)];
+                if (s) {
+                    f.name = s.name; f.phone = s.phone ? fmtPhone(s.phone) : ''; f.email = s.email;
+                    if (s.phone || s.email) S.buyerOpen = true;
+                    S.touched = touchedBlank();
+                    if (document.activeElement && document.activeElement.blur) document.activeElement.blur();
+                }
+                dirty(); break;
+            }
+            case 'sell': submit(v); return;
             case 'dsync': syncNow(); return;
             case 'dcsv': download(`raffle-sales-${seller().replace(/\W+/g, '_') || 'phone'}-${Date.now()}.csv`, Store.exportCsv(), 'text/csv'); toast(`Downloaded ${Store.deviceEntries().length} sales`); return;
             case 'dcopy': copy(v === 'tsv' ? Store.exportTsv(true) : Store.exportText(true), 'Copied'); return;
             case 'dretry': Store.retry(v); return;
             case 'dhandled': Store.markHandled(v); return;
-            case 'next': S.result = null; break;
+            case 'next': S.result = null; window.scrollTo({ top: 0 }); break;
             case 'mine': S.mine = v === '1'; S.shown = PAGE; break;
             case 'open': S.open = S.open === v ? null : v; updateList(); return;
             case 'more': S.shown += PAGE; updateList(); return;
@@ -624,27 +696,28 @@ function wire() {
         if (t.id === 'raffle-q') { S.q = t.value; S.open = null; S.shown = PAGE; updateList(); return; }
         const k = t.getAttribute && t.getAttribute('data-f');
         if (!k) return;
+        const f = S.f;
         let val = t.value;
         if (k === 'phone') { val = fmtPhone(val); t.value = val; }
         else if (k === 'preStart') { val = digits(val).replace(/^0+/, ''); t.value = val; }
         else if (k === 'email') { val = val.replace(/\s/g, ''); if (val !== t.value) t.value = val; }
-        const hadAll = k === 'phone' && digits(S.f.phone).length === 10;
-        S.f[k] = val; dirty(); updateHints(); updateSellBar();
+        const hadAll = k === 'phone' && digits(f.phone).length === 10;
+        f[k] = val; dirty(); updateHints(); updateSellBar();
         // A complete phone number moves straight on to the email.
-        if (k === 'phone' && !hadAll && digits(val).length === 10) { const n = body().querySelector('[data-f="email"]'); if (n) n.focus(); }
+        if (k === 'phone' && !hadAll && digits(val).length === 10) focusField('email');
     });
-    // The keyboard's Next / Enter key moves name -> phone -> email.
+    // The keyboard's Next / Enter key moves name -> phone -> email, then puts the keyboard away.
     el.addEventListener('keydown', (e) => {
         if (e.key !== 'Enter') return;
         const k = e.target.getAttribute && e.target.getAttribute('data-f'), nx = NEXT_FIELD[k];
         if (!nx) { if (k === 'email') e.target.blur(); return; }
         e.preventDefault();
-        const n = body().querySelector(`[data-f="${nx}"]`); if (n) n.focus();
+        const n = body().querySelector(`[data-f="${nx}"]`); if (n) n.focus(); else e.target.blur();
     });
-    // Keep the keyboard up when tapping a quick-email chip.
     el.addEventListener('focusout', (e) => {
         const k = e.target.getAttribute && e.target.getAttribute('data-f');
         if (k === 'phone' || k === 'email') { S.touched[k] = true; updateHints(); }
     });
+    // Keep the keyboard up when tapping a quick-email / past-buyer chip.
     el.addEventListener('mousedown', (e) => { if (e.target.closest('[data-keepfocus]')) e.preventDefault(); });
 }
