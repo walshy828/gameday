@@ -617,8 +617,54 @@ function initializeSubDivisionFilter() {
 /**
  * Toggles between the Standings, Schedule, and Admin views.
  */
+// Page name shown in the app header; `back` marks a sub-page reached from another page.
+const PAGES = {
+    'standings': { title: 'Standings' },
+    'schedule': { title: 'Schedule' },
+    'playoffs': { title: 'Playoffs' },
+    'info': { title: 'Tournament info' },
+    'chat': { title: 'Referee chat' },
+    'admin-entry': { title: 'Tournament admin' },
+    'roster': { title: 'Roster' },
+    'raffle': { title: 'Raffle' },
+    'concessions': { title: 'Concessions' },
+    'settings': { title: 'Setup', back: 'admin-entry', backLabel: 'Back to Admin' },
+    'game-manager': { title: 'Game management', back: 'admin-entry', backLabel: 'Back to Admin' },
+    'raffle-backup': { title: 'Raffle backup', back: 'settings', backLabel: 'Back to Setup' }
+};
+
+function updateHeaderForView(prev, view) {
+    const page = PAGES[view] || { title: 'Dodgeball Tournament' };
+    const titleEl = document.getElementById('header-title');
+    const logo = document.getElementById('header-logo');
+    const backBtn = document.getElementById('header-back');
+    if (titleEl && titleEl.textContent !== page.title) {
+        titleEl.textContent = page.title;
+        if (prev && prev !== view) restartAnimation(titleEl, 'title-enter');
+    }
+    if (logo && backBtn) {
+        logo.classList.toggle('hidden', !!page.back);
+        backBtn.classList.toggle('hidden', !page.back);
+        backBtn.classList.toggle('inline-flex', !!page.back);
+        backBtn.dataset.target = page.back || '';
+        backBtn.setAttribute('aria-label', page.backLabel || 'Back');
+        if (!backBtn.dataset.wired) {
+            backBtn.dataset.wired = '1';
+            backBtn.addEventListener('click', () => { if (backBtn.dataset.target) switchView(backBtn.dataset.target); });
+        }
+    }
+}
+
+function restartAnimation(el, cls) {
+    el.classList.remove(cls);
+    void el.offsetWidth;
+    el.classList.add(cls);
+}
+
 function switchView(view) {
+    const prevView = App.state.currentView;
     App.state.currentView = view;
+    updateHeaderForView(prevView, view);
     document.documentElement.classList.toggle('chat-locked', view === 'chat');
     //gtag('event', 'switch_view', {
     //                view: view
@@ -658,6 +704,12 @@ function switchView(view) {
 
         if (v === view) {
             viewEl.classList.remove('hidden');
+            if (prevView && prevView !== view) {
+                // Going deeper (into a sub-page) slides in from the right; coming back, from the left.
+                const dx = PAGES[view]?.back ? '14px' : PAGES[prevView]?.back ? '-14px' : '0px';
+                viewEl.style.setProperty('--enter-x', dx);
+                restartAnimation(viewEl, 'screen-enter');
+            }
             if (tab) {
                 const adminStyled = v === 'admin-entry' || v === 'settings' || v === 'game-manager' || v === 'roster' || v === 'raffle' || v === 'concessions';
                 tab.classList.add(adminStyled ? 'tab-admin-active' : 'tab-active');

@@ -43,7 +43,30 @@
   }
   /* Title row: 700 26px title left, 600 10px/.1em kicker right (design §6–§11) */
   .screen-head {
-    @apply flex items-baseline justify-between gap-2.5 px-1;
+    @apply flex items-baseline justify-end gap-2.5 px-1;
+  }
+  /* The page name lives in the app header (see navigation.js PAGES). Dynamic
+     screens still render an <h2 class="screen-title"> next to their actions;
+     hide it unless it carries extra info (data-keep, e.g. a team name). */
+  .screen-title:not([data-keep]) {
+    display: none;
+  }
+  .screen-head:has(> .screen-title[data-keep]) {
+    @apply justify-between;
+  }
+  /* Page change: header title fades, content slides in from the direction of travel */
+  @keyframes screen-in {
+    from { opacity: 0; transform: translateX(var(--enter-x, 0)); }
+    to   { opacity: 1; transform: none; }
+  }
+  @keyframes title-in {
+    from { opacity: 0; transform: translateY(4px); }
+    to   { opacity: 1; transform: none; }
+  }
+  .screen-enter { animation: screen-in .22s ease-out; }
+  .title-enter { animation: title-in .2s ease-out; }
+  @media (prefers-reduced-motion: reduce) {
+    .screen-enter, .title-enter { animation: none; }
   }
   .screen-title {
     @apply m-0 text-[26px] font-bold leading-[1.05] tracking-[-.03em] text-[#F5F5F6];

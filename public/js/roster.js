@@ -70,8 +70,10 @@ const goldStyle = 'background:linear-gradient(135deg,var(--gold) 0%,var(--gold-d
 const dangerStyle = 'background:var(--mar);color:#fff';
 const kicker = (t) => `<div class="text-[10px] tracking-[.16em] font-semibold text-white/50 uppercase">${esc(t)}</div>`;
 
+// The page name lives in the app header; only a team's own name is worth repeating in-page.
 function head(title, right) {
-    return `<div class="screen-head"><h2 class="screen-title">${esc(title)}</h2>${right || ''}</div>`;
+    const keep = title !== 'Roster' ? ' data-keep' : '';
+    return `<div class="screen-head"><h2 class="screen-title"${keep}>${esc(title)}</h2>${right || ''}</div>`;
 }
 
 /* ---------- loading ---------- */

@@ -8,7 +8,7 @@
 //   background. They are versioned URLs, so this is safe.
 // - Never touched: /api/*, /socket.io/*, and any non-GET or non-asset request (live data always goes to the network).
 // The page tells us which resources it loaded (see offline.js) so everything needed is saved after the first visit.
-const CACHE = 'gameday-shell-v1';
+const CACHE = 'gameday-shell-v2';
 const NETWORK_TIMEOUT_MS = 3000;
 
 self.addEventListener('install', () => self.skipWaiting());
@@ -31,7 +31,8 @@ function networkFirst(request, key) {
       const hit = await fallback();
       if (hit && !settled) { settled = true; resolve(hit); }
     }, NETWORK_TIMEOUT_MS);
-    fetch(request).then(async (res) => {
+    // 'no-cache' = always revalidate with the server, so a new deploy isn't hidden behind the 5-minute HTTP cache.
+    fetch(request, { cache: 'no-cache' }).then(async (res) => {
       clearTimeout(timer);
       if (res && res.ok) { const c = await caches.open(CACHE); c.put(key || request, res.clone()); }
       if (!settled) { settled = true; resolve(res); }

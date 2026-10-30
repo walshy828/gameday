@@ -4,7 +4,7 @@
 import * as Store from './concessionsStore.js';
 import { renderReport, resetReport } from './concessionsReport.js';
 import { renderItems, resetItems } from './concessionsItems.js';
-import { esc, money, moneyShort, cents, fmtTime, fmtDay, dayKey, card, pillBtn, goldStyle, kicker, chip, toast, catColor, venmoUrl, qrBox } from './concessionsUi.js';
+import { esc, money, moneyShort, cents, fmtTime, fmtDay, dayKey, card, pillBtn, goldStyle, kicker, chip, toast, catColor, venmoUrl, qrBox, stepper } from './concessionsUi.js';
 
 const S = {
     tab: 'sell', cart: {}, step: 'cart',          // step: cart → pay → done
@@ -31,30 +31,33 @@ const cartCount = (lines) => lines.reduce((a, l) => a + l.qty, 0);
 
 /* ---------- status pill ---------- */
 
+function statusInfo() {
+    const st = Store.getState(), n = Store.pendingCount();
+    if (st.authProblem) return { label: 'Sign in again to sync', color: 'var(--mar)' };
+    if (st.online === false) return { label: n ? `Offline · ${n} waiting to sync` : 'Offline · sales saved on this phone', color: '#b45309' };
+    if (st.syncing || n) return { label: n ? `Syncing ${n}…` : 'Syncing…', color: '#b45309' };
+    if (st.online === true) return { label: 'Online · all synced', color: '#15803d' };
+    return { label: 'Checking connection…', color: '#52525b' };
+}
+
+/** Just a colored dot (plus a count when something is waiting) at the end of the tab bar; tap it for the full message. */
 function statusHtml() {
-    const st = Store.getState(), n = Store.pendingCount(), failed = st.failed.length;
-    let label, color;
-    if (st.authProblem) { label = 'Sign in again to sync'; color = 'var(--mar)'; }
-    else if (st.online === false) { label = n ? `Offline · ${n} waiting to sync` : 'Offline · sales saved on this phone'; color = '#b45309'; }
-    else if (st.syncing || n) { label = n ? `Syncing ${n}…` : 'Syncing…'; color = '#b45309'; }
-    else if (st.online === true) { label = 'Online · all synced'; color = '#15803d'; }
-    else { label = 'Checking connection…'; color = '#52525b'; }
-    return `<span class="inline-flex items-center gap-1.5 rounded-full px-3 py-1.5 text-[11px] font-semibold text-white" style="background:${color}"><span class="h-1.5 w-1.5 rounded-full bg-white/80"></span>${esc(label)}</span>
-      ${failed ? `<button data-act="failed" class="ml-1.5 rounded-full px-3 py-1.5 text-[11px] font-bold text-white" style="background:var(--mar)">${failed} not saved</button>` : ''}`;
+    const { label, color } = statusInfo(), n = Store.pendingCount(), failed = Store.getState().failed.length;
+    return `<button type="button" data-act="status" class="flex h-full min-w-[40px] items-center justify-center gap-1 rounded-[13px] px-2 text-[12px] font-bold tabular-nums text-white" style="background:${color}" aria-label="${esc(label)}" title="${esc(label)}">${n ? n : '<span class="h-2 w-2 rounded-full bg-white/90"></span>'}</button>
+      ${failed ? `<button data-act="failed" class="ml-1 rounded-[13px] px-2.5 text-[11px] font-bold text-white" style="background:var(--mar)">${failed} not saved</button>` : ''}`;
 }
 function updateStatus() { const el = document.getElementById('cn-status'); if (el) el.innerHTML = statusHtml(); }
 
 /* ---------- SELL ---------- */
 
-/** One tap on the tile adds one; the gold badge shows the quantity and the − button takes one off. */
+/** Tap the tile to add one; once it is in the order a − qty + stepper appears under the name (no overlap). */
 function tile(it) {
     const q = S.cart[it.id] || 0;
-    return `<div class="${card} relative ${q ? 'ring-1 ring-white/40' : ''}" style="min-height:68px">
-      <button type="button" data-act="add" data-v="${it.id}" class="block h-full w-full px-3 py-2.5 text-left" style="min-height:68px" aria-label="Add ${esc(it.name)}">
-        <div class="truncate text-[15px] font-semibold leading-tight text-white" style="${q ? 'padding-right:34px' : ''}">${esc(it.name)}</div>
-        <div class="mt-0.5 text-[13px] font-semibold tabular-nums text-white/55">${moneyShort(it.price)}</div></button>
-      ${q ? `<span class="pointer-events-none absolute right-2 top-2 flex h-7 min-w-[28px] items-center justify-center rounded-full px-1.5 text-[14px] font-bold tabular-nums" style="${goldStyle}">${q}</span>
-      <button type="button" data-act="dec" data-v="${it.id}" class="absolute bottom-1.5 right-1.5 flex h-8 w-11 items-center justify-center rounded-full border border-white/25 bg-white/10 text-[20px] font-bold leading-none text-white" aria-label="Remove one ${esc(it.name)}">−</button>` : ''}</div>`;
+    return `<div class="${card} ${q ? 'ring-1' : ''}" style="${q ? 'box-shadow:0 0 0 1px var(--gold)' : ''}">
+      <button type="button" data-act="add" data-v="${it.id}" class="block w-full px-3 py-2.5 text-left" style="min-height:68px" aria-label="Add ${esc(it.name)}">
+        <div class="truncate text-[15px] font-semibold leading-tight text-white">${esc(it.name)}</div>
+        <div class="mt-0.5 text-[13px] font-semibold tabular-nums text-white/55">${moneyShort(it.price)}${q > 1 ? `<span style="color:var(--gold-l)"> · ${money(cents(it.price) * q / 100)}</span>` : ''}</div></button>
+      ${q ? stepper('dec', 'add', it.id, q, it.name) : ''}</div>`;
 }
 
 function renderSell() {
@@ -77,7 +80,7 @@ function renderSell() {
 
 function sellBar() {
     const lines = cartLines(), n = cartCount(lines), total = cartTotal(lines);
-    if (!n) return `<div class="px-3 py-3.5 text-center text-[13px] font-semibold text-white/50">Tap + Add to start an order</div>`;
+    if (!n) return `<div class="px-3 py-3.5 text-center text-[13px] font-semibold text-white/50">Tap an item to start an order</div>`;
     return `<div class="flex items-center gap-2">
       <button data-act="clear" class="flex-none rounded-[20px] border border-white/20 bg-white/[.06] px-4 py-4 text-[13px] font-semibold leading-none text-white/75">Clear</button>
       <button data-act="charge" class="flex-1 rounded-[20px] px-4 py-4 text-[16px] font-bold leading-none" style="${goldStyle}">Charge ${money(total)} <span class="font-semibold opacity-70">· ${n} ${n === 1 ? 'item' : 'items'}</span></button></div>`;
@@ -168,11 +171,11 @@ const TABS = [['sell', 'Sell'], ['history', 'History'], ['report', 'Report'], ['
 function render() {
     const el = body(); if (!el) return;
     const c = catalog();
-    el.innerHTML = `<div class="screen-head"><h2 class="screen-title">Concessions</h2><div id="cn-status" class="flex items-center">${statusHtml()}</div></div>
-      ${Store.isPersistent() ? '' : `<div class="mt-2 rounded-2xl px-3 py-2 text-[12px] font-semibold text-white" style="background:var(--mar)">This browser can't store data (private mode?). Sales will not survive a reload if you go offline.</div>`}
-      <div class="mt-3 grid grid-cols-4 gap-1.5 rounded-[18px] p-1.5" style="background:rgba(255,255,255,.06)">${TABS.map(([k, l]) =>
+    el.innerHTML = `${Store.isPersistent() ? '' : `<div class="mb-2 rounded-2xl px-3 py-2 text-[12px] font-semibold text-white" style="background:var(--mar)">This browser can't store data (private mode?). Sales will not survive a reload if you go offline.</div>`}
+      <div class="flex items-stretch gap-1.5 rounded-[18px] p-1.5" style="background:rgba(255,255,255,.06)">
+        <div class="grid min-w-0 flex-1 grid-cols-4 gap-1.5">${TABS.map(([k, l]) =>
         `<button data-act="tab" data-v="${k}" class="rounded-[13px] py-2.5 text-[13px] font-semibold ${S.tab === k ? '' : 'text-white/65'}" style="${S.tab === k ? goldStyle : ''}">${l}</button>`).join('')}</div>
-      ${c && c.season ? `<div class="mt-1.5 px-1 text-[11px] text-white/40">Season ${esc(c.season.label)}</div>` : ''}
+        <div id="cn-status" class="flex flex-none items-stretch">${statusHtml()}</div></div>
       <div id="cn-pane">${S.tab === 'sell' ? renderSell() : S.tab === 'history' ? historyRows() : ''}</div>`;
     const pane = document.getElementById('cn-pane');
     if (S.tab === 'report') renderReport(pane);
@@ -216,6 +219,7 @@ function wire() {
         const b = e.target.closest('[data-act]'); if (!b) return;
         const act = b.getAttribute('data-act'), v = b.getAttribute('data-v');
         switch (act) {
+            case 'status': toast(statusInfo().label); return;
             case 'tab': S.tab = v; S.open = null; break;
             case 'add': S.cart[v] = Math.min(99, (S.cart[v] || 0) + 1); break;
             case 'dec': S.cart[v] = Math.max(0, (S.cart[v] || 0) - 1); if (!S.cart[v]) delete S.cart[v]; break;

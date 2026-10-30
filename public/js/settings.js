@@ -633,9 +633,9 @@ function toggleSyncDivision(name, checked) {
 
 // ---- Role passwords: fetched on demand, shown briefly, never kept ----
 const PASSWORD_ROW_ROLES = [
-    ['admin', 'Referee', 'Match entry + crew chat'],
+    ['admin', 'Referee', 'Match entry + chat'],
     ['superadmin', 'Tournament admin', 'Everything, incl. Setup'],
-    ['parent', 'Parent', 'Crew chat only'],
+    ['parent', 'Parent', 'Chat only'],
     ['raffle', 'Raffle', 'Sell raffle tickets'],
     ['concessions', 'Concessions', 'Run the stand']
 ];

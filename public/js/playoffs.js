@@ -249,11 +249,45 @@ function bracketTeamRowHTML(node, i) {
   `;
 }
 
-// Scale the canvas down so the whole bracket fits the view, however
-// many rounds a division has. Below MIN_SCALE we let it scroll instead.
-function fitBracket() {
-  const fit    = document.getElementById('playoffs-bracket-fit');
-  const canvas = document.getElementById('playoffs-bracket-canvas');
+// Zoom is a multiplier on top of the "fit everything" scale, so 1 always
+// means "whole bracket visible" and the Fit button / double-tap can return
+// there. It survives data-driven re-renders within the session.
+const ZOOM_MAX_SCALE = 1.6;   // absolute canvas scale cap (readable cards)
+let zoomMult = 1;
+
+function bracketEls() {
+  return {
+    fit: document.getElementById('playoffs-bracket-fit'),
+    canvas: document.getElementById('playoffs-bracket-canvas')
+  };
+}
+
+function currentScale(canvas) {
+  return parseFloat(canvas.dataset.scale) || 1;
+}
+
+function maxMult(fitScale) {
+  return Math.max(1, ZOOM_MAX_SCALE / fitScale);
+}
+
+function updateZoomUI(fitScale) {
+  const wrap = document.getElementById('playoffs-bracket-wrap');
+  if (!wrap) return;
+  const out = wrap.querySelector('[data-zoom="out"]');
+  const inn = wrap.querySelector('[data-zoom="in"]');
+  const reset = wrap.querySelector('[data-zoom="fit"]');
+  if (out) out.disabled = zoomMult <= 1.001;
+  if (inn) inn.disabled = zoomMult >= maxMult(fitScale) - 0.001;
+  if (reset) reset.classList.toggle('is-zoomed', zoomMult > 1.001);
+  wrap.classList.toggle('is-zoomed', zoomMult > 1.001);
+}
+
+// Scale the canvas so the whole bracket fits the view (times the user's
+// zoom). Below MIN_SCALE the fit stops shrinking and the view scrolls.
+// `anchor` ({x,y} in the fit container's client px) keeps that content
+// point stationary while zooming; omitted → keep the view centre.
+function fitBracket(anchor) {
+  const { fit, canvas } = bracketEls();
   if (!fit || !canvas) return;
 
   const natW = parseFloat(canvas.style.width);
@@ -264,13 +298,102 @@ function fitBracket() {
   if (!availW) return;
   const availH = window.innerHeight * 0.62;
 
+  const fitScale = Math.max(BRK.MIN_SCALE, Math.min(1, availW / natW, availH / natH));
+  zoomMult = Math.min(Math.max(zoomMult, 1), maxMult(fitScale));
+  const scale = fitScale * zoomMult;
+
+  canvas.dataset.fit = String(fitScale);
+  updateZoomUI(fitScale);
+  if (canvas.dataset.scale === String(scale)) return;
+
+  const oldScale = currentScale(canvas);
+  const ax = anchor ? anchor.x : fit.clientWidth / 2;
+  const ay = anchor ? anchor.y : fit.clientHeight / 2;
+  // Content-space point under the anchor, before the change.
+  const cx = (fit.scrollLeft + ax - canvas.offsetLeft) / oldScale;
+  const cy = (fit.scrollTop + ay - canvas.offsetTop) / oldScale;
+
+  canvas.dataset.scale = String(scale);
   // `zoom` rather than `transform: scale()` so the scaled box still
   // drives layout — otherwise the scroll container reserves room for
   // the unscaled canvas and shows phantom scrollbars.
-  const scale = Math.max(BRK.MIN_SCALE, Math.min(1, availW / natW, availH / natH));
-  if (canvas.dataset.scale === String(scale)) return;
-  canvas.dataset.scale = String(scale);
   canvas.style.zoom = String(scale);
+  fit.classList.toggle('is-zoomed', zoomMult > 1.001);
+
+  fit.scrollLeft = cx * scale + canvas.offsetLeft - ax;
+  fit.scrollTop  = cy * scale + canvas.offsetTop - ay;
+}
+
+function setZoom(mult, anchor) {
+  const { canvas } = bracketEls();
+  if (!canvas) return;
+  const fitScale = parseFloat(canvas.dataset.fit) || 1;
+  zoomMult = Math.min(Math.max(mult, 1), maxMult(fitScale));
+  fitBracket(anchor);
+}
+
+// Pinch (two fingers), double-tap, ctrl/⌘+wheel and the +/−/Fit buttons.
+// Single-finger drag stays the browser's native pan (touch-action: pan-x
+// pan-y on .bracket-fit), so scrolling the page past the bracket still works.
+function attachZoomHandlers(wrap, fit) {
+  const rel = (cx, cy) => {
+    const r = fit.getBoundingClientRect();
+    return { x: cx - r.left, y: cy - r.top };
+  };
+
+  let pinch = null;
+  const dist = t => Math.hypot(t[0].clientX - t[1].clientX, t[0].clientY - t[1].clientY);
+
+  fit.addEventListener('touchstart', e => {
+    if (e.touches.length === 2) {
+      pinch = { d: dist(e.touches), mult: zoomMult };
+    }
+  }, { passive: true });
+
+  fit.addEventListener('touchmove', e => {
+    if (!pinch || e.touches.length !== 2) return;
+    e.preventDefault();
+    const t = e.touches;
+    const mid = rel((t[0].clientX + t[1].clientX) / 2, (t[0].clientY + t[1].clientY) / 2);
+    setZoom(pinch.mult * (dist(t) / pinch.d), mid);
+  }, { passive: false });
+
+  const endPinch = e => { if (e.touches.length < 2) pinch = null; };
+  fit.addEventListener('touchend', endPinch, { passive: true });
+  fit.addEventListener('touchcancel', endPinch, { passive: true });
+
+  // Double-tap: fit → comfortable reading size at the tapped spot; zoomed → fit.
+  let lastTap = 0, lastX = 0, lastY = 0;
+  fit.addEventListener('touchend', e => {
+    if (e.touches.length || e.changedTouches.length !== 1) return;
+    const t = e.changedTouches[0];
+    const now = Date.now();
+    if (now - lastTap < 320 && Math.hypot(t.clientX - lastX, t.clientY - lastY) < 30) {
+      lastTap = 0;
+      const { canvas } = bracketEls();
+      const fitScale = parseFloat(canvas.dataset.fit) || 1;
+      const target = zoomMult > 1.001 ? 1 : Math.min(maxMult(fitScale), Math.max(1.8, 1 / fitScale));
+      setZoom(target, rel(t.clientX, t.clientY));
+    } else {
+      lastTap = now; lastX = t.clientX; lastY = t.clientY;
+    }
+  }, { passive: true });
+
+  // Trackpad pinch / ctrl+wheel on desktop.
+  fit.addEventListener('wheel', e => {
+    if (!e.ctrlKey && !e.metaKey) return;
+    e.preventDefault();
+    setZoom(zoomMult * Math.exp(-e.deltaY * 0.01), rel(e.clientX, e.clientY));
+  }, { passive: false });
+
+  wrap.addEventListener('click', e => {
+    const btn = e.target.closest('[data-zoom]');
+    if (!btn) return;
+    const a = btn.dataset.zoom;
+    if (a === 'in') setZoom(zoomMult * 1.4);
+    else if (a === 'out') setZoom(zoomMult / 1.4);
+    else setZoom(1);
+  });
 }
 
 /**
@@ -429,18 +552,35 @@ function renderPlayoffsView() {
     </div>
   ` : '';
 
+  // A data refresh re-renders from scratch; keep the user's pan position.
+  const prev = bracketEls();
+  const keepL = prev.fit ? prev.fit.scrollLeft : 0;
+  const keepT = prev.fit ? prev.fit.scrollTop : 0;
+
   body.innerHTML = `
-    <div class="bracket-fit" id="playoffs-bracket-fit">
-      <div class="bracket-canvas" id="playoffs-bracket-canvas" style="width:${canvasW}px;height:${canvasH}px">
-        <svg class="bracket-conn-layer" viewBox="0 0 ${canvasW} ${canvasH}" width="${canvasW}" height="${canvasH}">${lines.join('')}</svg>
-        ${headers}
-        ${cards}
-        ${champHTML}
+    <div class="bracket-wrap" id="playoffs-bracket-wrap">
+      <div class="bracket-fit" id="playoffs-bracket-fit">
+        <div class="bracket-canvas" id="playoffs-bracket-canvas" style="width:${canvasW}px;height:${canvasH}px">
+          <svg class="bracket-conn-layer" viewBox="0 0 ${canvasW} ${canvasH}" width="${canvasW}" height="${canvasH}">${lines.join('')}</svg>
+          ${headers}
+          ${cards}
+          ${champHTML}
+        </div>
       </div>
+      <div class="bracket-zoom-ctl" role="group" aria-label="Zoom bracket">
+        <button type="button" data-zoom="out" aria-label="Zoom out">&minus;</button>
+        <button type="button" data-zoom="fit" aria-label="Fit whole bracket">Fit</button>
+        <button type="button" data-zoom="in" aria-label="Zoom in">+</button>
+      </div>
+      <div class="bracket-zoom-hint">Pinch or double-tap to zoom &middot; drag to move around</div>
     </div>
   `;
 
+  const { fit } = bracketEls();
+  attachZoomHandlers(document.getElementById('playoffs-bracket-wrap'), fit);
   fitBracket();
+  fit.scrollLeft = keepL;
+  fit.scrollTop = keepT;
 }
 
 if (window.ResizeObserver) {

@@ -174,14 +174,14 @@ function unreadCount(ch) {
 
 const CHANNEL_META = {
   crew: {
-    label: 'Crew', sub: 'Everyone', icon: '👥',
+    label: 'Parents &amp; Refs', sub: 'Everyone', icon: '👥',
     banner: 'Everyone can read this — referees, admins &amp; parents.',
-    placeholder: 'Message the crew…'
+    placeholder: 'Message parents & refs…'
   },
   lead: {
-    label: 'Leadership', sub: 'Admins &amp; parents', icon: '🔒',
-    banner: 'Private to admins &amp; parents. Referees can’t see this channel.',
-    placeholder: 'Message leadership only…'
+    label: 'Parents Only', sub: 'Admins &amp; parents', icon: '🔒',
+    banner: 'Parents only (plus the tournament manager). Referees can’t see this channel.',
+    placeholder: 'Message parents only…'
   }
 };
 

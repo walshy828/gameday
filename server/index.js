@@ -884,7 +884,7 @@ app.get('/api/chat', async (_req, res) => {
 
 app.get('/api/chat/lead', async (req, res) => {
   if (!canUseLeadChat(chatRoleOf(getAuthToken(req)))) {
-    return res.status(403).json({ success: false, error: 'Leadership chat is restricted.' });
+    return res.status(403).json({ success: false, error: 'Parents-only chat is restricted.' });
   }
   try {
     res.json(await Store.getChatMessages('lead'));
@@ -902,7 +902,7 @@ app.post('/api/chat', async (req, res) => {
     const role = chatRoleOf(getAuthToken(req));
     const channel = chatChannelOf(req.body?.channel);
     if (channel === 'lead' && !canUseLeadChat(role)) {
-      return res.status(403).json({ success: false, error: 'Leadership chat is restricted.' });
+      return res.status(403).json({ success: false, error: 'Parents-only chat is restricted.' });
     }
     const isMgr = role === 'superadmin';
     const isParent = role === 'parent';
@@ -1055,9 +1055,9 @@ app.get('/api/rolePasswords', (req, res) => {
   res.set('Cache-Control', 'no-store');
   res.json({
     roles: [
-      { key: 'admin', label: 'Referee', note: 'Match entry + crew chat', password: ADMIN_PASSWORD || null },
+      { key: 'admin', label: 'Referee', note: 'Match entry + chat', password: ADMIN_PASSWORD || null },
       { key: 'superadmin', label: 'Tournament admin', note: 'Everything, incl. Setup', password: SUPERADMIN_PASSWORD || null },
-      { key: 'parent', label: 'Parent', note: 'Crew chat only', password: PARENT_PASSWORD || null },
+      { key: 'parent', label: 'Parent', note: 'Chat only', password: PARENT_PASSWORD || null },
       { key: 'raffle', label: 'Raffle', note: 'Sell raffle tickets', password: RAFFLE_PASSWORD || null },
       { key: 'concessions', label: 'Concessions', note: 'Run the stand', password: CONCESSIONS_PASSWORD || null }
     ]

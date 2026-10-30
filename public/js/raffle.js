@@ -7,6 +7,7 @@
 // report are computed here and cost no sheet calls; only a sale (and the occasional refresh) touches Sheets.
 import * as Store from './raffleStore.js';
 import { priceSale, allocate, strip } from './raffleLogic.js';
+import { stepper } from './concessionsUi.js';
 
 const REFRESH_MS = 60000;      // quiet refresh while the tab is open (the server serves its own cached copy)
 const PAGE = 40;
@@ -14,7 +15,7 @@ const PAGE = 40;
 const S = {
     data: null, loadedAt: 0, loading: false, error: '',
     tab: 'sell',
-    f: blankForm(), busy: false, err: '', result: null,
+    cart: {}, f: blankForm(), busy: false, err: '', result: null,
     custom: false, pre: false, notes: false, touched: { phone: false, email: false },
     q: '', mine: false, open: null, shown: PAGE,
     metric: 'usd', gran: 'hour'
@@ -27,7 +28,7 @@ const money = (n) => '$' + (Number(n) || 0).toLocaleString('en-US', { minimumFra
 
 const touchedBlank = () => ({ phone: false, email: false });
 function blankForm() {
-    return { roll: '', bundle: null, cq: '', cp: '', preStart: '', preColor: '', name: '', phone: '', email: '', pay: '', notes: '' };
+    return { roll: '', cq: '', cp: '', preStart: '', preColor: '', name: '', phone: '', email: '', pay: '', notes: '' };
 }
 
 /* ---------- what stays on this phone between sales (roll, payment, last buyer) ---------- */
@@ -141,10 +142,10 @@ async function syncNow() {
     toast(left ? `${left} still waiting${Store.getState().online === false ? ' (offline)' : ''}` : `Synced ${before} sale${before === 1 ? '' : 's'}`, !!left);
 }
 
-function stamp() {
+function stamp(short) {
     if (!S.loadedAt) return '';
     const mins = Math.max(0, Math.floor((Date.now() - S.loadedAt) / 60000));
-    return `Sales as of ${new Date(S.loadedAt).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' })} · ${mins < 1 ? 'just now' : mins + ' min ago'}`;
+    return `${short ? '' : 'Sales as of '}${new Date(S.loadedAt).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' })} · ${mins < 1 ? 'just now' : mins + ' min ago'}`;
 }
 
 /** Connection / sync state, always visible: what is on this phone and whether it has reached the sheet. */
@@ -156,7 +157,7 @@ function statusHtml() {
     else if (st.syncing || n) { label = n ? `Syncing ${n}…` : 'Syncing…'; color = '#b45309'; }
     else if (st.online === true) { label = 'Online · all synced'; color = '#15803d'; }
     else { label = 'Checking connection…'; color = '#52525b'; }
-    return `<span class="inline-flex items-center gap-1.5 rounded-full px-3 py-1.5 text-[11px] font-semibold text-white" style="background:${color}"><span class="h-1.5 w-1.5 rounded-full bg-white/80"></span>${esc(label)}</span>
+    return `<span class="inline-flex items-center gap-1.5 rounded-full px-2.5 py-1 text-[11px] font-semibold text-white" style="background:${color}"><span class="h-1.5 w-1.5 rounded-full bg-white/80"></span>${esc(label)}</span>
       ${bad ? `<button data-act="tab" data-v="device" class="ml-1.5 rounded-full px-3 py-1.5 text-[11px] font-bold text-white" style="background:var(--mar)">${bad} need${bad === 1 ? 's' : ''} a look</button>` : ''}
       ${Store.isPersistent() ? '' : '<span class="ml-1.5 text-[11px] font-semibold" style="color:var(--warn)">⚠ Private mode: sales are NOT kept if this tab closes</span>'}`;
 }
@@ -196,15 +197,25 @@ export function renderRaffle() {
 
 /** Called on logout / role change so a different login never sees this person's data or draft. */
 export function resetRaffle() {
-    Object.assign(S, { data: null, loadedAt: 0, loading: false, error: '', tab: 'sell', f: blankForm(), busy: false, err: '', result: null, custom: false, pre: false, notes: false, touched: touchedBlank(), q: '', mine: false, open: null, shown: PAGE });
+    Object.assign(S, { data: null, loadedAt: 0, loading: false, error: '', tab: 'sell', cart: {}, f: blankForm(), busy: false, err: '', result: null, custom: false, pre: false, notes: false, touched: touchedBlank(), q: '', mine: false, open: null, shown: PAGE });
     const el = body(); if (el) el.innerHTML = '';
 }
 
 /* ---------- the sale being built ---------- */
 
+/** The tapped bundles (S.cart = { bundleQty: count }) as one sale: total tickets and the sum of the bundle prices. */
+function cartParts(bundles) { return bundles.filter(b => S.cart[b.qty] > 0).map(b => ({ ...b, count: S.cart[b.qty] })); }
+function cartPrice(bundles) {
+    const parts = cartParts(bundles);
+    if (!parts.length) return { error: 'Pick a bundle.' };
+    const qty = parts.reduce((a, b) => a + b.qty * b.count, 0);
+    const price = parts.reduce((a, b) => a + Math.round(b.price * 100) * b.count, 0) / 100;
+    return qty > 5000 ? { error: 'That is more than 5000 tickets.' } : { qty, price };
+}
+
 function plan() {
     const d = S.data, f = S.f, need = [];
-    const priced = priceSale({ bundleQty: f.bundle, customQty: f.cq, customPrice: f.cp }, d.bundles);
+    const priced = S.custom ? priceSale({ customQty: f.cq, customPrice: f.cp }, d.bundles) : cartPrice(d.bundles);
     if (priced.error) need.push(S.custom && f.cq === '' ? 'Enter a quantity' : 'Pick a bundle');
     const manual = S.pre && f.preStart !== '';
     const pc = preCheck(priced);
@@ -226,7 +237,9 @@ function plan() {
             if (lines) note = lines.map(l => `${l.roll}: ${l.start}–${l.end}`).join('  +  ');
         }
     }
-    return { priced, need, note, ready: !priced.error && need.length === 0 && !(note && !lines && !manual) };
+    const parts = S.custom ? [] : cartParts(d.bundles);
+    const summary = priced.error ? '' : `${parts.length ? parts.map(b => `${b.count} × ${b.qty}`).join(' + ') + ' = ' : ''}${priced.qty} ${priced.qty === 1 ? 'ticket' : 'tickets'} · ${money(priced.price)}`;
+    return { priced, need, note, summary, ready: !priced.error && need.length === 0 && !(note && !lines && !manual) };
 }
 
 function dirty() { S.err = ''; }
@@ -241,10 +254,12 @@ function renderSell() {
         : `<div class="${card} px-3.5 py-3 text-[13px] text-white/60">No Active rolls. Mark a roll Active on the Rolls tab of the sheet${S.pre ? '' : ', or use a pre-torn strip'}.</div>`;
 
     const bundles = `<div class="grid grid-cols-2 gap-2">${d.bundles.map(b => {
-        const on = !S.custom && f.bundle === b.qty;
-        return `<button type="button" data-act="bundle" data-v="${b.qty}" class="rounded-2xl border px-3 py-4 text-center ${on ? 'border-transparent' : 'border-white/15 bg-white/[.06] text-white'}" style="${on ? goldStyle : ''}">
-          <span class="block text-[22px] font-bold leading-none tabular-nums">${b.qty}</span>
-          <span class="mt-1.5 block text-[12px] font-semibold ${on ? '' : 'text-white/60'}">${b.qty === 1 ? 'ticket' : 'tickets'} · ${money(b.price)}</span></button>`;
+        const q = S.custom ? 0 : (S.cart[b.qty] || 0);
+        return `<div class="rounded-2xl border ${q ? 'border-transparent' : 'border-white/15 bg-white/[.06] text-white'}" style="${q ? 'box-shadow:0 0 0 2px var(--gold);background:rgba(224,184,99,.14)' : ''}">
+          <button type="button" data-act="badd" data-v="${b.qty}" class="block w-full px-3 py-4 text-center" aria-label="Add ${b.qty} ${b.qty === 1 ? 'ticket' : 'tickets'} for ${money(b.price)}">
+            <span class="block text-[22px] font-bold leading-none tabular-nums">${b.qty}</span>
+            <span class="mt-1.5 block text-[12px] font-semibold text-white/60">${b.qty === 1 ? 'ticket' : 'tickets'} · ${money(b.price)}${q > 1 ? `<span style="color:var(--gold-l)"> · ${money(Math.round(b.price * 100) * q / 100)}</span>` : ''}</span></button>
+          ${q ? stepper('bdec', 'badd', b.qty, q, `${b.qty}-ticket bundle`) : ''}</div>`;
     }).join('')}
       <button type="button" data-act="custom" class="rounded-2xl border px-3 py-4 text-center ${S.custom ? 'border-transparent' : 'border-white/15 bg-white/[.06] text-white'}" style="${S.custom ? goldStyle : ''}">
         <span class="block text-[22px] font-bold leading-none">…</span><span class="mt-1.5 block text-[12px] font-semibold ${S.custom ? '' : 'text-white/60'}">Custom</span></button></div>
@@ -316,6 +331,7 @@ function updateHints() {
 function sellBar(p) {
     const label = S.busy ? 'Saving…' : p.ready ? `Sell ${p.priced.qty} ${p.priced.qty === 1 ? 'ticket' : 'tickets'} · ${money(p.priced.price)}` : (p.need[0] ? `Needed: ${p.need.join(' · ')}` : 'Check the sale');
     return `${S.err ? `<div class="mb-1.5 rounded-2xl px-3 py-2 text-[12px] font-semibold text-white" style="background:var(--mar)">${esc(S.err)}</div>` : ''}
+      ${p.summary ? `<div class="mb-1 px-2 text-center text-[13px] font-semibold text-white/85">${esc(p.summary)}</div>` : ''}
       ${p.note ? `<div class="mb-1.5 px-2 text-center text-[12px] font-semibold ${p.priced.error ? 'text-white/50' : ''}" style="${p.priced.error ? '' : 'color:var(--gold-l)'}">${esc(p.note)}</div>` : ''}
       <button data-act="sell" ${p.ready && !S.busy ? '' : 'disabled'} class="w-full rounded-[20px] px-4 py-4 text-[16px] font-bold leading-none ${p.ready && !S.busy ? '' : 'opacity-50'}" style="${goldStyle}">${esc(label)}</button>`;
 }
@@ -367,7 +383,8 @@ function submit() {
     S.result = r;
     saveLast({ roll: r.suggestedRoll || f.roll, pay: f.pay, buyer: { name: f.name, phone: f.phone, email: f.email } });
     // Fresh form for the next buyer; the roll, payment and bundle style carry over.
-    Object.assign(S.f, { roll: r.suggestedRoll || S.f.roll, bundle: null, cq: '', cp: '', preStart: '', name: '', phone: '', email: '', notes: '' });
+    S.cart = {};
+    Object.assign(S.f, { roll: r.suggestedRoll || S.f.roll, cq: '', cp: '', preStart: '', name: '', phone: '', email: '', notes: '' });
     S.custom = false; S.notes = false; S.pre = false; S.touched = touchedBlank();
     render();
 }
@@ -529,20 +546,24 @@ async function copy(text, okMsg) {
 function render() {
     const el = body(); if (!el) return;
     if (S.error && !S.data) {
-        el.innerHTML = `<div class="screen-head"><h2 class="screen-title">Raffle</h2><button data-act="refresh" class="${pillBtn}">↻ Try again</button></div>
+        el.innerHTML = `<div class="flex justify-end"><button data-act="refresh" class="${pillBtn}">↻ Try again</button></div>
           <div class="${card} mt-4 px-4 py-4 text-[14px] text-white/80">${esc(S.error)}</div>`;
         return;
     }
-    if (!S.data) { el.innerHTML = `<div class="screen-head"><h2 class="screen-title">Raffle</h2></div><div class="py-12 text-center text-sm text-white/50">Loading…</div>`; return; }
+    if (!S.data) { el.innerHTML = `<div class="py-12 text-center text-sm text-white/50">Loading…</div>`; return; }
 
     const keep = document.activeElement && document.activeElement.id === 'raffle-q';
     const inner = S.tab === 'sell' ? (S.result ? renderResult() : renderSell()) : S.tab === 'sales' ? renderSales() : S.tab === 'device' ? renderDevice() : renderReport();
-    el.innerHTML = `<div class="screen-head"><h2 class="screen-title">${esc(S.data.event || 'Raffle')}</h2><button data-act="refresh" class="${pillBtn}" ${S.loading ? 'disabled' : ''}>${S.loading ? '<span class="rf-spin"></span> Refreshing…' : '↻ Refresh'}</button></div>
-      <div id="raffle-status" class="mt-2.5 flex flex-wrap items-center gap-y-1.5">${statusHtml()}</div>
-      <div class="mt-3 grid grid-cols-4 gap-1.5 rounded-[18px] p-1.5" style="background:rgba(255,255,255,.06)">${[['sell', 'Sell'], ['sales', 'Sales'], ['report', 'Report'], ['device', 'Device']].map(([k, l]) =>
-        `<button data-act="tab" data-v="${k}" class="rounded-[13px] py-2.5 text-[13px] font-semibold ${S.tab === k ? '' : 'text-white/65'}" style="${S.tab === k ? goldStyle : ''}">${l}</button>`).join('')}</div>
-      <div class="mt-1.5 px-1 text-[11px] text-white/40">${esc(stamp())}${S.loading ? ' · Refreshing…' : ''}</div>
-      ${inner}`;
+    // Tabs first, then ONE status row: sync pill, "as of" time, refresh icon.
+    el.innerHTML = `<div class="grid grid-cols-4 gap-1 rounded-[18px] p-1" style="background:rgba(255,255,255,.06)">${[['sell', 'Sell'], ['sales', 'Sales'], ['report', 'Report'], ['device', 'Device']].map(([k, l]) =>
+        `<button data-act="tab" data-v="${k}" class="rounded-[14px] py-2 text-[13px] font-semibold ${S.tab === k ? '' : 'text-white/65'}" style="${S.tab === k ? goldStyle : ''}">${l}</button>`).join('')}</div>
+      <div class="mt-2 flex items-center gap-2">
+        <div id="raffle-status" class="flex min-w-0 flex-wrap items-center gap-y-1">${statusHtml()}</div>
+        <span class="ml-auto flex-none whitespace-nowrap text-[11px] text-white/40" title="${esc(stamp())}">${esc(stamp(true))}</span>
+        <button data-act="refresh" aria-label="Refresh" title="Refresh" class="flex h-8 w-8 flex-none items-center justify-center rounded-full border border-white/20 bg-white/[.06] text-[15px] leading-none text-white/75" ${S.loading ? 'disabled' : ''}>${S.loading ? '<span class="rf-spin" style="margin:0"></span>' : '↻'}</button>
+      </div>
+      <div class="mt-2.5">${inner}</div>`;
+
     if (keep) { const q = document.getElementById('raffle-q'); if (q) { q.focus(); q.setSelectionRange(q.value.length, q.value.length); } }
 }
 
@@ -572,8 +593,9 @@ function wire() {
             case 'refresh': refreshNow(); return;
             case 'tab': S.tab = v; S.open = null; S.shown = PAGE; break;
             case 'roll': f.roll = v; saveLast({ roll: v }); dirty(); break;
-            case 'bundle': f.bundle = Number(v); S.custom = false; f.cq = ''; f.cp = ''; dirty(); after = () => goTo('pay'); break;
-            case 'custom': S.custom = !S.custom; if (S.custom) f.bundle = null; else { f.cq = ''; f.cp = ''; } dirty(); break;
+            case 'badd': if (S.custom) { S.custom = false; f.cq = ''; f.cp = ''; } S.cart[v] = Math.min(99, (S.cart[v] || 0) + 1); dirty(); break;
+            case 'bdec': S.cart[v] = Math.max(0, (S.cart[v] || 0) - 1); if (!S.cart[v]) delete S.cart[v]; dirty(); break;
+            case 'custom': S.custom = !S.custom; if (S.custom) S.cart = {}; else { f.cq = ''; f.cp = ''; } dirty(); break;
             case 'pay': f.pay = v; saveLast({ pay: v }); dirty(); after = () => goTo('buyer', 'name'); break;
             case 'editnext': { const r = selRoll(); S.pre = true; f.preStart = r && r.remaining > 0 ? String(r.next) : ''; dirty(); render(); const i = body().querySelector('[data-f="preStart"]'); if (i) { i.focus(); i.select(); } return; }
             case 'domain': { f.email = f.email.split('@')[0] + '@' + v; const i = body().querySelector('[data-f="email"]'); if (i) i.value = f.email; dirty(); updateHints(); updateSellBar(); return; }

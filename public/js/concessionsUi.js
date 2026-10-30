@@ -68,3 +68,12 @@ export function qrSvg(url) {
 }
 
 export const qrBox = (url, size = 260) => `<div class="mx-auto rounded-2xl bg-white p-3" style="width:${size}px;height:${size}px">${qrSvg(url)}</div>`;
+
+/** Shared − qty + control for a selected sell tile (concessions items, raffle bundles). Three separate targets, no overlap. */
+export function stepper(decAct, incAct, v, q, label) {
+    const btn = 'flex h-10 w-14 flex-none items-center justify-center rounded-full border border-white/25 bg-white/10 text-[22px] font-bold leading-none text-white';
+    return `<div class="flex items-center justify-between gap-2 px-2 pb-2">
+      <button type="button" data-act="${decAct}" data-v="${esc(v)}" class="${btn}" aria-label="Remove one ${esc(label)}">−</button>
+      <span class="min-w-[2ch] text-center text-[20px] font-bold tabular-nums text-white" aria-live="polite">${q}</span>
+      <button type="button" data-act="${incAct}" data-v="${esc(v)}" class="${btn}" aria-label="Add one ${esc(label)}">+</button></div>`;
+}
