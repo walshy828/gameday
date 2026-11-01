@@ -19,6 +19,7 @@ const S = {
     editSub: false, subAsk: null,
     confirmPaid: false, paidBusy: false,
     openWaiver: null,    // member name whose waiver detail is expanded
+    showContact: false,  // captain phone/email revealed on the team screen
     busyRows: {},        // 'teamKey|name' -> label while a write is in flight
     editOn: true,        // roster edits allowed (shared app setting; off = read-only)
     ciOn: false,         // team check-in switched on (shared app setting, off by default)
@@ -270,18 +271,22 @@ function renderDetail() {
     const r = S.data.rosters[S.cur];
     const n = r.members.length, signed = r.members.filter(m => m.signed).length;
     let h = head(r.team, `<button data-act="back" class="${pillBtn}">← Roster</button>`);
+    const hasContact = !!(r.captainEmail || r.captainPhone);
     h += `<section class="card-dark mt-3.5 p-4">
         <div class="text-[11px] text-white/50">${esc(r.division)}</div>
-        <div class="mt-2 grid gap-1.5 text-[13px] text-white/75">
-          <div class="flex flex-wrap items-center gap-2"><span class="w-24 text-white/45">Captain</span>${r.captain ? `<b class="text-white">${esc(r.captain)}</b>` : '<i class="text-white/40">none</i>'}
-            ${r.captainEmail ? `<a class="${smBtn}" href="mailto:${esc(r.captainEmail)}" aria-label="Email the captain" title="${esc(r.captainEmail)}">✉</a>` : ''}
-            ${r.captainPhone ? `<a class="${smBtn}" href="tel:${esc(r.captainPhone.replace(/[^\d+]/g, ''))}" aria-label="Call the captain" title="${esc(r.captainPhone)}">☎ ${esc(r.captainPhone)}</a>` : ''}</div>
-          <div class="flex items-center gap-2"><span class="w-24 text-white/45">Registered</span>${r.registered ? `<b class="text-white">${esc(fmtDate(r.registered))}</b>` : '<i class="text-white/40">unknown</i>'}</div>
-        </div></section>`;
+        <div class="mt-1.5 flex items-center justify-between gap-3">
+          <div class="min-w-0"><div class="text-[11px] text-white/45">Captain</div>
+            <div class="truncate text-[16px] font-bold text-white">${r.captain ? esc(r.captain) : '<i class="font-normal text-white/40">none</i>'}</div></div>
+          ${hasContact ? `<button data-act="contact" class="${smBtn} shrink-0" aria-expanded="${S.showContact}" aria-label="${S.showContact ? 'Hide' : 'Show'} captain contact info">${S.showContact ? 'Hide contact ▴' : 'Contact ▾'}</button>` : ''}</div>
+        ${hasContact && S.showContact ? `<div class="mt-2.5 grid gap-1.5">
+          ${r.captainPhone ? `<a class="flex items-center gap-2 rounded-xl bg-white/[.06] px-3 py-2.5 text-[14px] text-white" href="tel:${esc(r.captainPhone.replace(/[^\d+]/g, ''))}">☎ <span class="truncate">${esc(r.captainPhone)}</span></a>` : ''}
+          ${r.captainEmail ? `<a class="flex items-center gap-2 rounded-xl bg-white/[.06] px-3 py-2.5 text-[14px] text-white" href="mailto:${esc(r.captainEmail)}">✉ <span class="truncate">${esc(r.captainEmail)}</span></a>` : ''}</div>` : ''}
+        <div class="mt-2.5 border-t border-white/10 pt-2.5 text-[12px] text-white/50">Registered <b class="text-white/80">${r.registered ? esc(fmtDate(r.registered)) : 'unknown'}</b></div>
+      </section>`;
     h += `<div class="mt-2.5 grid grid-cols-2 gap-2.5">${paidChip(r)}
-        ${statChip(`<div><div class="text-[16px] font-bold text-white tabular-nums">${signed} / ${n}</div><div class="text-[11px] text-white/50">waivers matched</div></div>`)}
+        ${statChip(`<div><div class="text-[16px] font-bold tabular-nums" style="color:${n && signed === n ? 'var(--ok)' : 'white'}">${signed} / ${n}</div><div class="text-[11px] text-white/50">Waivers completed</div></div>`)}
         ${subChip(r)}
-        ${statChip(`<div><div class="text-[16px] font-bold" style="color:${r.girls ? '#f9a8d4' : 'white'}">${r.girls ? 'Yes' : 'No'}</div><div class="text-[11px] text-white/50">Girls only</div></div>`)}
+        ${statChip(`<div><div class="text-[16px] font-bold" style="color:${r.girls ? '#f9a8d4' : 'rgba(255,255,255,.55)'}">${r.girls ? 'Yes' : 'No'}</div><div class="text-[11px] text-white/50">Girls only team</div></div>`)}
         ${ciChip(r)}</div>`;
     h += ciAskHtml(r) + ciNotesHtml(r);
     const banner = (inner, warn) => `<div class="mt-2.5 rounded-2xl px-3.5 py-2.5 text-[12.5px] leading-snug text-white/80" style="${warn ? 'background:rgba(224,184,99,.12);border:1px solid rgba(224,184,99,.4)' : 'background:rgba(255,255,255,.06);border-left:3px solid var(--gold)'}">${inner}</div>`;
@@ -478,7 +483,7 @@ function render() {
 }
 
 function open(key, hlName) {
-    S.cur = key; S.editing = null; S.ask = null; S.draft = ''; S.editSub = false; S.subAsk = null; S.confirmPaid = false; S.openWaiver = null; S.hl = hlName || null; S.ciAsk = null; S.ciReason = ''; S.ciNote = '';
+    S.cur = key; S.editing = null; S.ask = null; S.draft = ''; S.editSub = false; S.subAsk = null; S.confirmPaid = false; S.openWaiver = null; S.showContact = false; S.hl = hlName || null; S.ciAsk = null; S.ciReason = ''; S.ciNote = '';
     render();
     window.scrollTo?.({ top: 0 });
 }
@@ -659,6 +664,7 @@ function wire() {
             case 'open': open(b.getAttribute('data-k'), b.getAttribute('data-n')); break;
             case 'back': S.cur = null; S.ask = null; S.editing = null; render(); break;
             case 'refresh': S.ask = null; S.ciLog = {}; load(!!S.data, true); break;
+            case 'contact': S.showContact = !S.showContact; render(); break;
             case 'waiver': S.openWaiver = S.openWaiver === m.name ? null : m.name; render(); break;
             case 'edit': S.ask = null; S.editing = m.name; render(); break;
             case 'move': S.editing = null; S.ask = { kind: 'moveSel', name: m.name, to: '' }; render(); break;
@@ -723,7 +729,7 @@ function wireSocket() {
 
 /** Called on logout / role change so a different login never sees cached roster data. */
 export function resetRoster() {
-    Object.assign(S, { editOn: true, ciOn: false, ciDiv: '', ciOut: false, ciAsk: null, ciReason: '', ciBusy: null, ciLog: {}, ciLoading: {}, ciNote: '', ciNoteBusy: false, data: null, loadedAt: 0, loading: false, error: '', cur: null, q: '', editing: null, ask: null, draft: '', editSub: false, subAsk: null, confirmPaid: false, paidBusy: false, openWaiver: null, busyRows: {}, adding: [] });
+    Object.assign(S, { editOn: true, ciOn: false, ciDiv: '', ciOut: false, ciAsk: null, ciReason: '', ciBusy: null, ciLog: {}, ciLoading: {}, ciNote: '', ciNoteBusy: false, data: null, loadedAt: 0, loading: false, error: '', cur: null, q: '', editing: null, ask: null, draft: '', editSub: false, subAsk: null, confirmPaid: false, paidBusy: false, openWaiver: null, showContact: false, busyRows: {}, adding: [] });
     const el = body(); if (el) el.innerHTML = '';
     closeModal();
 }
