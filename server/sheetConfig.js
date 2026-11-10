@@ -89,9 +89,20 @@ async function readStandingsGroup(sheetsApi, spreadsheetId, tabName, range, labe
   })).filter(s => s.team);
 }
 
-/** Config-driven standings read: one or two labeled groups per `sub_division_count`. */
+/**
+ * One pool or two sub divisions? The generator (v3.1+) stamps `schedule_mode`
+ * = single | split. Tabs made before that leave it blank, so fall back to the
+ * `sub_division_count` formula (1 or 2).
+ */
+export function isSplitTab(cfg) {
+  const mode = String(cfg?.schedule_mode || '').trim().toLowerCase();
+  if (mode) return mode === 'split';
+  return String(cfg?.sub_division_count || '') === '2';
+}
+
+/** Config-driven standings read: one or two labeled groups (see isSplitTab). */
 async function readStandingsConfigDriven(sheetsApi, spreadsheetId, tabName, cfg) {
-  if (cfg.sub_division_count === '2') {
+  if (isSplitTab(cfg)) {
     const [group1, group2] = await Promise.all([
       readStandingsGroup(sheetsApi, spreadsheetId, tabName, cfg.standings_1_range, cfg.sub_division_1_label),
       readStandingsGroup(sheetsApi, spreadsheetId, tabName, cfg.standings_2_range, cfg.sub_division_2_label)

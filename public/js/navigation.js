@@ -502,7 +502,17 @@ function getSubDivisionNames() {
     // configured group order, e.g. Pool A before Pool B), then any names only
     // the schedule knows about. Never sort alphabetically here — Standings,
     // Schedule and Playoffs must all show the same order and the same default.
+    // The tab's config block decides first (schedule generator v3.1+):
+    // schedule_mode = single -> no sub division UI at all (even if every game
+    // carries the same name, e.g. "Standard"); split -> the two labels, in the
+    // sheet's order. Blank (older tabs) -> sub_division_count, then the data.
+    const cfg = App.data.scheduleConfig || null;
+    const mode = String(cfg?.schedule_mode || '').trim().toLowerCase();
+    if (mode === 'single' || (!mode && cfg && String(cfg.sub_division_count || '') === '1')) return [];
     const names = new Set();
+    if (mode === 'split' || (cfg && String(cfg.sub_division_count || '') === '2')) {
+        [cfg.sub_division_1_label, cfg.sub_division_2_label].forEach(n => { if (n) names.add(String(n).trim()); });
+    }
     const standings = App.data.allStandingsData?.length ? App.data.allStandingsData : (App.data.standings || []);
     standings.forEach(s => { if (s.subDivision) names.add(s.subDivision); });
     (App.data.allScheduleData || []).forEach(g => { if (g.subDivision) names.add(g.subDivision); });

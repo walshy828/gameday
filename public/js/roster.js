@@ -178,7 +178,7 @@ function subChip(r) {
         return `<div class="col-span-2 rounded-2xl border border-white/10 bg-white/[.05] px-3.5 py-3">
           <label for="roster-sub" class="text-[11px] text-white/50">Sub division</label>
           <div class="mt-1.5 flex flex-wrap items-center gap-2">
-            <input id="roster-sub" list="roster-sub-list" value="${esc(ask ? S.subAsk : r.sub)}" ${ask ? 'readonly' : ''} maxlength="40" autocomplete="off" placeholder="Type or pick, e.g. Chaos" class="field-dark min-w-0 flex-1">
+            <input id="roster-sub" list="roster-sub-list" value="${esc(ask ? S.subAsk : r.sub)}" ${ask ? 'readonly' : ''} maxlength="40" autocomplete="off" placeholder="Type or pick a sub division" class="field-dark min-w-0 flex-1">
             ${ask ? `<button data-act="sub-yes" class="${goldBtn}" style="${goldStyle}">Confirm update</button><button data-act="sub-back" class="${smBtn}">Back</button>`
                   : `<button data-act="sub-ok" class="${goldBtn}" style="${goldStyle}">Update</button><button data-act="sub-cancel" class="${smBtn}">Cancel</button>`}
           </div>
