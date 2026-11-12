@@ -92,10 +92,10 @@ export function broadcastAutoSyncNotice(notice) {
   io.emit('autoSyncNotice', notice);
 }
 
-// Court readiness board (see server/courtStatus.js). Tournament-wide, and the
-// payload only carries court numbers, team names and a referee's first name —
-// all already public on the schedule — so it goes to every client.
-export function broadcastCourtStatusUpdate(courts) {
+// Court readiness board (see server/courtStatus.js). Goes to every client
+// (the public "My team" card follows it too), so it carries no data — just a
+// nudge to refetch (staff: GET /api/courtStatus, public: /api/courtStatus/public).
+export function broadcastCourtStatusUpdate() {
   if (!io) return;
-  io.emit('courtStatusUpdate', courts);
+  io.emit('courtStatusUpdate');
 }

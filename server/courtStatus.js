@@ -35,8 +35,20 @@ export function snapshot() {
   };
 }
 
+// Data-less nudge: the broadcast reaches every viewer (public too), so it
+// carries nothing — staff refetch GET /api/courtStatus, the public card
+// refetches the name-free GET /api/courtStatus/public.
 function changed() {
-  broadcastCourtStatusUpdate(snapshot());
+  broadcastCourtStatusUpdate();
+}
+
+/** Public, read-only view of one division: the board record and which games are marked ready — no referee names. */
+export function publicSnapshot(division) {
+  const b = boards.get(division);
+  return {
+    board: b ? { round: b.round, phase: b.phase, prevRound: b.prevRound, at: b.at } : null,
+    marks: [...marks.values()].filter(m => m.division === division).map(m => ({ division, gameKey: m.gameKey, court: m.court, at: m.at }))
+  };
 }
 
 /** Marks (or unmarks) one game's teams as on the court. */

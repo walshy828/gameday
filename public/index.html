@@ -849,6 +849,10 @@
         }
 
         .bracket-team-row.eliminated { color: rgba(255,255,255,.3); }
+        /* Team followed on this phone (follow.js): gold edge + star, also when eliminated. */
+        .bracket-team-row.followed { box-shadow: inset 3px 0 0 var(--gold); background: rgba(224,184,99,.12); }
+        .bracket-team-row.followed .bt-name { color: var(--gold-l); font-weight: 800; }
+        .bracket-team-row.followed .bt-name::after { content: ' ★'; color: var(--gold); }
 
         .bracket-match.is-bye {
             border-style: dashed;
@@ -1282,6 +1286,9 @@
                     <div id="standings-view" class="screen">
                         <!-- Admin Controls will be dynamically inserted here -->
 
+                        <!-- "My team" card for the followed team (myTeam.js) -->
+                        <div id="my-team-card-standings" class="hidden mt-3.5"></div>
+
                         <!-- Sub-division toggle (populated/shown only when the division has 2+ sub divisions) -->
                         <div id="standings-subdivision-toggle" class="hidden mt-3.5 flex gap-2"></div>
 
@@ -1305,6 +1312,9 @@
                         <div class="screen-head">
                             <span id="schedule-court-count" class="screen-kicker"></span>
                         </div>
+
+                        <!-- "My team" card for the followed team (myTeam.js) -->
+                        <div id="my-team-card-schedule" class="hidden mt-3.5"></div>
 
                         <div class="mt-3.5">
                             <select id="team-select" aria-label="Filter by team" onchange="updateScheduleView()"

@@ -284,3 +284,8 @@ export async function setCourtMark(authToken, { division, gameKey, court, ready,
 export async function courtRoundAction(authToken, action, { division, roundTime, prevRound, nextRound, by } = {}) {
   return await apiPost(`/courtStatus/round`, { authToken, action, division, roundTime, prevRound, nextRound, by });
 }
+
+// Public, no-login read of one division's court board (for the "My team" card).
+export async function getPublicCourtStatus(division) {
+  return await apiGet(`/courtStatus/public?division=${encodeURIComponent(division)}`);
+}

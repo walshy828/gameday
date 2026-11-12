@@ -11,6 +11,7 @@ import { renderConcessions } from './concessions.js';
 import { renderSeasons } from './seasons.js';
 import { renderDivisionData } from './divisionData.js';
 import { renderDanger } from './danger.js';
+import { maybeAskFollow } from './follow.js';
 
 /**
  * Fetches all division (sheet) names via the /api/divisions REST endpoint.
@@ -80,7 +81,8 @@ function renderGateDivisions() {
         label.className = 'block text-lg font-bold tracking-tight text-gray-50';
         label.textContent = name;
         btn.appendChild(label);
-        btn.onclick = () => enterApp(name);
+        // A fresh pick on the gate also offers (once, skippable) to follow a team.
+        btn.onclick = async () => { await enterApp(name); maybeAskFollow(name); };
         grid.appendChild(btn);
     });
 }

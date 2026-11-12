@@ -3,6 +3,7 @@
 // for scoreboard.html (see public/scoreboard.html's "PLAYOFF BRACKET"
 // section). Reuses App.data.allScheduleData — no new data source.
 import { getSubDivisionNames, getSelectedSubDivision, setSelectedSubDivision } from './navigation.js';
+import { getFollowed, isFollowed } from './follow.js';
 
 const BRK = {
   BOX_H:  46,   // match card height (2 team rows)
@@ -233,6 +234,7 @@ function bracketTeamRowHTML(node, i) {
   const isWinner = decided && !placeholder && !bye && normTeam(node.g.winner) === normTeam(raw);
 
   let cls = 'bracket-team-row';
+  if (!bye && !placeholder && isFollowed(raw)) cls += ' followed';
   if (bye) cls += ' bye';
   else if (placeholder) cls += ' placeholder';
   else if (isWinner) cls += ' winner';
@@ -452,6 +454,15 @@ function renderPlayoffsView() {
   const badge = document.getElementById('playoffs-match-count');
   if (!body) return;
 
+  // First look at the bracket for a division: open on the followed team's
+  // sub-division (pool) and bring their card into view.
+  const followed = getFollowed();
+  const firstLook = followed && followFocusDone !== `${App.config.currentSheetName}|${followed}`;
+  if (firstLook) {
+    const mine = (App.data.allScheduleData || []).find(g => g.subDivision && (isFollowed(g.team1) || isFollowed(g.team2)));
+    if (mine && getSubDivisionNames().includes(mine.subDivision)) setSelectedSubDivision(mine.subDivision);
+  }
+
   const schedule = applySubDivisionToggle(App.data.allScheduleData || []);
   const tree = buildBracketTree(schedule.filter(isPlayoff));
   if (!tree) {
@@ -581,7 +592,19 @@ function renderPlayoffsView() {
   fitBracket();
   fit.scrollLeft = keepL;
   fit.scrollTop = keepT;
+
+  if (firstLook && document.getElementById('playoffs-view') && !document.getElementById('playoffs-view').classList.contains('hidden')) {
+    const row = fit.querySelector('.bracket-team-row.followed');
+    if (row) {
+      followFocusDone = `${App.config.currentSheetName}|${followed}`;
+      // Last appearance = furthest round reached.
+      const rows = fit.querySelectorAll('.bracket-team-row.followed');
+      rows[rows.length - 1].scrollIntoView({ block: 'center', inline: 'center' });
+    }
+  }
 }
+
+let followFocusDone = '';
 
 if (window.ResizeObserver) {
   const bracketRO = new ResizeObserver(() => fitBracket());
@@ -592,4 +615,9 @@ if (window.ResizeObserver) {
 }
 window.addEventListener('resize', fitBracket);
 
-export { renderPlayoffsView };
+export {
+  renderPlayoffsView,
+  // Bracket model, shared with the "My team" card (myTeam.js).
+  buildBracketTree, isPlayoff, isReported as isOfficial, placeholderRef, isBlankSlot, isByeSlot,
+  isRealTeamSlot, teamSeed, teamLabel, cleanRoundLabel, defaultRoundLabel
+};

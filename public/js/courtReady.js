@@ -20,7 +20,8 @@
 // Rendered into #court-ready-panel at the top of the admin match entry view:
 // the MC (superadmin) gets the court board, a referee gets their court's bar.
 import { getCourtStatus, setCourtMark, courtRoundAction } from './api.js';
-import { getRoundOrder, isReported as isReportedOfficial } from './schedule.js';
+import { getRoundOrder } from './schedule.js';
+import { deriveBoard as deriveBoardPure, gameKeyOf, courtKey, roundOf, hasValue } from './courtBoard.js';
 import { getSocket } from './socketClient.js';
 import { getTimerSnapshot } from './timerSnapshot.js';
 import { isController } from './timerControlsUI.js';
@@ -28,8 +29,6 @@ import { toast } from './concessionsUi.js';
 
 const POLL_MS = 20000;
 const UNDO_MS = 10000;          // referee "Undo" after marking ready
-const ROUND_UNDO_MS = 2 * 60000; // MC "Undo" after Start/End round
-const CLOCK_START_SLACK_MS = 5000;
 
 let watching = false;
 let marks = [];              // [{ division, gameKey, court, by, at }]
@@ -73,15 +72,7 @@ function clockTime(ts) {
     try { return new Date(ts).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' }); } catch (e) { return ''; }
 }
 
-const courtKey = (c) => String(c || '').trim();
-const roundOf = (g) => g.roundTime || 'TBD';
-const hasValue = (v) => { const t = (v || '').trim(); return t !== '' && t !== 'TBA' && t !== '—'; };
-const isDone = (g) => isReportedOfficial(g) || hasValue(g.adminWinner);
-
-/** Stable identity of a game across reloads and sheet re-syncs. */
-export function gameKeyOf(g) {
-    return [roundOf(g), courtKey(g.court), (g.team1 || '').trim(), (g.team2 || '').trim()].join('|');
-}
+export { gameKeyOf };
 
 function schedule() {
     // The schedule in memory lags a division switch while loadData is in flight.
@@ -103,95 +94,16 @@ function clockState() {
     return getTimerSnapshot(division())?.state || null;
 }
 
-/** The clock is running its main segment on round B, started after the board record. */
-function clockPlaying(B, rec) {
-    const st = clockState();
-    if (!B || !st?.running || st.startAfterRoundRunning) return false;
-    if ((st.currentRound || '').trim() !== B) return false;
-    return !rec || (Number(st.startTime) || 0) > (rec.at || 0) + CLOCK_START_SLACK_MS;
-}
-
-function markFor(game) {
-    const key = gameKeyOf(game);
-    const div = division();
-    return marks.find(m => m.division === div && m.gameKey === key) || null;
-}
-
-/** The whole board for the viewed division: round, phase, per-court rows, summaries. */
+/** The whole board for the viewed division (see courtBoard.js). */
 function deriveBoard() {
-    const games = schedule();
-    const order = getRoundOrder();
-    const idx = (r) => order.indexOf(r);
-    const inRound = (R) => games.filter(g => roundOf(g) === R);
-    const allDone = (R) => { const l = inRound(R); return l.length > 0 && l.every(isDone); };
-    const nextAfter = (R) => (idx(R) >= 0 ? order[idx(R) + 1] : undefined) || null;
-    const prevOf = (R) => (idx(R) > 0 ? order[idx(R) - 1] : null);
-    const live = order.find(R => inRound(R).some(g => !isDone(g))) || null;
-
-    const rec = boards[division()] || null;
-    const recValid = rec && (rec.round === '' || idx(rec.round) >= 0);
-    let B, phase, prev;
-    if (recValid) {
-        B = rec.round || null;
-        phase = rec.phase;
-        prev = rec.prevRound || prevOf(B);
-    } else {
-        B = live;
-        prev = prevOf(B);
-        phase = clockPlaying(B, null) ? 'playing' : 'staging';
-    }
-    // The clock was started somewhere that didn't record it.
-    if (phase === 'staging' && clockPlaying(B, recValid ? rec : null)) phase = 'playing';
-    // Every game in the board round is in: move on by itself.
-    let advanced = false;
-    while (B && allDone(B)) {
-        prev = B;
-        B = nextAfter(B);
-        phase = 'staging';
-        advanced = true;
-    }
-
-    const courts = [...new Set(games.map(g => courtKey(g.court)).filter(Boolean))]
-        .sort((a, b) => a.localeCompare(b, undefined, { numeric: true }));
-    const rows = courts.map((court) => {
-        const g = B ? games.find(x => roundOf(x) === B && courtKey(x.court) === court) : null;
-        if (!B) return { court, status: 'none', game: null, inR: false };
-        if (!g) {
-            const later = games.filter(x => courtKey(x.court) === court && idx(roundOf(x)) > idx(B) && !isDone(x))
-                .sort((a, b) => idx(roundOf(a)) - idx(roundOf(b)))[0] || null;
-            return { court, status: 'bye', game: null, later, inR: false };
-        }
-        const mark = markFor(g);
-        let status;
-        if (isDone(g)) status = 'final';
-        else if (phase === 'playing') status = 'playing';
-        else status = mark ? 'ready' : 'waiting';
-        return { court, status, game: g, mark, inR: true };
+    return deriveBoardPure({
+        games: schedule(),
+        order: getRoundOrder(),
+        division: division(),
+        marks,
+        rec: boards[division()] || null,
+        clock: clockState()
     });
-
-    const withGame = rows.filter(r => r.game);
-    const summary = phase === 'playing'
-        ? { final: withGame.filter(r => r.status === 'final').length, total: withGame.length }
-        : (() => {
-            const open = withGame.filter(r => r.status !== 'final');
-            const ready = open.filter(r => r.status === 'ready').length;
-            return { ready, total: open.length, allReady: open.length > 0 && ready === open.length };
-        })();
-
-    // Scores still missing from rounds before the board round.
-    const missing = games.filter(g => !isDone(g) && (B ? idx(roundOf(g)) < idx(B) : true))
-        .sort((a, b) => idx(roundOf(a)) - idx(roundOf(b)) || courtKey(a.court).localeCompare(courtKey(b.court), undefined, { numeric: true }));
-    const prevGames = prev ? inRound(prev) : [];
-    const prevInfo = prev ? { round: prev, final: prevGames.filter(isDone).length, total: prevGames.length } : null;
-
-    // Time's up: the clock that ran this round has stopped or is in the after-round break.
-    const st = clockState();
-    const clockForRound = !!st && !!B && (st.currentRound || '').trim() === B
-        && (Number(st.startTime) || 0) >= ((recValid && rec.phase === 'playing' ? rec.at : 0) - CLOCK_START_SLACK_MS);
-    const timesUp = phase === 'playing' && clockForRound && (!st.running || !!st.startAfterRoundRunning);
-
-    const canUndo = !!(recValid && rec.canUndo && !advanced && Date.now() - (rec.at || 0) < ROUND_UNDO_MS);
-    return { B, phase, prev, rec: recValid ? rec : null, advanced, rows, summary, missing, prevInfo, timesUp, canUndo, nextAfter };
 }
 
 /** Derived status of one court (or null), e.g. to warn when a referee leaves it. */
@@ -235,7 +147,8 @@ export function ensureCourtReadyWatch() {
     refresh();
     try {
         const socket = getSocket();
-        socket.on('courtStatusUpdate', applyState);
+        // Data-less nudge (the broadcast reaches public viewers too): refetch.
+        socket.on('courtStatusUpdate', refresh);
         socket.on('connect', refresh);
         socket.on('featureSettingsUpdate', (s) => {
             if (!s) return;

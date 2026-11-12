@@ -211,6 +211,10 @@ function renderScheduleView(schedule) {
                 row.style.background = 'rgba(224,184,99,.07)';
                 row.style.boxShadow = 'inset 0 0 0 1px rgba(224,184,99,.55)';
             }
+            // The followed team's games (follow.js): a gold edge on the left.
+            if (window.isFollowedTeam && (window.isFollowedTeam(game.team1) || window.isFollowedTeam(game.team2))) {
+                row.style.boxShadow = `${row.style.boxShadow ? row.style.boxShadow + ', ' : ''}inset 4px 0 0 var(--gold)`;
+            }
 
             let res, resColor;
             if (reported) {

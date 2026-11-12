@@ -1300,6 +1300,21 @@ app.get('/api/courtStatus', async (req, res) => {
   }
 });
 
+// Public, no-login, read-only: what the "My team" card needs for one division
+// (board round/phase + which games are marked ready). No referee names.
+app.get('/api/courtStatus/public', async (req, res) => {
+  try {
+    const division = CourtStatus.clean(typeof req.query.division === 'string' ? req.query.division : '', 100);
+    const features = await Store.getFeatureSettings();
+    res.set('Cache-Control', 'no-store');
+    if (features.courtReadyEnabled !== true || !division) return res.json({ success: true, enabled: false, board: null, marks: [] });
+    res.json({ success: true, enabled: true, ...CourtStatus.publicSnapshot(division) });
+  } catch (e) {
+    console.error('courtStatus public error', e);
+    res.status(500).json({ success: false, error: 'Unavailable' });
+  }
+});
+
 // Ready mark for one upcoming game. Referees and the MC can both set/unset it.
 app.post('/api/courtStatus/mark', async (req, res) => {
   if (!isValidToken(getAuthToken(req))) return res.status(401).json({ success: false, error: 'Authentication failed.' });

@@ -3,6 +3,7 @@
  */
 import { updateAdminUI } from './admin.js';
 import { getSubDivisionNames, getSelectedSubDivision, setSelectedSubDivision } from './navigation.js';
+import { isFollowed } from './follow.js';
 
 /** Escapes a value for safe interpolation into a template-literal row. */
 function esc(str) {
@@ -106,10 +107,16 @@ function renderStandings(data) {
         const row = document.createElement('div');
         row.className = 'flex items-center gap-2.5 rounded-2xl px-3 py-2.5 cursor-pointer transition-colors bg-white/[.06]';
         row.onclick = () => window.filterScheduleByTeam(item.team);
+        // The team followed on this phone (follow.js): gold outline + star.
+        const followed = isFollowed(item.team);
+        if (followed) {
+            row.style.background = 'rgba(224,184,99,.12)';
+            row.style.boxShadow = 'inset 0 0 0 1.5px var(--gold)';
+        }
 
         row.innerHTML = `
             <span class="flex-none w-[26px] h-[26px] rounded-[10px] text-center text-xs font-bold leading-[26px] tabular-nums bg-white/10 text-white/70">${esc(rank)}</span>
-            <span class="flex-1 min-w-0 break-words text-sm font-semibold leading-tight tracking-[-.01em] text-gray-50">${esc(item.team)}</span>
+            <span class="flex-1 min-w-0 break-words text-sm leading-tight tracking-[-.01em] ${followed ? 'font-extrabold text-gold-l' : 'font-semibold text-gray-50'}">${followed ? '★ ' : ''}${esc(item.team)}</span>
             <span class="w-[58px] flex-none whitespace-nowrap text-right text-xs font-medium leading-none text-white/45 tabular-nums">${esc(item.record || '0-0')}</span>
             <span class="w-[52px] flex-none whitespace-nowrap text-right text-[17px] font-bold leading-none tracking-[-.02em] tabular-nums text-gold-l">${esc(item.points ?? 0)}</span>
         `;

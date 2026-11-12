@@ -78,6 +78,8 @@ import * as TimerLocal from './timerLocal.js';
 import { initAnnouncements, dismissAnnouncementBanner, postAnnouncementFromSetup, cancelAnnouncementEdit } from './announcements.js';
 import { initChat, syncChatRole, switchChatChannel, sendChatMessage, jumpToChatBottom, toggleChatHistory, requestDeleteChatMessage, cancelDeleteChatMessage, confirmDeleteChatMessage } from './chat.js';
 import { renderPlayoffsView } from './playoffs.js';
+import { renderMyTeam } from './myTeam.js';
+import { isFollowed } from './follow.js';
 import { setGameManagerAllowance } from './gameManagerUI.js';
 
 const IS_LOCAL_BACKEND = window.__DATA_BACKEND__ === 'local';
@@ -261,6 +263,7 @@ async function loadData(divisionName) {
     }
 
     renderPlayoffsView();
+    renderMyTeam();
 
     showStatus(null);
 
@@ -396,6 +399,7 @@ function handleDivisionSnapshot(data, divisionName) {
   updateScheduleView();
   updateAdminMatchEntryView();
   renderPlayoffsView();
+  renderMyTeam();
   // If a playoff final has been completed, show the championship banner locally
   try {
     const finalsGame = App.data.allScheduleData && App.data.allScheduleData.find(game => game.roundTime === "P5.Finals" && game.winner);
@@ -611,6 +615,15 @@ initChat();
 // setCurrentRound (Firebase RTDB write vs. REST POST) so timerOverlay.js
 // doesn't need to know which backend is active.
 window.initTimerOverlay = () => initTimerOverlay(TimerModule.setCurrentRound);
+
+// Following a team (follow.js) changes the card and the highlights everywhere.
+window.isFollowedTeam = (name) => isFollowed(name);
+window.addEventListener('followchange', () => {
+  renderStandings(App.data.allStandingsData || App.data.standings || []);
+  updateScheduleView();
+  renderPlayoffsView();
+  renderMyTeam();
+});
 // Court board's End round steps the clock's round label to the next round
 // (only from the tab that runs the clock — see courtReady.js).
 window.setClockRound = (round) => TimerModule.setCurrentRound(round);
