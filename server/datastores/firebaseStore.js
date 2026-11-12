@@ -265,8 +265,14 @@ export async function recordLogin({ sessionId, role, name, court, ip, userAgent,
   }
 }
 
-export async function touchSession(sessionId) {
-  await admin.database().ref(`${SESSIONS_PATH}/${sessionId}/lastActivityAt`).set(Date.now());
+export async function touchSession(sessionId, court = null) {
+  const ref = admin.database().ref(`${SESSIONS_PATH}/${sessionId}`);
+  if (court) {
+    // Only court managers carry a court; leave other roles' records untouched.
+    const role = (await ref.child('role').once('value')).val();
+    if (role === 'admin') return ref.update({ lastActivityAt: Date.now(), court });
+  }
+  await ref.child('lastActivityAt').set(Date.now());
 }
 
 export async function endSession(sessionId) {

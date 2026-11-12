@@ -790,7 +790,12 @@ export async function recordLogin({ sessionId, role, name, court, ip, userAgent,
   );
 }
 
-export async function touchSession(sessionId) {
+export async function touchSession(sessionId, court = null) {
+  if (court) {
+    // Only court managers carry a court; other roles just get their activity bumped.
+    await pool.query("UPDATE sessions SET last_activity_at = ?, court = IF(role = 'admin', ?, court) WHERE session_id = ?", [Date.now(), court, sessionId]);
+    return;
+  }
   await pool.query('UPDATE sessions SET last_activity_at = ? WHERE session_id = ?', [Date.now(), sessionId]);
 }
 

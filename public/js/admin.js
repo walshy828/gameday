@@ -16,7 +16,7 @@ import { resetDanger } from './danger.js';
 import { resetDivisionData } from './divisionData.js';
 import { getSocket } from './socketClient.js';
 import { toast } from './concessionsUi.js';
-import { ensureCourtReadyWatch, onMatchSaved as courtReadyOnSave, render as renderCourtReady, resetCourtReady } from './courtReady.js';
+import { ensureCourtReadyWatch, onMatchSaved as courtReadyOnSave, render as renderCourtReady, resetCourtReady, followCourt as courtReadyFollow, courtStatusOf } from './courtReady.js';
 
 // --- Result discrepancies (superadmin) -------------------------------------
 // A referee-submitted result that differs from the official one. The server
@@ -371,9 +371,16 @@ function renderAdminMatchEntryViewImpl() {
     const whoEl = document.getElementById('admin-who');
     if (whoEl) {
         const name = App.state.reporterName || 'Staff';
-        whoEl.textContent = App.state.isSuperAdmin
-            ? `${name} · tournament manager · all courts`
-            : `${name} · court manager · court ${App.state.selectedCourt || '?'} · ${App.config.currentSheetName}`;
+        if (App.state.isSuperAdmin) {
+            whoEl.textContent = `${name} · tournament manager · all courts`;
+        } else {
+            whoEl.innerHTML = `${esc(name)} · court manager · `
+                + `<button type="button" onclick="openCourtSwitcher()" aria-label="Change your court" `
+                + `class="inline-flex items-center gap-1 rounded-full border px-2.5 py-1 align-middle text-[11px] font-bold leading-none" `
+                + `style="border-color:rgba(224,184,99,.55);background:rgba(224,184,99,.12);color:var(--gold-l)">`
+                + `Court ${esc(App.state.selectedCourt || '?')} <span aria-hidden="true">▾</span></button>`
+                + ` · ${esc(App.config.currentSheetName)}`;
+        }
     }
 
     let infoText = `Showing <span class="text-gold-l">${esc(App.config.currentSheetName)}</span>`;
@@ -694,6 +701,8 @@ function renderAdminMatchEntryNow() {
 
 // Expose immediate renderer to global so other modules (main.js) can call it
 if (typeof window !== 'undefined') window.renderAdminMatchEntryNow = renderAdminMatchEntryNow;
+// The header's "Court N ▾" chip is inline markup, so its handler lives on window.
+if (typeof window !== 'undefined') window.openCourtSwitcher = openCourtSwitcher;
 
 
 /** Points the gate's Admin Panel "Google Sheet" link at the configured spreadsheet (hidden if none). */
@@ -851,7 +860,9 @@ function startSessionHeartbeat() {
     const token = sessionStorage.getItem('adminAuthToken');
     const sessionId = sessionStorage.getItem('sessionId');
     if (!token || !sessionId) return;
-    const beat = () => sendSessionHeartbeat(token, sessionId).catch(err => console.error('Session heartbeat failed:', err));
+    const beat = () => sendSessionHeartbeat(token, sessionId, App.state.isSuperAdmin ? null : App.state.selectedCourt)
+        .catch(err => console.error('Session heartbeat failed:', err));
+    App.state.sessionHeartbeatBeat = beat;
     beat();
     App.state.sessionHeartbeatInterval = setInterval(beat, SESSION_HEARTBEAT_INTERVAL_MS);
 
@@ -930,6 +941,86 @@ function renderLoginCourtPicker() {
         };
         wrap.appendChild(btn);
     });
+}
+
+// --- Court switching (court managers) -----------------------------------------
+// The court picked at login is the referee's identity for the day (header,
+// crew chat label, session record, Court Ready), but refs move between
+// courts. The header's "Court N ▾" chip opens this sheet; the save-toast
+// nudge calls switchCourt() directly.
+
+function switcherCourts() {
+    const extra = (App.data.courtNames || []).map(c => String(c).trim()).filter(Boolean);
+    return [...new Set(['1', '2', '3', '4', ...extra])]
+        .sort((a, b) => a.localeCompare(b, undefined, { numeric: true }));
+}
+
+function closeCourtSwitcher() {
+    document.getElementById('court-switcher')?.remove();
+}
+
+function openCourtSwitcher() {
+    if (!App.state.isAdmin || App.state.isSuperAdmin) return;
+    closeCourtSwitcher();
+    const current = (App.state.selectedCourt || '').trim();
+    const wrap = document.createElement('div');
+    wrap.id = 'court-switcher';
+    wrap.setAttribute('role', 'dialog');
+    wrap.setAttribute('aria-modal', 'true');
+    wrap.setAttribute('aria-label', 'Change your court');
+    wrap.style.cssText = 'position:fixed;inset:0;z-index:130;display:flex;align-items:flex-end;justify-content:center;background:rgba(0,0,0,.55)';
+    const buttons = switcherCourts().map(c => {
+        const on = c === current;
+        return `<button type="button" data-court="${esc(c)}" aria-pressed="${on}" class="rounded-[16px] py-4 text-[16px] font-extrabold leading-none" `
+            + `style="${on ? 'background:linear-gradient(135deg,var(--gold) 0%,var(--gold-d) 100%);color:#2A1B08' : 'background:rgba(255,255,255,.07);color:#fff;border:1px solid rgba(255,255,255,.14)'}">C${esc(c)}</button>`;
+    }).join('');
+    wrap.innerHTML = `
+        <div class="w-full max-w-md rounded-t-[26px] border border-white/10 p-4" style="background:#241318;padding-bottom:calc(1rem + env(safe-area-inset-bottom,0px))">
+            <div class="text-[10px] tracking-[.16em] font-semibold text-white/50 uppercase">Your court</div>
+            <div class="mt-1 text-[16px] font-extrabold text-white">Which court are you on now?</div>
+            <div class="mt-3 grid grid-cols-4 gap-2">${buttons}</div>
+            <button type="button" data-cancel class="mt-3 w-full rounded-full border border-white/15 bg-white/[.06] py-3 text-[13px] font-semibold text-white/70">Cancel</button>
+        </div>`;
+    wrap.addEventListener('click', (ev) => {
+        if (ev.target === wrap || ev.target.closest('[data-cancel]')) return closeCourtSwitcher();
+        const btn = ev.target.closest('[data-court]');
+        if (btn) { closeCourtSwitcher(); switchCourt(btn.dataset.court); }
+    });
+    document.addEventListener('keydown', function onKey(e) {
+        if (e.key === 'Escape') { closeCourtSwitcher(); document.removeEventListener('keydown', onKey); }
+    });
+    document.body.appendChild(wrap);
+}
+
+/** Moves a court manager to another court for the rest of their session. */
+function switchCourt(court) {
+    court = String(court || '').trim();
+    const prev = (App.state.selectedCourt || '').trim();
+    if (!court || !App.state.isAdmin || App.state.isSuperAdmin) return;
+    if (court === prev) return toast(`You're already on Court ${court}`);
+
+    App.state.selectedCourt = court;
+    sessionStorage.setItem('selectedCourt', court);
+    localStorage.setItem('lastAdminCourt', court);
+
+    // Their match list follows them (if this division uses that court).
+    // Dispatching change persists the filter and re-renders, like a manual pick.
+    const sel = document.getElementById('admin-court-select');
+    if (sel && [...sel.options].some(o => o.value === court)) {
+        sel.value = court;
+        sel.dispatchEvent(new Event('change'));
+    } else {
+        updateAdminMatchEntryView();
+    }
+
+    courtReadyFollow(court);
+    updateGateAdminUI(true);
+    App.state.sessionHeartbeatBeat?.(); // session list shows the new court right away
+
+    const left = prev ? courtStatusOf(prev) : null;
+    const note = left?.status === 'reported' ? ` · Court ${prev} still waiting for teams` : '';
+    toast(`Now on Court ${court}${note}`);
+    try { navigator.vibrate && navigator.vibrate(30); } catch (e) { /* unsupported */ }
 }
 
 function hideAdminLoginModal() {
@@ -1498,7 +1589,15 @@ async function saveMatchResultFromModal() {
         // Done: close straight away and confirm with a toast, so the referee
         // is back on the schedule (and the next game) immediately.
         hideMatchEntryModal();
-        toast(`✓ Saved — ${describeResult(winner, playersRemaining)}`);
+        // Nudge: a court manager reporting a game on another court has
+        // probably moved and forgotten to switch — offer it in one tap.
+        const gameCourt = (game.court || '').trim();
+        const myCourt = (App.state.selectedCourt || '').trim();
+        if (!App.state.isSuperAdmin && gameCourt && myCourt && gameCourt !== myCourt) {
+            toast(`✓ Saved · you're on Court ${myCourt}`, false, { label: `Switch to Court ${gameCourt}`, run: () => switchCourt(gameCourt) });
+        } else {
+            toast(`✓ Saved — ${describeResult(winner, playersRemaining)}`);
+        }
         try { navigator.vibrate && navigator.vibrate(40); } catch (e) { /* unsupported */ }
         // Optional court-ready flow: puts this court into "waiting for teams".
         courtReadyOnSave(game, matchData.winner);
@@ -1590,6 +1689,8 @@ export {
     showMatchEntryModal,
     hideMatchEntryModal,
     saveMatchResultFromModal,
+    openCourtSwitcher,
+    switchCourt,
     showModalReporterField,
     showModalNotesField,
     checkLoginStatus

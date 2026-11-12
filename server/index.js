@@ -1091,7 +1091,10 @@ app.post('/api/session/heartbeat', async (req, res) => {
   try {
     const { sessionId } = req.body || {};
     if (!SESSION_ID_RE.test(sessionId ?? '')) return res.status(400).json({ success: false, error: 'valid sessionId is required' });
-    await Store.touchSession(sessionId);
+    // Court managers can move courts during the day (admin header switcher),
+    // so the heartbeat carries their current court to keep the session list honest.
+    const court = /^[A-Za-z0-9 ._-]{1,16}$/.test(req.body?.court ?? '') ? req.body.court : null;
+    await Store.touchSession(sessionId, court);
     res.json({ success: true });
   } catch (e) {
     res.status(500).json({ success: false, error: e.toString() });

@@ -82,8 +82,8 @@ export async function validateAdmin(password, reporterName, court, sessionId) {
   return await apiPost(`/validateAdmin`, { password, reporterName, court, sessionId });
 }
 
-export async function sendSessionHeartbeat(authToken, sessionId) {
-  return await apiPost(`/session/heartbeat`, { authToken, sessionId });
+export async function sendSessionHeartbeat(authToken, sessionId, court) {
+  return await apiPost(`/session/heartbeat`, { authToken, sessionId, ...(court ? { court } : {}) });
 }
 
 export async function endSession(authToken, sessionId) {

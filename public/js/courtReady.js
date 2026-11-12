@@ -116,6 +116,19 @@ export function ensureCourtReadyWatch() {
     setInterval(() => { if (!document.hidden && enabled()) refresh(); else render(); }, POLL_MS);
 }
 
+/** Court manager switched courts: their Mark ready bar now follows the new court. */
+export function followCourt(court) {
+    focusCourt = courtKey(court) || null;
+    undoUntil = 0;
+    render();
+}
+
+/** Current board entry for a court (or null), e.g. to warn when leaving one that's waiting. */
+export function courtStatusOf(court) {
+    if (!enabled()) return null;
+    return courts.find(c => courtKey(c.court) === courtKey(court)) || null;
+}
+
 export function resetCourtReady() {
     courts = [];
     focusCourt = null;
