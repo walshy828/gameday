@@ -120,7 +120,8 @@ app.get('/api/allData', async (req, res) => {
       championCelebrationEnabled: featureSettings.championCelebrationEnabled,
       autoUpdateOfficialResultsEnabled: featureSettings.autoUpdateOfficialResultsEnabled,
       checkinEnabled: featureSettings.checkinEnabled,
-      rosterEditEnabled: featureSettings.rosterEditEnabled
+      rosterEditEnabled: featureSettings.rosterEditEnabled,
+      maxPlayersLeft: featureSettings.maxPlayersLeft
     };
     const [standings, schedule, scheduleConfig] = await Promise.all([
       Store.getStandings(sheetName),
@@ -353,16 +354,44 @@ async function validateMatchData(raw) {
 }
 
 // route: saveMatchResult
+// A submission carries a client-generated `clientId` (one per opening of the
+// match entry modal). A double tap, a retry after a dropped response, or a
+// second tab replaying it gets the first save's response back (flagged
+// `duplicate`) instead of writing the result — and the sheet/DB audit rows —
+// twice. Remembered in memory for 15 min; failed saves are forgotten so the
+// referee can retry.
+const recentMatchSaves = new Map(); // clientId -> { at, promise<{ status, body }> }
+const MATCH_SAVE_DEDUPE_MS = 15 * 60 * 1000;
+
 app.post('/api/saveMatchResult', async (req, res) => {
+  const authToken = getAuthToken(req);
+  if (!isValidToken(authToken)) return res.status(401).json({ success: false, error: 'Authentication failed.' });
+
+  const rawId = req.body?.clientId;
+  const clientId = typeof rawId === 'string' && /^[A-Za-z0-9_-]{8,64}$/.test(rawId) ? rawId : '';
+  const now = Date.now();
+  for (const [k, v] of recentMatchSaves) if (now - v.at > MATCH_SAVE_DEDUPE_MS) recentMatchSaves.delete(k);
+
+  if (clientId && recentMatchSaves.has(clientId)) {
+    const prior = await recentMatchSaves.get(clientId).promise;
+    return res.status(prior.status).json({ ...prior.body, duplicate: true });
+  }
+
+  const promise = runSaveMatchResult(req, authToken);
+  if (clientId) recentMatchSaves.set(clientId, { at: now, promise });
+  const result = await promise;
+  if (clientId && !(result.status === 200 && result.body?.success)) recentMatchSaves.delete(clientId);
+  res.status(result.status).json(result.body);
+});
+
+async function runSaveMatchResult(req, authToken) {
   try {
-    const authToken = getAuthToken(req);
-    if (!isValidToken(authToken)) return res.status(401).json({ success: false, error: 'Authentication failed.' });
 
     // Whitelist + validate the payload: sheetName/indexes end up in RTDB paths
     // and Google Sheets A1 ranges, so a referee must not be able to aim them
     // at arbitrary locations.
     const clean = await validateMatchData(req.body?.matchData);
-    if (clean.error) return res.status(400).json({ success: false, error: clean.error });
+    if (clean.error) return matchSaveReply(400, { success: false, error: clean.error });
     const matchData = clean.value;
 
     // Detailed logging for save flow
@@ -379,9 +408,9 @@ app.post('/api/saveMatchResult', async (req, res) => {
       const game = Number.isInteger(matchData.rowIndex)
         ? (await Store.getSchedule(matchData.sheetName)).find(m => m.rowIndex === matchData.rowIndex)
         : null;
-      if (!game) return res.status(404).json({ success: false, error: 'Match not found for official result — run a sync.' });
+      if (!game) return matchSaveReply(404, { success: false, error: 'Match not found for official result — run a sync.' });
       if (![(game.team1 || '').trim(), (game.team2 || '').trim(), 'tie', ''].includes(winner)) {
-        return res.status(400).json({ success: false, error: 'Winner must be one of the match teams, "tie", or blank.' });
+        return matchSaveReply(400, { success: false, error: 'Winner must be one of the match teams, "tie", or blank.' });
       }
     }
 
@@ -452,7 +481,7 @@ app.post('/api/saveMatchResult', async (req, res) => {
     // write landed — it's best-effort, so a failure doesn't fail the save,
     // but the client should warn (the official result never reaches the sheet
     // and a later pull would never bring it back). `skipped` = no sheet set up.
-    res.json({
+    return matchSaveReply(200, {
       ...storeResult,
       sheetsMirror: {
         success: !!sheetsMirrorResult?.success,
@@ -462,9 +491,13 @@ app.post('/api/saveMatchResult', async (req, res) => {
     });
   } catch (e) {
     console.error('saveMatchResult error', e);
-    res.status(500).json({ success: false, error: e.toString() });
+    return matchSaveReply(500, { success: false, error: e.toString() });
   }
-});
+}
+
+function matchSaveReply(status, body) {
+  return { status, body };
+}
 
 // --- Result discrepancies (referee-reported vs official), superadmin only ---
 
@@ -1212,12 +1245,18 @@ app.post('/api/sheetSync/settings', async (req, res) => {
 app.post('/api/featureSettings', async (req, res) => {
   if (!requireSuperAdmin(req, res)) return;
   try {
-    const { championCelebrationEnabled, autoUpdateOfficialResultsEnabled, checkinEnabled, rosterEditEnabled } = req.body || {};
+    const { championCelebrationEnabled, autoUpdateOfficialResultsEnabled, checkinEnabled, rosterEditEnabled, maxPlayersLeft } = req.body || {};
     const patch = {};
     if (typeof championCelebrationEnabled === 'boolean') patch.championCelebrationEnabled = championCelebrationEnabled;
     if (typeof autoUpdateOfficialResultsEnabled === 'boolean') patch.autoUpdateOfficialResultsEnabled = autoUpdateOfficialResultsEnabled;
     if (typeof checkinEnabled === 'boolean') patch.checkinEnabled = checkinEnabled;
     if (typeof rosterEditEnabled === 'boolean') patch.rosterEditEnabled = rosterEditEnabled;
+    if (maxPlayersLeft !== undefined) {
+      if (!Number.isInteger(maxPlayersLeft) || maxPlayersLeft < 1 || maxPlayersLeft > 20) {
+        return res.status(400).json({ success: false, error: 'maxPlayersLeft must be a whole number from 1 to 20.' });
+      }
+      patch.maxPlayersLeft = maxPlayersLeft;
+    }
 
     const settings = await Store.updateFeatureSettings(patch);
     res.json(settings);

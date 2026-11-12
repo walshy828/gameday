@@ -106,8 +106,8 @@ export async function getPresence(authToken) {
   return await apiGet(`/presence`, authToken);
 }
 
-export async function saveMatchResult(authToken, matchData) {
-  return await apiPost(`/saveMatchResult`, { authToken, matchData });
+export async function saveMatchResult(authToken, matchData, clientId) {
+  return await apiPost(`/saveMatchResult`, { authToken, matchData, clientId });
 }
 
 export async function getSheetSyncConfig(authToken) {

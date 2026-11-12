@@ -15,6 +15,7 @@ import { resetSeasons } from './seasons.js';
 import { resetDanger } from './danger.js';
 import { resetDivisionData } from './divisionData.js';
 import { getSocket } from './socketClient.js';
+import { toast } from './concessionsUi.js';
 
 // --- Result discrepancies (superadmin) -------------------------------------
 // A referee-submitted result that differs from the official one. The server
@@ -1159,7 +1160,33 @@ function logoutAdmin() {
     setTimeout(() => showStatus(null), 3000);
 }
 
-// --- NEW: MODAL AND MATCH RESULT SAVING FUNCTIONS ---
+// --- MATCH ENTRY MODAL: tap-first result reporting ---
+//
+// Built for a referee on a phone between games: tap who won, tap how many
+// players they had left, tap Submit. The reporter name comes from login and
+// notes are rare, so both stay tucked behind links unless needed. Each opening
+// of the modal gets a clientId so a double tap / retry never saves twice.
+
+const modalState = { clientId: null, saving: false };
+
+function newClientId() {
+    try { if (crypto.randomUUID) return crypto.randomUUID(); } catch (e) { /* insecure context */ }
+    return 'm' + Date.now().toString(36) + Math.random().toString(36).slice(2, 12);
+}
+
+/** Highest players-left tile (superadmin Setup → Match entry). */
+function maxPlayersLeft() {
+    const n = Number(App.settings && App.settings.maxPlayersLeft);
+    return Number.isInteger(n) && n >= 1 && n <= 20 ? n : 8;
+}
+
+function isTeamWinner(winner) {
+    return !!winner && winner !== '—' && winner !== 'tie';
+}
+
+function modalReporterName() {
+    return (document.getElementById('admin-name-input')?.value || '').trim();
+}
 
 /**
  * Populates and shows the match entry modal.
@@ -1178,32 +1205,36 @@ function showMatchEntryModal(gameIndex) {
     if (!game) return console.error('Game data not found for index:', gameIndex);
 
     App.admin.currentGameIndex = gameIndex;
+    modalState.clientId = newClientId();
+    modalState.saving = false;
 
-    // Clear previous state and message
     saveMessage.classList.add('hidden');
+    saveMessage.textContent = '';
 
-    // 1. Populate Match Info Display
     matchInfoDisplay.textContent = `Court ${game.court || '—'} · ${game.roundTime} · ${App.config.currentSheetName}`;
 
-    // 2. Set the current winner, then paint the tiles for it
+    // Prefill with whatever was already reported (editing a report).
     const currentWinner = (game.adminWinner && game.adminWinner.trim() !== 'TBA') ? game.adminWinner.trim() : '—';
-    winnerSelect.value = currentWinner;
-    renderWinnerTiles(game);
+    winnerSelect.value = currentWinner || '—';
+    playersInput.value = isTeamWinner(winnerSelect.value) ? (parseInt(game.adminPlayersRemaining) || 0) : 0;
 
-    playersInput.value = game.adminPlayersRemaining || 0;
+    // Notes: collapsed unless this game already has one.
     notesTextarea.value = game.notes || '';
+    const hasNote = !!notesTextarea.value.trim();
+    document.getElementById('modal-notes-wrap').classList.toggle('hidden', !hasNote);
+    document.getElementById('modal-notes-toggle').classList.toggle('hidden', hasNote);
 
-    // Default to the name captured at login (falls back to the last name
-    // typed anywhere, for sessions that predate the login name field).
+    // Reporter: the name captured at login. Only show the field when it's
+    // missing (sessions that predate the login name field) or on "Change".
     adminNameInput.value = App.state.reporterName || localStorage.getItem('lastAdminName') || '';
+    syncReporterLine(!adminNameInput.value.trim());
 
-    // Read-only official result, for context while reporting.
     const officialEl = document.getElementById('modal-official-display');
     if (officialEl) {
         const officialWinner = (game.winner || '').trim();
         officialEl.textContent = officialWinner
             ? `${officialWinner}${officialWinner === 'tie' ? '' : ` · ${game.playersRemaining || 0} left`}`
-            : 'Not official yet';
+            : 'not official yet';
     }
 
     // Superadmin only: "also submit as official". Defaults to on when the
@@ -1215,18 +1246,50 @@ function showMatchEntryModal(gameIndex) {
         document.getElementById('modal-official-toggle').checked = !!App.settings.autoUpdateOfficialResultsEnabled;
     }
 
-    // 4. Show the modal
+    renderMatchEntryControls(game);
     modal.classList.remove('hidden');
 }
 
+/** Shows either "Reporting as X · Change" or the name field. */
+function syncReporterLine(showField) {
+    const name = modalReporterName();
+    document.getElementById('modal-reporter-name').textContent = name;
+    document.getElementById('modal-reporter-line').classList.toggle('hidden', showField || !name);
+    document.getElementById('modal-reporter-wrap').classList.toggle('hidden', !showField && !!name);
+}
+
+function showModalReporterField() {
+    syncReporterLine(true);
+    const input = document.getElementById('admin-name-input');
+    input.focus();
+    input.select();
+}
+
+function showModalNotesField() {
+    document.getElementById('modal-notes-wrap').classList.remove('hidden');
+    document.getElementById('modal-notes-toggle').classList.add('hidden');
+    document.getElementById('modal-notes-textarea').focus();
+}
+
+function currentModalGame() {
+    return App.admin.currentGameIndex === null ? null : App.data.allScheduleData[App.admin.currentGameIndex];
+}
+
+/** Repaints winner tiles, players tiles and the submit button from the hidden inputs. */
+function renderMatchEntryControls(game) {
+    renderWinnerTiles(game);
+    renderPlayersTiles();
+    updateModalSaveButton(game);
+}
+
 /**
- * "Who won?" choice tiles (design §10). Replaces the old <select> — the value
- * still lives on the hidden #modal-winner-select input so the save path and
- * its validation are unchanged.
+ * "Who won?" choice tiles (design §10). The value lives on the hidden
+ * #modal-winner-select input so the save path and its validation are unchanged.
  */
 function renderWinnerTiles(game) {
     const wrap = document.getElementById('modal-winner-tiles');
     const winnerSelect = document.getElementById('modal-winner-select');
+    const playersInput = document.getElementById('modal-players-input');
     if (!wrap || !winnerSelect) return;
 
     const options = [game.team1, game.team2]
@@ -1242,20 +1305,95 @@ function renderWinnerTiles(game) {
         const btn = document.createElement('button');
         btn.type = 'button';
         btn.className = 'tile-dark';
+        btn.style.touchAction = 'manipulation';
         btn.textContent = opt.label;
         btn.dataset.selected = String(winnerSelect.value === opt.value);
         btn.onclick = () => {
+            const was = winnerSelect.value;
             // Tapping the selected tile clears it, matching the old "—" option.
-            winnerSelect.value = winnerSelect.value === opt.value ? '—' : opt.value;
-            renderWinnerTiles(game);
+            winnerSelect.value = was === opt.value ? '—' : opt.value;
+            // Switching teams keeps the count; tie / no winner means 0 left.
+            if (!isTeamWinner(winnerSelect.value)) playersInput.value = 0;
+            renderMatchEntryControls(game);
+            // Bring the next step into view on short phones.
+            if (isTeamWinner(winnerSelect.value) && !isTeamWinner(was)) {
+                document.getElementById('modal-players-wrap')?.scrollIntoView({ block: 'nearest', behavior: 'smooth' });
+            }
         };
         wrap.appendChild(btn);
     });
 }
 
+/** 1…max quick-tap tiles for the winner's players left (tiebreak). */
+function renderPlayersTiles() {
+    const wrap = document.getElementById('modal-players-wrap');
+    const tiles = document.getElementById('modal-players-tiles');
+    const winnerSelect = document.getElementById('modal-winner-select');
+    const playersInput = document.getElementById('modal-players-input');
+    if (!wrap || !tiles) return;
+
+    const show = isTeamWinner(winnerSelect.value);
+    wrap.classList.toggle('hidden', !show);
+    if (!show) return;
+
+    const current = parseInt(playersInput.value) || 0;
+    // Never hide an already-reported count that's above the current max.
+    const max = Math.max(maxPlayersLeft(), current);
+    const cols = max <= 4 ? max : max <= 8 ? 4 : 5;
+    tiles.style.gridTemplateColumns = `repeat(${cols}, minmax(0, 1fr))`;
+
+    tiles.innerHTML = '';
+    for (let n = 1; n <= max; n++) {
+        const btn = document.createElement('button');
+        btn.type = 'button';
+        btn.className = 'num-tile-dark';
+        btn.textContent = String(n);
+        btn.setAttribute('aria-label', `${n} player${n === 1 ? '' : 's'} left`);
+        btn.dataset.selected = String(current === n);
+        btn.onclick = () => {
+            playersInput.value = current === n ? 0 : n;
+            const game = currentModalGame();
+            if (game) renderMatchEntryControls(game);
+        };
+        tiles.appendChild(btn);
+    }
+}
+
+/** Submit button says exactly what will be saved, and stays disabled until it's complete. */
+function updateModalSaveButton(game) {
+    const btn = document.getElementById('modal-save-button');
+    if (!btn || modalState.saving) return;
+    const winner = document.getElementById('modal-winner-select').value;
+    const players = parseInt(document.getElementById('modal-players-input').value) || 0;
+    const hadReport = !!(game && game.adminWinner && !['', 'TBA', '—'].includes(game.adminWinner.trim()));
+
+    let label = 'Submit result';
+    let enabled = true;
+    if (isTeamWinner(winner)) {
+        if (players < 1) { label = 'Tap players left'; enabled = false; }
+        else label = `Submit · ${players} left`;
+    } else if (winner === 'tie') {
+        label = 'Submit · Tie';
+    } else if (hadReport) {
+        label = 'Clear reported result';
+    } else {
+        label = 'Tap who won';
+        enabled = false;
+    }
+    btn.textContent = label;
+    btn.disabled = !enabled;
+}
+
 function hideMatchEntryModal() {
     document.getElementById('match-entry-modal').classList.add('hidden');
     App.admin.currentGameIndex = null;
+    modalState.clientId = null;
+}
+
+function describeResult(winner, players) {
+    if (winner === 'tie') return 'Tie';
+    if (!isTeamWinner(winner)) return 'Result cleared';
+    return `${winner} won · ${players} left`;
 }
 
 /**
@@ -1263,163 +1401,130 @@ function hideMatchEntryModal() {
  */
 async function saveMatchResultFromModal() {
     if (App.admin.currentGameIndex === null) return console.error('No game selected for saving.');
+    // One save at a time: ignore extra taps while one is in flight.
+    if (modalState.saving) return;
 
     const game = App.data.allScheduleData[App.admin.currentGameIndex];
     const winnerSelect = document.getElementById('modal-winner-select');
     const playersInput = document.getElementById('modal-players-input');
     const notesTextarea = document.getElementById('modal-notes-textarea');
-    const adminNameInput = document.getElementById('admin-name-input');
     const saveButton = document.getElementById('modal-save-button');
     const messageElement = document.getElementById('modal-save-message');
 
-    const adminName = adminNameInput.value.trim();
-    const winner = winnerSelect.value;
-    const playersRemaining = parseInt(playersInput.value) || 0;
-    const notes = notesTextarea.value.trim();
+    const showError = (text) => {
+        messageElement.textContent = text;
+        messageElement.style.color = 'var(--warn)';
+        messageElement.classList.remove('hidden');
+    };
 
+    const adminName = modalReporterName();
+    const winner = winnerSelect.value;
+    const playersRemaining = isTeamWinner(winner) ? (parseInt(playersInput.value) || 0) : 0;
+    const notes = notesTextarea.value.trim();
 
     // Validation
     if (!adminName) {
-        messageElement.textContent = 'Admin Name is required.';
-        messageElement.classList.remove('hidden');
-        return;
+        syncReporterLine(true);
+        document.getElementById('admin-name-input').focus();
+        return showError('Enter your name so we know who reported this.');
     }
-    if (winner === '—' && playersRemaining !== 0) {
-        messageElement.textContent = 'Players Remaining must be 0 if no winner is selected.';
-        messageElement.classList.remove('hidden');
-        return;
+    if (isTeamWinner(winner) && playersRemaining < 1) {
+        return showError('Tap how many players the winner had left.');
     }
 
     const setOfficial = App.state.isSuperAdmin && !!document.getElementById('modal-official-toggle')?.checked;
-    if (setOfficial && winner === '—' && !confirm('No winner selected — this will clear the official result. Continue?')) return;
+    if (!isTeamWinner(winner) && winner !== 'tie') {
+        const msg = setOfficial
+            ? 'No winner selected — this will clear the official result. Continue?'
+            : 'No winner selected — this will clear the reported result. Continue?';
+        if (!confirm(msg)) return;
+    }
 
-    // Store admin name locally for session convenience
+    // Same result as what's already reported: nothing to save, just confirm.
+    const prevWinner = (game.adminWinner || '').trim();
+    const unchanged = !setOfficial
+        && prevWinner === (winner === '—' ? '' : winner)
+        && (parseInt(game.adminPlayersRemaining) || 0) === playersRemaining
+        && (game.notes || '').trim() === notes
+        && prevWinner !== '';
+    if (unchanged) {
+        hideMatchEntryModal();
+        toast(`✓ Already saved — ${describeResult(winner, playersRemaining)}`);
+        return;
+    }
+
+    const authToken = sessionStorage.getItem('adminAuthToken');
+    if (!authToken) return showError('Authentication error — please log in again.');
+
     localStorage.setItem('lastAdminName', adminName);
 
+    modalState.saving = true;
     saveButton.disabled = true;
     saveButton.textContent = 'Saving…';
     messageElement.classList.add('hidden');
-    messageElement.textContent = '';
 
-    // --- 1. GET THE AUTH TOKEN ---
-    const authToken = sessionStorage.getItem('adminAuthToken');
-    //console.log(`AuthToken: ${authToken}`) ;
-
-    if (!authToken) {
-        messageElement.textContent = 'Authentication error - Please log in again.';
-        messageElement.classList.remove('hidden');
-        messageElement.style.color = 'var(--warn)';
-
-        saveButton.disabled = false;
-        saveButton.textContent = 'Submit result';
-        return
-    }
-
-    // Prepare the data payload for the Apps Script
+    const sheetName = App.config.currentSheetName;
     const matchData = {
-        sheetName: App.config.currentSheetName,
-        // The row index in the spreadsheet for the Apps Script to find the game
+        sheetName,
         rowIndex: game.rowIndex,
         firebaseIndex: game.firebaseIndex,
         team1: game.team1,
         team2: game.team2,
-        winner: winner === '—' ? '' : winner, // Clear winner if '—' is selected
-        playersRemaining: playersRemaining,
-        adminName: adminName, // NEW
-        notes: notes, // NEW
+        winner: winner === '—' ? '' : winner,
+        playersRemaining,
+        adminName,
+        notes,
         setOfficial // superadmin only; the server re-checks the token
     };
 
-    const payload = {
-        authToken: authToken,
-        matchData: matchData
-    };
-
-
+    let saved = false;
     try {
-        // Use the API helper to save match result
-        // apiSaveMatchResult expects (authToken, matchData)
-        const result = await apiSaveMatchResult(authToken, matchData);
+        const result = await apiSaveMatchResult(authToken, matchData, modalState.clientId);
 
-        if (result.success) {
-            messageElement.textContent = 'Result saved!';
-            messageElement.classList.remove('hidden');
-            messageElement.style.color = 'var(--ok)';
-
-            // Best-effort sheet write failed: the result is saved in the app
-            // but the sheet (system of record) didn't get it.
-            if (result.sheetsMirror && !result.sheetsMirror.success && !result.sheetsMirror.skipped) {
-                // The modal closes right after, so surface this in the page-level status bar.
-                showStatus('Saved, but the Google Sheet update failed: ' + (result.sheetsMirror.error || 'unknown error') + ' — tell the tournament manager.', true);
-                setTimeout(() => showStatus(null), 10000);
-            }
-
-            // Reload all data to refresh standings and schedule
-            await loadData(App.config.currentSheetName);
-
-            // Give user a moment to see the success message before closing
-            setTimeout(hideMatchEntryModal, 500);
-
-        } else {
-            // Server responded but indicated failure
-            const errMsg = result.error || 'Server reported failure.';
-            messageElement.textContent = 'ERROR: ' + errMsg;
-            messageElement.classList.remove('hidden');
-            messageElement.style.color = 'var(--warn)';
-            // If the server flagged logout, clear token and force re-login
+        if (!result.success) {
             if (result.logout) {
                 sessionStorage.removeItem('adminAuthToken');
                 logoutAdmin();
             }
-            throw new Error(errMsg);
+            throw new Error(result.error || 'Server reported failure.');
         }
+
+        saved = true;
+        // Done: close straight away and confirm with a toast, so the referee
+        // is back on the schedule (and the next game) immediately.
+        hideMatchEntryModal();
+        toast(`✓ Saved — ${describeResult(winner, playersRemaining)}`);
+        try { navigator.vibrate && navigator.vibrate(40); } catch (e) { /* unsupported */ }
+
+        const sheetFailed = result.sheetsMirror && !result.sheetsMirror.success && !result.sheetsMirror.skipped;
+        // Refresh standings/schedule in the background. loadData() resets the
+        // status bar, so the sheet warning goes up after it finishes.
+        loadData(sheetName).finally(() => {
+            if (sheetFailed) {
+                showStatus('Saved, but the Google Sheet update failed: ' + (result.sheetsMirror.error || 'unknown error') + ' — tell the tournament manager.', true);
+                setTimeout(() => showStatus(null), 10000);
+            }
+        });
     } catch (error) {
         console.error('Save failed:', error);
-        // If the error came from a failed HTTP response, inspect it
         if (error && error.status === 401) {
-            // Authentication failed — ensure local token is cleared and force re-login
             sessionStorage.removeItem('adminAuthToken');
             logoutAdmin();
-            messageElement.textContent = 'Session expired. Please log in again.';
-        } else if (error && error.body && error.body.error) {
-            messageElement.textContent = 'ERROR: ' + error.body.error;
+            showError('Session expired. Please log in again.');
+        } else if (error && (error.status === 0 || error instanceof TypeError)) {
+            showError('No connection — nothing was saved. Try again.');
         } else {
-            messageElement.textContent = 'ERROR: ' + (error.message || 'Unknown error');
+            showError('Not saved: ' + ((error && error.body && error.body.error) || error.message || 'Unknown error'));
         }
-        messageElement.classList.remove('hidden');
-        messageElement.style.color = 'var(--warn)';
     } finally {
-        saveButton.disabled = false;
-        saveButton.textContent = 'Submit result';
-    }
-}
-
-
-/* Increments or decrements the value in the "Players Remaining" input field, 
-* respecting the min (0) and max (8) boundaries.
-* @param {number} delta - The amount to change the value by (usually +1 or -1).
-*/
-function changePlayers(delta) {
-    const inputField = document.getElementById('modal-players-input');
-
-    // Ensure the element exists and the value is treated as a number
-    if (!inputField) return;
-
-    let currentValue = parseInt(inputField.value) || 0;
-    const newValue = currentValue + delta;
-
-    const minVal = parseInt(inputField.min) || 0;
-    const maxVal = parseInt(inputField.max) || 8;
-
-    // Boundary check
-    if (newValue >= minVal && newValue <= maxVal) {
-        inputField.value = newValue;
-    } else if (newValue < minVal) {
-        // Stop at the minimum value
-        inputField.value = minVal;
-    } else if (newValue > maxVal) {
-        // Stop at the maximum value
-        inputField.value = maxVal;
+        modalState.saving = false;
+        // The same clientId is kept on failure, so a retry that actually
+        // reached the server the first time can't save twice.
+        if (!saved) {
+            const g = currentModalGame();
+            if (g) updateModalSaveButton(g);
+            else { saveButton.disabled = false; saveButton.textContent = 'Submit result'; }
+        }
     }
 }
 
@@ -1478,6 +1583,7 @@ export {
     showMatchEntryModal,
     hideMatchEntryModal,
     saveMatchResultFromModal,
-    changePlayers,
+    showModalReporterField,
+    showModalNotesField,
     checkLoginStatus
 };

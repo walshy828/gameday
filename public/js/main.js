@@ -8,7 +8,8 @@ import {
   showMatchEntryModal,
   hideMatchEntryModal,
   saveMatchResultFromModal,
-  changePlayers,
+  showModalReporterField,
+  showModalNotesField,
   checkLoginStatus
 } from './admin.js';
 
@@ -57,6 +58,7 @@ import {
     toggleAutoUpdateOfficialResults,
     toggleCheckin,
     toggleRosterEdit,
+    setMaxPlayersLeft,
     setSyncInterval,
     setCustomSyncInterval,
     setSyncScope,
@@ -629,7 +631,8 @@ exposeGlobals({
   showMatchEntryModal,
   hideMatchEntryModal,
   saveMatchResultFromModal,
-  changePlayers
+  showModalReporterField,
+  showModalNotesField
 });
 
 // Expose schedule-related
@@ -667,6 +670,7 @@ exposeGlobals({
   toggleAutoUpdateOfficialResults,
   toggleCheckin,
   toggleRosterEdit,
+  setMaxPlayersLeft,
   setSyncInterval,
   setCustomSyncInterval,
   setSyncScope,

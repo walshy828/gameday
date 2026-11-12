@@ -337,6 +337,17 @@ function renderFeatureSettings(settings) {
 
     const officialResultsToggle = document.getElementById('auto-update-official-results-toggle');
     if (officialResultsToggle) officialResultsToggle.checked = App.settings.autoUpdateOfficialResultsEnabled;
+
+    const max = Number(settings.maxPlayersLeft);
+    App.settings.maxPlayersLeft = Number.isInteger(max) && max >= 1 ? max : 8;
+    const maxSelect = document.getElementById('max-players-left-select');
+    if (maxSelect) {
+        // Keep a value saved outside the dropdown's range selectable.
+        if (![...maxSelect.options].some(o => Number(o.value) === App.settings.maxPlayersLeft)) {
+            maxSelect.add(new Option(String(App.settings.maxPlayersLeft)));
+        }
+        maxSelect.value = String(App.settings.maxPlayersLeft);
+    }
 }
 
 // Heads-up (and final notice) that auto-sync is about to switch / has switched
@@ -621,6 +632,27 @@ async function toggleRosterEdit(checked) {
     }
 }
 
+async function setMaxPlayersLeft(value) {
+    const authToken = sessionStorage.getItem('adminAuthToken');
+    if (!authToken) {
+        showStatus('Please log in as superadmin.', true);
+        return;
+    }
+    const previous = App.settings.maxPlayersLeft || 8;
+    try {
+        const settings = await updateFeatureSettings(authToken, { maxPlayersLeft: parseInt(value, 10) });
+        renderFeatureSettings(settings);
+        showStatus(`Referees now tap 1–${settings.maxPlayersLeft} for players left.`, false);
+        setTimeout(() => showStatus(null), 3000);
+    } catch (e) {
+        console.error('Failed to update max players left', e);
+        const select = document.getElementById('max-players-left-select');
+        if (select) select.value = String(previous);
+        showStatus('Failed to update max players left: ' + e.message, true);
+        setTimeout(() => showStatus(null), 4000);
+    }
+}
+
 function setSyncInterval(seconds) {
     const value = Math.max(Number(seconds) || 0, 10);
     persistSettings({ intervalSeconds: value });
@@ -750,6 +782,7 @@ export {
     toggleAutoUpdateOfficialResults,
     toggleCheckin,
     toggleRosterEdit,
+    setMaxPlayersLeft,
     setSyncInterval,
     setCustomSyncInterval,
     setSyncScope,

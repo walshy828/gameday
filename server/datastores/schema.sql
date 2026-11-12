@@ -166,7 +166,8 @@ CREATE TABLE IF NOT EXISTS feature_settings (
   champion_celebration_enabled BOOLEAN NOT NULL DEFAULT TRUE,
   auto_update_official_results_enabled BOOLEAN NOT NULL DEFAULT FALSE,
   checkin_enabled BOOLEAN NOT NULL DEFAULT FALSE,
-  roster_edit_enabled BOOLEAN NOT NULL DEFAULT TRUE
+  roster_edit_enabled BOOLEAN NOT NULL DEFAULT TRUE,
+  max_players_left INT NOT NULL DEFAULT 8 -- highest players-left quick-tap button in match entry
 );
 
 -- Existing audit-log table (already written to unconditionally by

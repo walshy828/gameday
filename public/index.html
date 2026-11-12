@@ -1733,6 +1733,24 @@
                                 </div>
                             </section>
 
+                            <!-- Match entry: players-left quick-tap range -->
+                            <section class="card-dark p-4">
+                                <div class="flex items-center justify-between gap-3">
+                                    <div class="flex items-center gap-2 min-w-0">
+                                        <h3 class="text-lg font-bold text-white">🔢 Max players left</h3>
+                                        <span class="tip">
+                                            <button type="button" class="tip-btn" aria-label="About max players left">ⓘ</button>
+                                            <span class="tip-body">Referees report the winner's players left by tapping a number from 1 up to this. Match it to the most players a team can have on the court. Applies to every division on the next screen refresh.</span>
+                                        </span>
+                                    </div>
+                                    <select id="max-players-left-select" onchange="setMaxPlayersLeft(this.value)"
+                                        class="flex-none rounded-lg border border-gray-600 bg-gray-700 px-3 py-2 text-sm font-semibold text-white">
+                                        <option>4</option><option>5</option><option>6</option><option>7</option><option selected>8</option>
+                                        <option>9</option><option>10</option><option>11</option><option>12</option>
+                                    </select>
+                                </div>
+                            </section>
+
                             <!-- 3. Announcement manager -->
                             <section class="card-dark p-4 space-y-3">
                                 <h3 class="text-lg font-bold text-white">📣 Announcement manager</h3>
@@ -1990,38 +2008,45 @@
                 <div class="kicker !tracking-[.16em] text-gold">Report final result</div>
                 <div id="match-info-display"
                     class="mt-2 text-[17px] font-bold leading-[1.3] tracking-[-.02em] text-[#F7F7F8]"></div>
+                <!-- Read-only official result, for context while reporting -->
+                <div class="mt-1 text-[12px] text-white/50">Official: <span id="modal-official-display" class="font-semibold text-white/70"></span></div>
             </div>
 
             <div class="modal-body">
                 <input type="hidden" id="modal-game-index">
                 <!-- Winner: hidden field carries the value, tiles are the UI -->
                 <input type="hidden" id="modal-winner-select" value="—">
+                <!-- Players left: hidden field carries the value, number tiles are the UI -->
+                <input type="hidden" id="modal-players-input" value="0">
 
                 <div>
-                    <div class="kicker text-white/45 mb-2.5">Who won?</div>
+                    <div class="kicker text-white/45 mb-2.5">1 · Who won?</div>
                     <div id="modal-winner-tiles" class="grid gap-[7px]"></div>
                 </div>
 
-                <div>
-                    <div class="kicker text-white/45 mb-2.5">Winner's players left · tiebreak</div>
-                    <div class="stepper-wrap-dark">
-                        <button type="button" onclick="changePlayers(-1)" class="stepper-btn-dark">–</button>
-                        <input type="number" min="0" max="8" id="modal-players-input" value="0" readonly
-                            class="stepper-value-dark w-full min-w-0 border-0 bg-transparent outline-none">
-                        <button type="button" onclick="changePlayers(1)" class="stepper-btn-dark">+</button>
-                    </div>
+                <!-- Only shown once a team is picked (hidden for tie / no winner) -->
+                <div id="modal-players-wrap" class="hidden">
+                    <div class="kicker text-white/45 mb-2.5">2 · How many players did they have left?</div>
+                    <div id="modal-players-tiles" class="grid gap-[7px]"></div>
                 </div>
 
-                <div>
+                <!-- Notes and reporter are tucked away: the name comes from login,
+                     notes are rare. Either opens when needed. -->
+                <div class="flex flex-wrap items-center justify-between gap-x-3 gap-y-1 text-[12px] text-white/55">
+                    <span id="modal-reporter-line">Reporting as <span id="modal-reporter-name" class="font-semibold text-white/80"></span>
+                        · <button type="button" onclick="showModalReporterField()" class="font-semibold underline" style="color:var(--gold-l)">Change</button></span>
+                    <button type="button" id="modal-notes-toggle" onclick="showModalNotesField()" class="font-semibold underline" style="color:var(--gold-l)">+ Add a note</button>
+                </div>
+
+                <div id="modal-notes-wrap" class="hidden">
                     <div class="kicker text-white/45 mb-2.5">Notes · optional</div>
-                    <textarea id="modal-notes-textarea" rows="3" placeholder="Forfeit, injury, short-handed team…"
+                    <textarea id="modal-notes-textarea" rows="2" placeholder="Forfeit, injury, short-handed team…"
                         class="field-dark resize-none"></textarea>
                 </div>
 
-                <div>
+                <div id="modal-reporter-wrap" class="hidden">
                     <div class="kicker text-white/45 mb-2.5">Reported by</div>
-                    <input type="text" id="admin-name-input" placeholder="Your name" class="field-dark">
-                    <p class="mt-2 text-[11px] leading-[1.5] text-white/45">Writes straight to the tournament sheet.</p>
+                    <input type="text" id="admin-name-input" placeholder="Your name" autocomplete="name" class="field-dark">
                 </div>
 
                 <p id="modal-save-message" class="hidden text-[12px] font-semibold" style="color:var(--warn)"></p>
@@ -2033,16 +2058,11 @@
                     <span class="text-[12px] leading-[1.45] text-white/80"><span class="font-semibold" style="color:var(--gold-l)">Also submit as official result</span><br>Overwrites the official result in the sheet with the winner and players above (no winner clears it), then refreshes standings.</span>
                 </label></div>
 
-                <div>
-                    <div class="kicker text-white/45 mb-2">Official result · read-only</div>
-                    <div id="modal-official-display" class="rounded-2xl px-3 py-2.5 text-[13px] font-semibold text-white/70" style="background:rgba(255,255,255,.05)"></div>
-                </div>
-
-                <div class="grid grid-cols-[1fr_1.7fr] gap-2">
+                <div class="grid grid-cols-[1fr_2.2fr] gap-2">
                     <button onclick="hideMatchEntryModal()"
                         class="rounded-[18px] border border-white/15 bg-white/[.07] p-4 text-[13px] font-semibold leading-none text-[#F1F1F2]">Cancel</button>
                     <button onclick="saveMatchResultFromModal()" id="modal-save-button"
-                        class="btn-primary !rounded-[18px] p-4 text-[13px] leading-none">Submit result</button>
+                        class="btn-primary !rounded-[18px] p-4 text-[14px] leading-tight disabled:opacity-40">Submit result</button>
                 </div>
             </div>
         </div>

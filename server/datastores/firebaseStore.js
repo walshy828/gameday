@@ -201,8 +201,15 @@ export async function getFeatureSettings() {
     championCelebrationEnabled: val.championCelebrationEnabled !== false,
     autoUpdateOfficialResultsEnabled: val.autoUpdateOfficialResultsEnabled === true,
     checkinEnabled: val.checkinEnabled === true,
-    rosterEditEnabled: val.rosterEditEnabled !== false
+    rosterEditEnabled: val.rosterEditEnabled !== false,
+    maxPlayersLeft: clampMaxPlayersLeft(val.maxPlayersLeft)
   };
+}
+
+// Highest "players left" quick-tap button in the match entry modal.
+function clampMaxPlayersLeft(v) {
+  const n = Number(v);
+  return Number.isInteger(n) && n >= 1 && n <= 20 ? n : 8;
 }
 
 export async function updateFeatureSettings(patch) {

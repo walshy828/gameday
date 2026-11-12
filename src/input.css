@@ -289,6 +289,17 @@
     background: rgba(224, 184, 99, 0.14);
     color: var(--gold-l);
   }
+  /* Big number tiles (players-left quick tap) on the dark modal sheet */
+  .num-tile-dark {
+    @apply flex h-[54px] items-center justify-center rounded-2xl border border-white/15 bg-white/[.07]
+           text-[22px] font-bold tabular-nums text-[#F1F1F2] transition-colors backdrop-blur-lg;
+    touch-action: manipulation;
+  }
+  .num-tile-dark[data-selected="true"] {
+    border-color: var(--gold);
+    background: rgba(224, 184, 99, 0.2);
+    color: var(--gold-l);
+  }
   /* Stepper (players-left) on the dark modal sheet */
   .stepper-wrap-dark {
     @apply flex items-center gap-[7px] rounded-[20px] border border-white/15 bg-white/[.07] p-1.5 backdrop-blur-lg;

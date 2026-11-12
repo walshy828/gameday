@@ -216,7 +216,8 @@ export const schemaReady = (async function ensureFeatureTables() {
         champion_celebration_enabled BOOLEAN NOT NULL DEFAULT TRUE,
         auto_update_official_results_enabled BOOLEAN NOT NULL DEFAULT FALSE,
         checkin_enabled BOOLEAN NOT NULL DEFAULT FALSE,
-        roster_edit_enabled BOOLEAN NOT NULL DEFAULT TRUE
+        roster_edit_enabled BOOLEAN NOT NULL DEFAULT TRUE,
+        max_players_left INT NOT NULL DEFAULT 8
       )
     `);
     try {
@@ -231,6 +232,11 @@ export const schemaReady = (async function ensureFeatureTables() {
     }
     try {
       await pool.query('ALTER TABLE feature_settings ADD COLUMN roster_edit_enabled BOOLEAN NOT NULL DEFAULT TRUE');
+    } catch (e) {
+      if (e.code !== 'ER_DUP_FIELDNAME') throw e;
+    }
+    try {
+      await pool.query('ALTER TABLE feature_settings ADD COLUMN max_players_left INT NOT NULL DEFAULT 8');
     } catch (e) {
       if (e.code !== 'ER_DUP_FIELDNAME') throw e;
     }
@@ -525,13 +531,14 @@ export async function updateSyncSettings(patch) {
 }
 
 export async function getFeatureSettings() {
-  const [rows] = await pool.query('SELECT champion_celebration_enabled, auto_update_official_results_enabled, checkin_enabled, roster_edit_enabled FROM feature_settings WHERE id = 1');
+  const [rows] = await pool.query('SELECT champion_celebration_enabled, auto_update_official_results_enabled, checkin_enabled, roster_edit_enabled, max_players_left FROM feature_settings WHERE id = 1');
   const row = rows[0];
   return {
     championCelebrationEnabled: row ? !!row.champion_celebration_enabled : true,
     autoUpdateOfficialResultsEnabled: row ? !!row.auto_update_official_results_enabled : false,
     checkinEnabled: row ? !!row.checkin_enabled : false,
-    rosterEditEnabled: row ? !!row.roster_edit_enabled : true
+    rosterEditEnabled: row ? !!row.roster_edit_enabled : true,
+    maxPlayersLeft: row && Number(row.max_players_left) >= 1 ? Number(row.max_players_left) : 8
   };
 }
 
@@ -539,12 +546,13 @@ export async function updateFeatureSettings(patch) {
   const current = await getFeatureSettings();
   const next = { ...current, ...patch };
   await pool.query(
-    `INSERT INTO feature_settings (id, champion_celebration_enabled, auto_update_official_results_enabled, checkin_enabled, roster_edit_enabled) VALUES (1, ?, ?, ?, ?)
+    `INSERT INTO feature_settings (id, champion_celebration_enabled, auto_update_official_results_enabled, checkin_enabled, roster_edit_enabled, max_players_left) VALUES (1, ?, ?, ?, ?, ?)
      ON DUPLICATE KEY UPDATE champion_celebration_enabled = VALUES(champion_celebration_enabled),
        auto_update_official_results_enabled = VALUES(auto_update_official_results_enabled),
        checkin_enabled = VALUES(checkin_enabled),
-       roster_edit_enabled = VALUES(roster_edit_enabled)`,
-    [next.championCelebrationEnabled, next.autoUpdateOfficialResultsEnabled, next.checkinEnabled, next.rosterEditEnabled]
+       roster_edit_enabled = VALUES(roster_edit_enabled),
+       max_players_left = VALUES(max_players_left)`,
+    [next.championCelebrationEnabled, next.autoUpdateOfficialResultsEnabled, next.checkinEnabled, next.rosterEditEnabled, next.maxPlayersLeft]
   );
   const settings = await getFeatureSettings();
   broadcastFeatureSettingsUpdate(settings);
