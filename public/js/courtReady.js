@@ -80,6 +80,12 @@ function schedule() {
     return App.data?.allScheduleData || [];
 }
 
+/** "Semifinals · 10:45 AM" → "10:45 AM"; text without a time is returned as-is. */
+function timeOnly(rt) {
+    const m = /(\d{1,2}:\d{2}\s*(?:AM|PM)?)/i.exec(rt || '');
+    return m ? m[1].toUpperCase() : (rt || '');
+}
+
 function resultText(g) {
     const official = hasValue(g.winner);
     const w = (official ? g.winner : g.adminWinner || '').trim();
@@ -201,6 +207,10 @@ async function setReady(court, ready) {
     if (busy) return;
     const row = deriveBoard().rows.find(r => r.court === court);
     if (!row?.game) return;
+    if (ready && row.owed?.length && !App.state.isSuperAdmin) {
+        toast(`Report the ${roundOf(row.owed[0])} game on Court ${court} first`, true);
+        return;
+    }
     busy = true;
     try {
         const res = await setCourtMark(token(), {
@@ -449,14 +459,19 @@ function tileHtml(r, phase) {
         : r.status === 'ready'
             ? `<button type="button" data-cr-unready="${esc(r.court)}" class="mt-2 w-full rounded-full px-3 py-2 text-[11px] font-semibold" style="background:rgba(255,255,255,.06);color:rgba(255,255,255,.6)">Not ready</button>`
             : '';
+    const owed = r.owed?.length
+        ? `<div class="mt-2 rounded-[12px] px-2 py-1.5 text-[10px] font-bold leading-[1.3]" style="background:rgba(217,80,60,.18);color:#FFB4A6">⚠ ${esc(roundOf(r.owed[0]))} score missing${r.owed.length > 1 ? ` (+${r.owed.length - 1})` : ''}</div>
+           <div class="mt-1.5 flex">${reportBtn(r.owed[0], `Report ${esc(timeOnly(roundOf(r.owed[0])))}`, true).replace('flex-none', 'w-full')}</div>`
+        : '';
     return `
-        <div class="rounded-[20px] border p-3" style="background:${st.bg};border-color:${st.border}">
+        <div class="rounded-[20px] border p-3" style="background:${st.bg};border-color:${r.owed?.length ? 'rgba(217,80,60,.65)' : st.border}">
             <div class="flex items-center justify-between gap-2">
                 <div class="text-[15px] font-extrabold text-white">Court ${esc(r.court)}</div>
                 <span class="inline-block h-2.5 w-2.5 rounded-full" style="background:${st.dot}"></span>
             </div>
             <div class="mt-1 text-[11px] font-extrabold tracking-[.08em]" style="color:${st.text}">${st.label}</div>
             ${body}
+            ${owed}
             ${action}
         </div>`;
 }
@@ -544,6 +559,24 @@ function renderRefBar(panel, board) {
     }
     const g = r.game;
     const teams = g ? `${esc(g.team1)} <span class="text-white/45">vs</span> ${esc(g.team2)}` : '';
+
+    // A score from an earlier round is still missing on this court (the MC
+    // ended the round or time ran out first): report it before anything else.
+    if (r.owed?.length) {
+        const o = r.owed[0];
+        const more = r.owed.length > 1 ? ` (+${r.owed.length - 1} more)` : '';
+        const nextUp = g && (r.status === 'waiting' || r.status === 'ready')
+            ? `<div class="mt-2.5 border-t pt-2 text-[11px] leading-[1.4] text-white/50" style="border-color:rgba(255,255,255,.1)">Next up: ${teams} · mark ready once this score is in</div>`
+            : '';
+        panel.innerHTML = `
+            <section class="rounded-[22px] border p-3.5" style="background:rgba(217,80,60,.14);border-color:rgba(217,80,60,.65)">
+                <div class="text-[10px] tracking-[.16em] font-semibold uppercase" style="color:#FFB4A6">Court ${esc(court)} · ${esc(roundOf(o))} score not reported${esc(more)}</div>
+                <div class="mt-1 text-[13px] font-semibold text-white">${esc(o.team1)} <span class="text-white/45">vs</span> ${esc(o.team2)}</div>
+                <div class="mt-3 flex">${reportBtn(o, `Report ${esc(timeOnly(roundOf(o)))} score`, true).replace('flex-none', 'w-full py-3.5 text-[14px]')}</div>
+                ${nextUp}
+            </section>`;
+        return true;
+    }
 
     if (r.status === 'bye') {
         panel.innerHTML = compactBar('rgba(255,255,255,.35)', `<span class="font-bold text-white">Court ${esc(court)} · no game this round</span>${r.later ? ` · next at ${esc(roundOf(r.later))}` : ''}`);

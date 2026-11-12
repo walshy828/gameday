@@ -79,7 +79,17 @@ export function deriveBoard({ games, order, division, marks = [], rec = null, cl
 
     const courts = [...new Set(games.map(g => courtKey(g.court)).filter(Boolean))]
         .sort((a, b) => a.localeCompare(b, undefined, { numeric: true }));
+    // Unreported games on a court from rounds before B (e.g. the MC ended the
+    // round, or time ran out, before the referee entered the score).
+    const owedOn = (court) => games
+        .filter(x => courtKey(x.court) === court && !isDone(x) && (B ? idx(roundOf(x)) < idx(B) : true))
+        .sort((a, b) => idx(roundOf(a)) - idx(roundOf(b)));
+
     const rows = courts.map((court) => {
+        const owed = owedOn(court);
+        return { ...courtRow(court), owed };
+    });
+    function courtRow(court) {
         const g = B ? games.find(x => roundOf(x) === B && courtKey(x.court) === court) : null;
         if (!B) return { court, status: 'none', game: null, inR: false };
         if (!g) {
@@ -93,14 +103,15 @@ export function deriveBoard({ games, order, division, marks = [], rec = null, cl
         else if (phase === 'playing') status = 'playing';
         else status = mark ? 'ready' : 'waiting';
         return { court, status, game: g, mark, inR: true };
-    });
+    }
 
     const withGame = rows.filter(r => r.game);
     const summary = phase === 'playing'
         ? { final: withGame.filter(r => r.status === 'final').length, total: withGame.length }
         : (() => {
             const open = withGame.filter(r => r.status !== 'final');
-            const ready = open.filter(r => r.status === 'ready').length;
+            // A court still owing an earlier score isn't ready, even if marked.
+            const ready = open.filter(r => r.status === 'ready' && !r.owed.length).length;
             return { ready, total: open.length, allReady: open.length > 0 && ready === open.length };
         })();
 
