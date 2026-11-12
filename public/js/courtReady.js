@@ -484,6 +484,19 @@ function alertOnChanges(board) {
     last = now;
 }
 
+// --- report shortcut ---------------------------------------------------------------------
+// The court bar / board tiles open the same match entry modal as the list's
+// Report button, for the game on that court.
+
+function reportBtn(game, label, primary) {
+    const i = (App.data?.allScheduleData || []).indexOf(game);
+    if (i < 0) return '';
+    const style = primary
+        ? 'background:linear-gradient(135deg,var(--gold) 0%,var(--gold-d) 100%);color:#2A1B08'
+        : 'background:rgba(255,255,255,.06);color:rgba(255,255,255,.7);border:1px solid rgba(255,255,255,.18)';
+    return `<button type="button" data-cr-report="${i}" class="flex-none rounded-full px-3.5 py-2 text-[12px] font-bold leading-none" style="${style}">${label}</button>`;
+}
+
 // --- superadmin board -------------------------------------------------------------------
 
 const STATUS_STYLE = {
@@ -514,7 +527,11 @@ function tileHtml(r, phase) {
     } else if (r.later) {
         body = `<div class="mt-1.5 text-[10px] text-white/40">Next: ${esc(roundOf(r.later))}</div>`;
     }
-    const action = r.status === 'waiting'
+    const action = r.status === 'playing'
+        ? `<div class="mt-2 flex">${reportBtn(g, 'Report', true).replace('flex-none', 'w-full')}</div>`
+        : r.status === 'final'
+        ? `<div class="mt-2 flex justify-end">${reportBtn(g, 'Edit', false)}</div>`
+        : r.status === 'waiting'
         ? `<button type="button" data-cr-ready="${esc(r.court)}" class="mt-2 w-full rounded-full px-3 py-2 text-[11px] font-bold" style="background:rgba(46,158,99,.25);color:#B9F0D0">Mark ready</button>`
         : r.status === 'ready'
             ? `<button type="button" data-cr-unready="${esc(r.court)}" class="mt-2 w-full rounded-full px-3 py-2 text-[11px] font-semibold" style="background:rgba(255,255,255,.06);color:rgba(255,255,255,.6)">Not ready</button>`
@@ -593,12 +610,13 @@ function renderBoard(panel, board) {
 
 // --- referee bar -------------------------------------------------------------------------
 
-function compactBar(dot, html) {
+function compactBar(dot, html, action = '') {
     return `
         <section class="rounded-[22px] border px-3.5 py-2.5" style="background:rgba(255,255,255,.05);border-color:rgba(255,255,255,.12)">
             <div class="flex items-center gap-2 text-[12px] text-white/75">
                 <span class="inline-block h-2 w-2 flex-none rounded-full" style="background:${dot}"></span>
-                <span class="min-w-0">${html}</span>
+                <span class="min-w-0 flex-1">${html}</span>
+                ${action}
             </div>
         </section>`;
 }
@@ -606,7 +624,11 @@ function compactBar(dot, html) {
 function renderRefBar(panel, board) {
     const court = focusCourt || courtKey(App.state.selectedCourt);
     const r = board.rows.find(x => x.court === court);
-    if (!r || r.status === 'none') { panel.innerHTML = ''; return false; }
+    if (!r) { panel.innerHTML = ''; return false; }
+    if (r.status === 'none') {
+        panel.innerHTML = compactBar('rgba(255,255,255,.3)', `<span class="font-bold text-white">Court ${esc(court)}</span> · all rounds played`);
+        return true;
+    }
     const g = r.game;
     const teams = g ? `${esc(g.team1)} <span class="text-white/45">vs</span> ${esc(g.team2)}` : '';
 
@@ -615,12 +637,12 @@ function renderRefBar(panel, board) {
         return true;
     }
     if (r.status === 'playing') {
-        panel.innerHTML = compactBar('var(--warn)', `<span class="font-bold text-white">Court ${esc(court)} · in play</span> · ${teams}`);
+        panel.innerHTML = compactBar('var(--warn)', `<span class="font-bold text-white">Court ${esc(court)} · in play</span><br>${teams}`, reportBtn(g, 'Report', true));
         return true;
     }
     if (r.status === 'final') {
-        if (board.phase === 'staging') { panel.innerHTML = ''; return false; }
-        panel.innerHTML = compactBar('var(--ok)', `<span class="font-bold" style="color:#B9F0D0">✓ Court ${esc(court)} final</span> · next round's teams come up when the round ends`);
+        const note = board.phase === 'staging' ? 'already reported' : 'next round\'s teams come up when the round ends';
+        panel.innerHTML = compactBar('var(--ok)', `<span class="font-bold" style="color:#B9F0D0">✓ Court ${esc(court)} final · ${esc(resultText(g))}</span><br>${note}`, reportBtn(g, 'Edit', false));
         return true;
     }
     if (r.status === 'ready') {
@@ -680,7 +702,8 @@ export function render() {
         panel.addEventListener('click', (ev) => {
             const el = ev.target.closest('button');
             if (!el) return;
-            if (el.dataset.crReady) setReady(el.dataset.crReady, true);
+            if (el.dataset.crReport !== undefined) window.showMatchEntryModal?.(Number(el.dataset.crReport));
+            else if (el.dataset.crReady) setReady(el.dataset.crReady, true);
             else if (el.dataset.crUnready) setReady(el.dataset.crUnready, false);
             else if ('crStart' in el.dataset) startRoundFromBoard();
             else if ('crEnd' in el.dataset) endRoundFromBoard();
