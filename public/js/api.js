@@ -219,6 +219,20 @@ export const postConcessionVoid = (token, v) => cnFetch('/concessions/void', tok
 export const saveConcessionItems = (token, items) => cnFetch('/concessions/items', token, { items });
 export const saveConcessionSettings = (token, patch) => cnFetch('/concessions/settings', token, patch);
 
+export const getDivisionData = (token) => cnFetch('/divisionData', token);
+export const clearDivisionData = (token, division, confirm) => cnFetch('/divisionData/clear', token, { division, confirm });
+// Downloads the CSV through fetch so the Bearer token goes in a header (never in the URL).
+export async function downloadDivisionData(token, division) {
+  let res;
+  try { res = await fetch(`${window.location.origin}/api/divisionData/export${division ? `?division=${encodeURIComponent(division)}` : ''}`, { headers: authHeaders(token) }); }
+  catch (e) { const err = new Error('No connection'); err.status = 0; throw err; }
+  if (!res.ok) { const out = await res.json().catch(() => ({})); const err = new Error(out.error || `Request failed (${res.status})`); err.status = res.status; throw err; }
+  const m = /filename="([^"]+)"/.exec(res.headers.get('Content-Disposition') || '');
+  const url = URL.createObjectURL(await res.blob());
+  const a = Object.assign(document.createElement('a'), { href: url, download: m ? m[1] : 'gameday-data.csv' });
+  document.body.appendChild(a); a.click(); a.remove(); setTimeout(() => URL.revokeObjectURL(url), 1000);
+}
+
 export const getSeasons = (token) => cnFetch('/seasons', token);
 export const startSeason = (token, label) => cnFetch('/seasons/start', token, { label });
 

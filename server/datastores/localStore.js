@@ -813,3 +813,91 @@ export async function setDiscrepancyDismissal(key, sig, by) {
   );
   broadcastDiscrepancyPing();
 }
+
+// ---------------------------------------------------------------------------
+// Division data: view / export / clear the app-entered layer.
+//
+// A sheet sync only rewrites the sheet-sourced columns, so match results typed
+// in the app (schedule.admin* + lastUpdated), the per-match history log and the
+// gameday_submissions audit log all survive a re-sync — even when the tab is
+// replaced by a new one with the same name. These let the superadmin see what
+// is stored per division, download it, and wipe it. Standings/schedule rows
+// themselves (the sheet-sourced part) are never touched here.
+// ---------------------------------------------------------------------------
+
+/** Per-division counts of app-entered data, plus any division that only has log rows left. */
+export async function getDivisionDataSummary() {
+  const [[sched], [hist], [subs]] = await Promise.all([
+    pool.query(`SELECT division, COUNT(*) AS matches,
+                  SUM(adminWinner <> '' OR adminName <> '' OR adminPlayersRemaining <> '' OR notes <> '' OR lastUpdated IS NOT NULL) AS entered,
+                  MAX(lastUpdated) AS lastUpdated
+                FROM schedule GROUP BY division`),
+    pool.query('SELECT division, COUNT(*) AS n, MAX(created_at) AS last FROM match_history GROUP BY division'),
+    pool.query('SELECT division, COUNT(*) AS n, MAX(Date) AS last FROM gameday_submissions GROUP BY division')
+  ]);
+  const out = new Map();
+  const row = (d) => { if (!out.has(d)) out.set(d, { division: d, matches: 0, enteredResults: 0, historyEntries: 0, submissions: 0, lastActivity: null }); return out.get(d); };
+  const later = (cur, v) => (v && (!cur || new Date(v) > new Date(cur)) ? new Date(v).toISOString() : cur);
+  sched.forEach(r => { const o = row(r.division); o.matches = Number(r.matches); o.enteredResults = Number(r.entered || 0); o.lastActivity = later(o.lastActivity, r.lastUpdated); });
+  hist.forEach(r => { const o = row(r.division); o.historyEntries = Number(r.n); o.lastActivity = later(o.lastActivity, r.last); });
+  subs.forEach(r => { const o = row(r.division || ''); o.submissions = Number(r.n); o.lastActivity = later(o.lastActivity, r.last); });
+  return [...out.values()].filter(o => o.division).sort((a, b) => a.division.localeCompare(b.division));
+}
+
+function csvCell(v) {
+  if (v === null || v === undefined) return '';
+  const s = v instanceof Date ? v.toISOString() : String(v);
+  return /[",\r\n]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s;
+}
+
+/**
+ * CSV of the stored match logs for one division (or every division when `division` is falsy):
+ * the gameday_submissions audit log (what was sent to the sheet) and the match_history log.
+ */
+export async function exportDivisionDataCsv(division) {
+  const where = division ? 'WHERE division = ?' : '';
+  const args = division ? [division] : [];
+  const [[subs], [hist]] = await Promise.all([
+    pool.query(`SELECT division, rowindex, name, winner, playersremaining, notes, Date AS at FROM gameday_submissions ${where}`, args),
+    pool.query(`SELECT division, match_index, name, winner, players_remaining, notes, created_at AS at FROM match_history ${where}`, args)
+  ]);
+  const rows = [
+    ...subs.map(r => ['submission_log', r.division, r.rowindex, '', r.name, r.winner, r.playersremaining, r.notes, r.at]),
+    ...hist.map(r => ['match_history', r.division, '', r.match_index, r.name, r.winner, r.players_remaining, r.notes, r.at])
+  ].sort((a, b) => String(a[1]).localeCompare(String(b[1])) || new Date(a[8] || 0) - new Date(b[8] || 0));
+  const header = ['source', 'division', 'sheet_row', 'match_index', 'entered_by', 'winner', 'players_remaining', 'notes', 'timestamp'];
+  return [header, ...rows].map(r => r.map(csvCell).join(',')).join('\r\n') + '\r\n';
+}
+
+/**
+ * Wipe the app-entered layer for one division (or all when `division` is falsy): referee results and
+ * "updated" stamps on the schedule rows, match_history, and gameday_submissions. Sheet-sourced columns and
+ * standings stay, so the next sync/schedule view is clean. Returns what was removed.
+ */
+export async function clearDivisionData(division) {
+  const where = division ? 'WHERE division = ?' : '';
+  const args = division ? [division] : [];
+  const conn = await pool.getConnection();
+  let result;
+  try {
+    await conn.beginTransaction();
+    const [s] = await conn.query(
+      `UPDATE schedule SET adminName = '', adminWinner = '', adminPlayersRemaining = '', notes = '', lastUpdated = NULL ${where}`, args);
+    const [h] = await conn.query(`DELETE FROM match_history ${where}`, args);
+    const [g] = await conn.query(`DELETE FROM gameday_submissions ${where}`, args);
+    // Dismissals are keyed "<division>|<index>" and only mean something while a result exists.
+    const [d] = await conn.query(division ? 'DELETE FROM discrepancy_dismissals WHERE dismiss_key LIKE ?' : 'DELETE FROM discrepancy_dismissals',
+      division ? [`${division.replace(/[\\%_]/g, '\\$&')}|%`] : []);
+    await conn.commit();
+    result = { scheduleRowsReset: s.affectedRows, historyDeleted: h.affectedRows, submissionsDeleted: g.affectedRows, dismissalsDeleted: d.affectedRows };
+  } catch (e) {
+    await conn.rollback();
+    throw e;
+  } finally {
+    conn.release();
+  }
+  const names = division ? [division] : await getDivisionNames();
+  for (const name of names) broadcastDivisionUpdate(name, await loadDivisionSnapshot(name));
+  broadcastDiscrepancyPing();
+  return result;
+}

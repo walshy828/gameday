@@ -13,6 +13,7 @@ import { resetConcessions, unsyncedCount } from './concessions.js';
 import { saveAuth, clearAuth, loadAuth } from './concessionsStore.js';
 import { resetSeasons } from './seasons.js';
 import { resetDanger } from './danger.js';
+import { resetDivisionData } from './divisionData.js';
 import { getSocket } from './socketClient.js';
 
 // --- Result discrepancies (superadmin) -------------------------------------
@@ -826,6 +827,7 @@ function updateAdminUI() {
         resetConcessions();
         resetSeasons();
         resetDanger();
+        resetDivisionData();
         resetRaffleBackup();
         resetRoster();
         window.closeTimerOverlay?.();

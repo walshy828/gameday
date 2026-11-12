@@ -649,6 +649,62 @@ app.post('/api/seasons/start', async (req, res) => {
   }
 });
 
+// --- Division data: see / download / clear what the app has stored per division (superadmin) ---
+// Covers the app-entered layer a sheet sync never overwrites: referee results + "updated" stamps, match history and
+// the gameday_submissions audit log. Standings and the sheet-sourced schedule are untouched, and Google Sheets are
+// never written. Needs the MariaDB backend (DATA_BACKEND=local).
+function requireDivisionData(res) {
+  if (typeof Store.clearDivisionData === 'function') return true;
+  res.status(501).json({ success: false, error: 'Division data tools need the MariaDB backend (DATA_BACKEND=local).' });
+  return false;
+}
+
+app.get('/api/divisionData', async (req, res) => {
+  if (!requireSuperAdmin(req, res) || !requireDivisionData(res)) return;
+  try {
+    res.json({ success: true, divisions: await Store.getDivisionDataSummary() });
+  } catch (e) {
+    console.error('divisionData summary error', e);
+    res.status(500).json({ success: false, error: e.message || e.toString() });
+  }
+});
+
+// ?division=<name> for one division; omit for all. Sent as a CSV download.
+app.get('/api/divisionData/export', async (req, res) => {
+  if (!requireSuperAdmin(req, res) || !requireDivisionData(res)) return;
+  try {
+    const division = typeof req.query.division === 'string' ? req.query.division : '';
+    const csv = await Store.exportDivisionDataCsv(division || null);
+    const label = (division || 'all-divisions').replace(/[^\w.-]+/g, '_');
+    res.setHeader('Content-Type', 'text/csv; charset=utf-8');
+    res.setHeader('Content-Disposition', `attachment; filename="gameday-${label}-${new Date().toISOString().slice(0, 10)}.csv"`);
+    res.send(csv);
+  } catch (e) {
+    console.error('divisionData export error', e);
+    res.status(500).json({ success: false, error: e.message || e.toString() });
+  }
+});
+
+// Body: { division: "<name>" | null (all), confirm: "<same name>" | "ALL" }. The confirmation must be typed by the user.
+app.post('/api/divisionData/clear', async (req, res) => {
+  if (!requireSuperAdmin(req, res) || !requireDivisionData(res)) return;
+  const division = typeof req.body?.division === 'string' && req.body.division ? req.body.division : null;
+  if (req.body?.confirm !== (division || 'ALL')) {
+    return res.status(400).json({ success: false, error: 'Confirmation did not match.' });
+  }
+  try {
+    if (division && !(await Store.getDivisionNames()).includes(division) && !(await Store.getDivisionDataSummary()).some(d => d.division === division)) {
+      return res.status(404).json({ success: false, error: 'Unknown division.' });
+    }
+    const deleted = await Store.clearDivisionData(division);
+    console.warn(`DIVISION DATA CLEARED by superadmin (${division || 'ALL divisions'}):`, JSON.stringify(deleted));
+    res.json({ success: true, deleted, divisions: await Store.getDivisionDataSummary() });
+  } catch (e) {
+    console.error('divisionData clear error', e);
+    res.status(500).json({ success: false, error: e.message || e.toString() });
+  }
+});
+
 // --- Test data reset (superadmin, DISABLED unless ALLOW_TEST_DATA_RESET=true) ---
 // Deletes concession sales and/or raffle backup rows from the database for retesting. Never touches the sheets,
 // items/settings or seasons. Leave the env var unset in production so this cannot be run by accident.
