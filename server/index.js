@@ -16,6 +16,7 @@ import { compare as compareRaffle } from './raffleReconcile.js';
 import * as Concessions from './concessionsDb.js';
 import * as Seasons from './seasons.js';
 import { controlTimer, initTimerControl, TimerError, TIMER_ACTION_NAMES } from './timerControl.js';
+import * as CourtStatus from './courtStatus.js';
 import crypto from 'crypto';
 import compression from 'compression';
 import helmet from 'helmet';
@@ -121,7 +122,8 @@ app.get('/api/allData', async (req, res) => {
       autoUpdateOfficialResultsEnabled: featureSettings.autoUpdateOfficialResultsEnabled,
       checkinEnabled: featureSettings.checkinEnabled,
       rosterEditEnabled: featureSettings.rosterEditEnabled,
-      maxPlayersLeft: featureSettings.maxPlayersLeft
+      maxPlayersLeft: featureSettings.maxPlayersLeft,
+      courtReadyEnabled: featureSettings.courtReadyEnabled
     };
     const [standings, schedule, scheduleConfig] = await Promise.all([
       Store.getStandings(sheetName),
@@ -1245,12 +1247,13 @@ app.post('/api/sheetSync/settings', async (req, res) => {
 app.post('/api/featureSettings', async (req, res) => {
   if (!requireSuperAdmin(req, res)) return;
   try {
-    const { championCelebrationEnabled, autoUpdateOfficialResultsEnabled, checkinEnabled, rosterEditEnabled, maxPlayersLeft } = req.body || {};
+    const { championCelebrationEnabled, autoUpdateOfficialResultsEnabled, checkinEnabled, rosterEditEnabled, maxPlayersLeft, courtReadyEnabled } = req.body || {};
     const patch = {};
     if (typeof championCelebrationEnabled === 'boolean') patch.championCelebrationEnabled = championCelebrationEnabled;
     if (typeof autoUpdateOfficialResultsEnabled === 'boolean') patch.autoUpdateOfficialResultsEnabled = autoUpdateOfficialResultsEnabled;
     if (typeof checkinEnabled === 'boolean') patch.checkinEnabled = checkinEnabled;
     if (typeof rosterEditEnabled === 'boolean') patch.rosterEditEnabled = rosterEditEnabled;
+    if (typeof courtReadyEnabled === 'boolean') patch.courtReadyEnabled = courtReadyEnabled;
     if (maxPlayersLeft !== undefined) {
       if (!Number.isInteger(maxPlayersLeft) || maxPlayersLeft < 1 || maxPlayersLeft > 20) {
         return res.status(400).json({ success: false, error: 'maxPlayersLeft must be a whole number from 1 to 20.' });
@@ -1259,9 +1262,73 @@ app.post('/api/featureSettings', async (req, res) => {
     }
 
     const settings = await Store.updateFeatureSettings(patch);
+    // Switching court readiness off wipes any leftover statuses, so turning it
+    // back on later starts from a clean board.
+    if (patch.courtReadyEnabled === false) CourtStatus.clearAll();
     res.json(settings);
   } catch (e) {
     console.error('featureSettings error', e);
+    res.status(500).json({ success: false, error: e.toString() });
+  }
+});
+
+// --- Court readiness (optional, `courtReadyEnabled`) ---
+// Referees mark a court ready once both next teams are on it; the MC
+// (superadmin) watches the board and starts the round. In-memory only —
+// see server/courtStatus.js. Never written to the sheet or a database.
+async function requireCourtReadyOn(res) {
+  const features = await Store.getFeatureSettings();
+  if (features.courtReadyEnabled !== true) {
+    res.status(409).json({ success: false, error: 'Court readiness is turned off.' });
+    return false;
+  }
+  return true;
+}
+
+app.get('/api/courtStatus', async (req, res) => {
+  if (!isValidToken(getAuthToken(req))) return res.status(401).json({ success: false, error: 'Authentication failed.' });
+  try {
+    const features = await Store.getFeatureSettings();
+    res.set('Cache-Control', 'no-store');
+    res.json({ success: true, enabled: features.courtReadyEnabled === true, courts: CourtStatus.list() });
+  } catch (e) {
+    console.error('courtStatus get error', e);
+    res.status(500).json({ success: false, error: e.toString() });
+  }
+});
+
+app.post('/api/courtStatus', async (req, res) => {
+  if (!isValidToken(getAuthToken(req))) return res.status(401).json({ success: false, error: 'Authentication failed.' });
+  try {
+    if (!(await requireCourtReadyOn(res))) return;
+    const court = typeof req.body?.court === 'string' ? req.body.court.trim() : '';
+    const status = req.body?.status;
+    if (!CourtStatus.COURT_RE.test(court)) return res.status(400).json({ success: false, error: 'Invalid court.' });
+    if (!CourtStatus.SETTABLE_STATUSES.has(status)) return res.status(400).json({ success: false, error: 'Invalid status.' });
+    const entry = CourtStatus.setStatus({
+      court,
+      status,
+      division: req.body?.division,
+      nextMatch: req.body?.nextMatch,
+      by: cleanText(req.body?.by, 40)
+    });
+    res.json({ success: true, court: entry, courts: CourtStatus.list() });
+  } catch (e) {
+    console.error('courtStatus set error', e);
+    res.status(500).json({ success: false, error: e.toString() });
+  }
+});
+
+app.post('/api/courtStatus/round', async (req, res) => {
+  if (!requireSuperAdmin(req, res)) return;
+  try {
+    const action = req.body?.action;
+    if (action === 'clear') return res.json({ success: true, courts: CourtStatus.clearAll() });
+    if (!(await requireCourtReadyOn(res))) return;
+    if (action === 'start') return res.json({ success: true, courts: CourtStatus.startRound(cleanText(req.body?.by, 40)) });
+    res.status(400).json({ success: false, error: 'Unknown action.' });
+  } catch (e) {
+    console.error('courtStatus round error', e);
     res.status(500).json({ success: false, error: e.toString() });
   }
 });

@@ -167,7 +167,8 @@ CREATE TABLE IF NOT EXISTS feature_settings (
   auto_update_official_results_enabled BOOLEAN NOT NULL DEFAULT FALSE,
   checkin_enabled BOOLEAN NOT NULL DEFAULT FALSE,
   roster_edit_enabled BOOLEAN NOT NULL DEFAULT TRUE,
-  max_players_left INT NOT NULL DEFAULT 8 -- highest players-left quick-tap button in match entry
+  max_players_left INT NOT NULL DEFAULT 8, -- highest players-left quick-tap button in match entry
+  court_ready_enabled BOOLEAN NOT NULL DEFAULT FALSE -- referees can mark a court "ready" for the MC (state itself is in-memory)
 );
 
 -- Existing audit-log table (already written to unconditionally by

@@ -202,7 +202,8 @@ export async function getFeatureSettings() {
     autoUpdateOfficialResultsEnabled: val.autoUpdateOfficialResultsEnabled === true,
     checkinEnabled: val.checkinEnabled === true,
     rosterEditEnabled: val.rosterEditEnabled !== false,
-    maxPlayersLeft: clampMaxPlayersLeft(val.maxPlayersLeft)
+    maxPlayersLeft: clampMaxPlayersLeft(val.maxPlayersLeft),
+    courtReadyEnabled: val.courtReadyEnabled === true
   };
 }
 

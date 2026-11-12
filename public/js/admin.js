@@ -16,6 +16,7 @@ import { resetDanger } from './danger.js';
 import { resetDivisionData } from './divisionData.js';
 import { getSocket } from './socketClient.js';
 import { toast } from './concessionsUi.js';
+import { ensureCourtReadyWatch, onMatchSaved as courtReadyOnSave, render as renderCourtReady, resetCourtReady } from './courtReady.js';
 
 // --- Result discrepancies (superadmin) -------------------------------------
 // A referee-submitted result that differs from the official one. The server
@@ -352,6 +353,9 @@ function renderAdminMatchEntryViewImpl() {
         acc[round].push(game);
         return acc;
     }, {});
+
+    ensureCourtReadyWatch();
+    renderCourtReady();
 
     matchListDiv.innerHTML = '';
     wireDiscrepancyActions(matchListDiv);
@@ -1141,6 +1145,7 @@ function logoutAdmin() {
     sessionStorage.removeItem('isRaffle');
     sessionStorage.removeItem('isConcessions');
     clearAuth();
+    resetCourtReady();
     sessionStorage.removeItem('firebaseToken');
     sessionStorage.removeItem('reporterName');
     sessionStorage.removeItem('selectedCourt');
@@ -1495,6 +1500,8 @@ async function saveMatchResultFromModal() {
         hideMatchEntryModal();
         toast(`✓ Saved — ${describeResult(winner, playersRemaining)}`);
         try { navigator.vibrate && navigator.vibrate(40); } catch (e) { /* unsupported */ }
+        // Optional court-ready flow: puts this court into "waiting for teams".
+        courtReadyOnSave(game, matchData.winner);
 
         const sheetFailed = result.sheetsMirror && !result.sheetsMirror.success && !result.sheetsMirror.skipped;
         // Refresh standings/schedule in the background. loadData() resets the

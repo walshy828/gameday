@@ -1471,6 +1471,10 @@
                             </div>
                         </div>
 
+                        <!-- Court readiness (optional, Setup → Court Ready): referee's
+                             "Mark ready" bar or the MC's court board — courtReady.js. -->
+                        <div id="court-ready-panel" class="hidden mt-2.5"></div>
+
                         <!-- Timer controls now live in the header-clock popover (any page,
                              superadmin only) — see #timer-overlay-panel and timerOverlay.js. -->
 
@@ -1711,6 +1715,23 @@
                                     </div>
                                     <label class="switch flex-none">
                                         <input type="checkbox" id="checkin-toggle" onchange="toggleCheckin(this.checked)">
+                                        <span class="slider round"></span>
+                                    </label>
+                                </div>
+                            </section>
+
+                            <!-- Court readiness board -->
+                            <section class="card-dark p-4">
+                                <div class="flex items-center justify-between gap-3">
+                                    <div class="flex items-center gap-2 min-w-0">
+                                        <h3 class="text-lg font-bold text-white">🟢 Court Ready</h3>
+                                        <span class="tip">
+                                            <button type="button" class="tip-btn" aria-label="About court ready">ⓘ</button>
+                                            <span class="tip-body">After a referee reports a game they get a "Mark ready" button to tap once both next teams are on the court. The Admin tab shows you a court board with an "All courts ready" alert and a Start round button. Lives only in the app (never the Google Sheet) and is cleared when switched off. Off by default.</span>
+                                        </span>
+                                    </div>
+                                    <label class="switch flex-none">
+                                        <input type="checkbox" id="court-ready-toggle" onchange="toggleCourtReady(this.checked)">
                                         <span class="slider round"></span>
                                     </label>
                                 </div>

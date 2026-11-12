@@ -271,3 +271,16 @@ export async function deleteChatMessage(authToken, id, channel = 'crew') {
 
 export const getTestReset = (token) => cnFetch('/admin/test-reset', token);
 export const runTestReset = (token, opts) => cnFetch('/admin/test-reset', token, { ...opts, confirm: 'DELETE' });
+
+// Court readiness board (optional feature; see server/courtStatus.js).
+export async function getCourtStatus(authToken) {
+  return await apiGet(`/courtStatus`, authToken);
+}
+
+export async function setCourtStatus(authToken, { court, status, division, nextMatch, by }) {
+  return await apiPost(`/courtStatus`, { authToken, court, status, division, nextMatch, by });
+}
+
+export async function courtRoundAction(authToken, action, by) {
+  return await apiPost(`/courtStatus/round`, { authToken, action, by });
+}

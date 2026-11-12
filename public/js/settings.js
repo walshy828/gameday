@@ -335,6 +335,10 @@ function renderFeatureSettings(settings) {
     const rosterEditToggle = document.getElementById('roster-edit-toggle');
     if (rosterEditToggle) rosterEditToggle.checked = App.settings.rosterEditEnabled;
 
+    App.settings.courtReadyEnabled = settings.courtReadyEnabled === true;
+    const courtReadyToggle = document.getElementById('court-ready-toggle');
+    if (courtReadyToggle) courtReadyToggle.checked = App.settings.courtReadyEnabled;
+
     const officialResultsToggle = document.getElementById('auto-update-official-results-toggle');
     if (officialResultsToggle) officialResultsToggle.checked = App.settings.autoUpdateOfficialResultsEnabled;
 
@@ -596,6 +600,24 @@ async function toggleAutoUpdateOfficialResults(checked) {
     }
 }
 
+async function toggleCourtReady(checked) {
+    const authToken = sessionStorage.getItem('adminAuthToken');
+    if (!authToken) {
+        showStatus('Please log in as superadmin.', true);
+        return;
+    }
+    try {
+        const settings = await updateFeatureSettings(authToken, { courtReadyEnabled: !!checked });
+        renderFeatureSettings(settings);
+    } catch (e) {
+        console.error('Failed to update court ready setting', e);
+        const toggle = document.getElementById('court-ready-toggle');
+        if (toggle) toggle.checked = !checked;
+        showStatus('Failed to update court ready setting: ' + e.message, true);
+        setTimeout(() => showStatus(null), 4000);
+    }
+}
+
 async function toggleCheckin(checked) {
     const authToken = sessionStorage.getItem('adminAuthToken');
     if (!authToken) {
@@ -781,6 +803,7 @@ export {
     toggleChampionCelebration,
     toggleAutoUpdateOfficialResults,
     toggleCheckin,
+    toggleCourtReady,
     toggleRosterEdit,
     setMaxPlayersLeft,
     setSyncInterval,

@@ -240,6 +240,11 @@ export const schemaReady = (async function ensureFeatureTables() {
     } catch (e) {
       if (e.code !== 'ER_DUP_FIELDNAME') throw e;
     }
+    try {
+      await pool.query('ALTER TABLE feature_settings ADD COLUMN court_ready_enabled BOOLEAN NOT NULL DEFAULT FALSE');
+    } catch (e) {
+      if (e.code !== 'ER_DUP_FIELDNAME') throw e;
+    }
     await pool.query(`
       CREATE TABLE IF NOT EXISTS discrepancy_dismissals (
         dismiss_key VARCHAR(255) PRIMARY KEY,
@@ -531,14 +536,15 @@ export async function updateSyncSettings(patch) {
 }
 
 export async function getFeatureSettings() {
-  const [rows] = await pool.query('SELECT champion_celebration_enabled, auto_update_official_results_enabled, checkin_enabled, roster_edit_enabled, max_players_left FROM feature_settings WHERE id = 1');
+  const [rows] = await pool.query('SELECT champion_celebration_enabled, auto_update_official_results_enabled, checkin_enabled, roster_edit_enabled, max_players_left, court_ready_enabled FROM feature_settings WHERE id = 1');
   const row = rows[0];
   return {
     championCelebrationEnabled: row ? !!row.champion_celebration_enabled : true,
     autoUpdateOfficialResultsEnabled: row ? !!row.auto_update_official_results_enabled : false,
     checkinEnabled: row ? !!row.checkin_enabled : false,
     rosterEditEnabled: row ? !!row.roster_edit_enabled : true,
-    maxPlayersLeft: row && Number(row.max_players_left) >= 1 ? Number(row.max_players_left) : 8
+    maxPlayersLeft: row && Number(row.max_players_left) >= 1 ? Number(row.max_players_left) : 8,
+    courtReadyEnabled: row ? !!row.court_ready_enabled : false
   };
 }
 
@@ -546,13 +552,14 @@ export async function updateFeatureSettings(patch) {
   const current = await getFeatureSettings();
   const next = { ...current, ...patch };
   await pool.query(
-    `INSERT INTO feature_settings (id, champion_celebration_enabled, auto_update_official_results_enabled, checkin_enabled, roster_edit_enabled, max_players_left) VALUES (1, ?, ?, ?, ?, ?)
+    `INSERT INTO feature_settings (id, champion_celebration_enabled, auto_update_official_results_enabled, checkin_enabled, roster_edit_enabled, max_players_left, court_ready_enabled) VALUES (1, ?, ?, ?, ?, ?, ?)
      ON DUPLICATE KEY UPDATE champion_celebration_enabled = VALUES(champion_celebration_enabled),
        auto_update_official_results_enabled = VALUES(auto_update_official_results_enabled),
        checkin_enabled = VALUES(checkin_enabled),
        roster_edit_enabled = VALUES(roster_edit_enabled),
-       max_players_left = VALUES(max_players_left)`,
-    [next.championCelebrationEnabled, next.autoUpdateOfficialResultsEnabled, next.checkinEnabled, next.rosterEditEnabled, next.maxPlayersLeft]
+       max_players_left = VALUES(max_players_left),
+       court_ready_enabled = VALUES(court_ready_enabled)`,
+    [next.championCelebrationEnabled, next.autoUpdateOfficialResultsEnabled, next.checkinEnabled, next.rosterEditEnabled, next.maxPlayersLeft, next.courtReadyEnabled]
   );
   const settings = await getFeatureSettings();
   broadcastFeatureSettingsUpdate(settings);

@@ -91,3 +91,11 @@ export function broadcastAutoSyncNotice(notice) {
   if (!io) return;
   io.emit('autoSyncNotice', notice);
 }
+
+// Court readiness board (see server/courtStatus.js). Tournament-wide, and the
+// payload only carries court numbers, team names and a referee's first name —
+// all already public on the schedule — so it goes to every client.
+export function broadcastCourtStatusUpdate(courts) {
+  if (!io) return;
+  io.emit('courtStatusUpdate', courts);
+}
