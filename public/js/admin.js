@@ -242,6 +242,39 @@ function renderDiscrepancyPanel(container) {
 }
 
 /** A game counts as reported for admin purposes once it has an admin-submitted or official result. */
+// --- Bye footers: shown or collapsed ------------------------------------------
+// Court managers mostly look at one court, where the "on bye" chips just eat
+// screen space, so they start collapsed; the tournament manager starts with
+// them shown. One tap flips every round, remembered per browser and per role.
+
+function byePrefKey() {
+    return App.state.isSuperAdmin ? 'adminByesShown:superadmin' : 'adminByesShown:court';
+}
+
+const byeMemory = {}; // fallback when localStorage is blocked
+
+function byesShown() {
+    if (byePrefKey() in byeMemory) return byeMemory[byePrefKey()];
+    try {
+        const v = localStorage.getItem(byePrefKey());
+        if (v === '1') return true;
+        if (v === '0') return false;
+    } catch (e) { /* storage blocked: fall back to the role default */ }
+    return !!App.state.isSuperAdmin;
+}
+
+function wireByeToggle(listEl) {
+    if (listEl.dataset.byeWired) return;
+    listEl.dataset.byeWired = '1';
+    listEl.addEventListener('click', (ev) => {
+        if (!ev.target.closest('[data-bye-toggle]')) return;
+        const next = !byesShown();
+        byeMemory[byePrefKey()] = next;
+        try { localStorage.setItem(byePrefKey(), next ? '1' : '0'); } catch (e) { /* per-session only */ }
+        renderAdminMatchEntryViewImpl();
+    });
+}
+
 function isAdminReported(game) {
     const reportedByAdmin = !!(game.adminWinner && game.adminWinner.trim() !== '' && game.adminWinner.trim() !== 'TBA' && game.adminWinner.trim() !== '—');
     return isReportedOfficial(game) || reportedByAdmin;
@@ -405,6 +438,8 @@ function renderAdminMatchEntryViewImpl() {
     // Bye footers (below) are only meaningful across the whole roster — with a
     // single team selected the round already holds just that team's game.
     const showByeFooter = selectedTeam === 'all';
+    const byesOpen = byesShown();
+    wireByeToggle(matchListDiv);
     const allTeams = showByeFooter ? getRosterTeams() : null;
 
     const dim = 'rgba(255,255,255,.38)';
@@ -532,18 +567,25 @@ function renderAdminMatchEntryViewImpl() {
         card.appendChild(rows);
 
         // --- Teams sitting this round out, same as the public games page ---
+        // Collapsible (see byesShown): court managers start collapsed to a
+        // one-line "N teams on bye ▸", the tournament manager starts expanded.
         if (allTeams) {
             const byeTeams = getByeTeams(roundTime, allTeams);
             if (byeTeams.length) {
                 const footer = document.createElement('div');
-                footer.className = 'mt-2.5 flex flex-wrap items-center gap-x-2 gap-y-1 border-t pt-2.5';
+                footer.className = 'mt-2.5 border-t pt-2.5';
                 footer.style.borderColor = 'rgba(255,255,255,.08)';
-                footer.innerHTML = `
-                    <span class="text-[9px] font-semibold leading-none tracking-[.12em]" style="color:rgba(255,255,255,.4)">ON BYE</span>
-                    ${byeTeams.map(t => `
-                        <span class="rounded-full px-2 py-1 text-[11px] font-medium leading-none" style="background:rgba(255,255,255,.06);color:rgba(255,255,255,.6)">${esc(t)}</span>
-                    `).join('')}
-                `;
+                const label = `${byeTeams.length} ${byeTeams.length === 1 ? 'team' : 'teams'} on bye`;
+                footer.innerHTML = byesOpen
+                    ? `<div class="flex flex-wrap items-center gap-x-2 gap-y-1">
+                        <button type="button" data-bye-toggle aria-expanded="true" aria-label="Hide teams on bye"
+                            class="text-[9px] font-semibold leading-none tracking-[.12em]" style="color:rgba(255,255,255,.4)">ON BYE ▾</button>
+                        ${byeTeams.map(t => `
+                            <span class="rounded-full px-2 py-1 text-[11px] font-medium leading-none" style="background:rgba(255,255,255,.06);color:rgba(255,255,255,.6)">${esc(t)}</span>
+                        `).join('')}
+                    </div>`
+                    : `<button type="button" data-bye-toggle aria-expanded="false"
+                        class="text-[11px] font-medium leading-none" style="color:rgba(255,255,255,.45)">${label} <span aria-hidden="true">▸</span></button>`;
                 card.appendChild(footer);
             }
         }
