@@ -611,6 +611,9 @@ initChat();
 // setCurrentRound (Firebase RTDB write vs. REST POST) so timerOverlay.js
 // doesn't need to know which backend is active.
 window.initTimerOverlay = () => initTimerOverlay(TimerModule.setCurrentRound);
+// Court board's End round steps the clock's round label to the next round
+// (only from the tab that runs the clock — see courtReady.js).
+window.setClockRound = (round) => TimerModule.setCurrentRound(round);
 
 
 

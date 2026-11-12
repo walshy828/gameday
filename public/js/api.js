@@ -281,6 +281,6 @@ export async function setCourtMark(authToken, { division, gameKey, court, ready,
   return await apiPost(`/courtStatus/mark`, { authToken, division, gameKey, court, ready, by });
 }
 
-export async function courtRoundAction(authToken, action, { division, roundTime, by } = {}) {
-  return await apiPost(`/courtStatus/round`, { authToken, action, division, roundTime, by });
+export async function courtRoundAction(authToken, action, { division, roundTime, prevRound, nextRound, by } = {}) {
+  return await apiPost(`/courtStatus/round`, { authToken, action, division, roundTime, prevRound, nextRound, by });
 }

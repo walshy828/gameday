@@ -1,25 +1,27 @@
 // server/courtStatus.js
 // Court readiness board (optional, behind the `courtReadyEnabled` feature
-// setting). The board's court statuses are NOT stored here — every client
-// derives them from the schedule (which games are reported) and the round
-// clock, so they can never drift out of sync. This module only keeps the two
-// facts the schedule can't tell us:
+// setting). Court statuses are NOT stored here — every client derives them
+// from the schedule (which games are reported) and the round clock, so they
+// can never drift out of sync. This module only keeps the facts the schedule
+// can't tell us:
 //
-//   marks  — "both teams are on the court" for a specific upcoming game,
-//            keyed by division + game (round|court|team1|team2), not by court,
-//            so a mark can't leak onto a different game.
-//   starts — per division, which round the MC started (board Start round or
-//            the clock's Start), so "in play" means the round actually began.
+//   marks  — "both teams are on the court" for a specific game, keyed by
+//            division + game (round|court|team1|team2), never by court.
+//   boards — per division, the round the MC's board is on and its phase:
+//            'playing' (after Start round / the clock's Start) or 'staging'
+//            (after End round — the next round's teams are being set up).
+//            One level of undo is kept per division for mis-taps.
 //
 // Deliberately in-memory only: never the Google Sheet, Firebase or MariaDB. A
-// restart only loses ready taps (clients fall back to the running clock for
-// "in play"), and everything else rebuilds from the schedule.
+// restart loses ready taps and the board record; clients then fall back to the
+// earliest unreported round and the running clock.
 import { broadcastCourtStatusUpdate } from './socket.js';
 
 const MAX_MARKS = 1000;
 
 const marks = new Map();  // `${division}\u0000${gameKey}` -> { division, gameKey, court, by, at }
-const starts = new Map(); // division -> { roundTime, by, at }
+const boards = new Map(); // division -> { round, phase, prevRound, at, by }
+const undos = new Map();  // division -> previous board (or null for "none")
 
 export function clean(v, max) {
   if (typeof v !== 'string') return '';
@@ -29,7 +31,7 @@ export function clean(v, max) {
 export function snapshot() {
   return {
     marks: [...marks.values()],
-    starts: Object.fromEntries(starts)
+    boards: Object.fromEntries([...boards].map(([d, b]) => [d, { ...b, canUndo: undos.has(d) }]))
   };
 }
 
@@ -37,7 +39,7 @@ function changed() {
   broadcastCourtStatusUpdate(snapshot());
 }
 
-/** Marks (or unmarks) one upcoming game's teams as on the court. */
+/** Marks (or unmarks) one game's teams as on the court. */
 export function setMark({ division, gameKey, court, ready, by }) {
   const key = `${division}\u0000${gameKey}`;
   if (ready) {
@@ -51,23 +53,49 @@ export function setMark({ division, gameKey, court, ready, by }) {
   return snapshot();
 }
 
-/** Records that `roundTime` is in play for `division` (idempotent for the same round). */
-export function startRound({ division, roundTime, by }) {
-  const prev = starts.get(division);
-  if (prev?.roundTime !== roundTime) {
-    starts.set(division, { roundTime, by: clean(by, 40) || 'MC', at: Date.now() });
-    changed();
-  }
+function setBoard(division, next) {
+  undos.set(division, boards.get(division) || null);
+  boards.set(division, next);
+  changed();
   return snapshot();
 }
 
-/** Undo an accidental start: the round goes back to waiting/ready. */
-export function unstartRound({ division }) {
-  if (starts.delete(division)) changed();
+/** Start round: `roundTime` is now in play. Idempotent for the same round. */
+export function startRound({ division, roundTime, prevRound, by }) {
+  const cur = boards.get(division);
+  if (cur?.round === roundTime && cur.phase === 'playing') return snapshot();
+  return setBoard(division, {
+    round: roundTime,
+    phase: 'playing',
+    prevRound: clean(prevRound, 64) || cur?.prevRound || '',
+    at: Date.now(),
+    by: clean(by, 40) || 'MC'
+  });
+}
+
+/** End round: the board moves on to set up `nextRound` (even if a score is missing). */
+export function endRound({ division, roundTime, nextRound, by }) {
+  return setBoard(division, {
+    round: nextRound || '',
+    phase: 'staging',
+    prevRound: roundTime,
+    at: Date.now(),
+    by: clean(by, 40) || 'MC'
+  });
+}
+
+/** Undo the last Start/End round for a division (one level). */
+export function undoRound({ division }) {
+  if (!undos.has(division)) return snapshot();
+  const prev = undos.get(division);
+  undos.delete(division);
+  if (prev) boards.set(division, prev);
+  else boards.delete(division);
+  changed();
   return snapshot();
 }
 
-/** Clears ready marks for one division (or every division). Starts are kept. */
+/** Clears ready marks for one division (or every division). The board round is kept. */
 export function clearMarks({ division } = {}) {
   let removed = false;
   for (const [key, m] of marks) {
@@ -78,9 +106,10 @@ export function clearMarks({ division } = {}) {
 }
 
 export function clearAll() {
-  if (marks.size === 0 && starts.size === 0) return snapshot();
+  if (marks.size === 0 && boards.size === 0) return snapshot();
   marks.clear();
-  starts.clear();
+  boards.clear();
+  undos.clear();
   changed();
   return snapshot();
 }

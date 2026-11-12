@@ -1318,8 +1318,8 @@ app.post('/api/courtStatus/mark', async (req, res) => {
   }
 });
 
-// Round start/undo and clearing marks — the MC (superadmin) only. The board's
-// Start round and the clock's Start both record the start here.
+// Round start/end/undo and clearing marks — the MC (superadmin) only. The
+// board's Start round and the clock's Start both record the start here.
 app.post('/api/courtStatus/round', async (req, res) => {
   if (!requireSuperAdmin(req, res)) return;
   const action = req.body?.action;
@@ -1328,12 +1328,18 @@ app.post('/api/courtStatus/round', async (req, res) => {
     if (action === 'clearAll') return res.json({ success: true, ...CourtStatus.clearAll() });
     if (!(await requireCourtReadyOn(res))) return;
     if (!division) return res.status(400).json({ success: false, error: 'division is required.' });
+    const roundTime = CourtStatus.clean(req.body?.roundTime, 64);
+    const by = cleanText(req.body?.by, 40);
     if (action === 'start') {
-      const roundTime = CourtStatus.clean(req.body?.roundTime, 64);
       if (!roundTime) return res.status(400).json({ success: false, error: 'roundTime is required.' });
-      return res.json({ success: true, ...CourtStatus.startRound({ division, roundTime, by: cleanText(req.body?.by, 40) }) });
+      return res.json({ success: true, ...CourtStatus.startRound({ division, roundTime, prevRound: req.body?.prevRound, by }) });
     }
-    if (action === 'unstart') return res.json({ success: true, ...CourtStatus.unstartRound({ division }) });
+    if (action === 'end') {
+      if (!roundTime) return res.status(400).json({ success: false, error: 'roundTime is required.' });
+      const nextRound = CourtStatus.clean(req.body?.nextRound, 64);
+      return res.json({ success: true, ...CourtStatus.endRound({ division, roundTime, nextRound, by }) });
+    }
+    if (action === 'undo') return res.json({ success: true, ...CourtStatus.undoRound({ division }) });
     if (action === 'clearMarks') return res.json({ success: true, ...CourtStatus.clearMarks({ division }) });
     res.status(400).json({ success: false, error: 'Unknown action.' });
   } catch (e) {
