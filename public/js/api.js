@@ -277,10 +277,10 @@ export async function getCourtStatus(authToken) {
   return await apiGet(`/courtStatus`, authToken);
 }
 
-export async function setCourtStatus(authToken, { court, status, division, nextMatch, by }) {
-  return await apiPost(`/courtStatus`, { authToken, court, status, division, nextMatch, by });
+export async function setCourtMark(authToken, { division, gameKey, court, ready, by }) {
+  return await apiPost(`/courtStatus/mark`, { authToken, division, gameKey, court, ready, by });
 }
 
-export async function courtRoundAction(authToken, action, by) {
-  return await apiPost(`/courtStatus/round`, { authToken, action, by });
+export async function courtRoundAction(authToken, action, { division, roundTime, by } = {}) {
+  return await apiPost(`/courtStatus/round`, { authToken, action, division, roundTime, by });
 }

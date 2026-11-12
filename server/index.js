@@ -1293,42 +1293,48 @@ app.get('/api/courtStatus', async (req, res) => {
   try {
     const features = await Store.getFeatureSettings();
     res.set('Cache-Control', 'no-store');
-    res.json({ success: true, enabled: features.courtReadyEnabled === true, courts: CourtStatus.list() });
+    res.json({ success: true, enabled: features.courtReadyEnabled === true, ...CourtStatus.snapshot() });
   } catch (e) {
     console.error('courtStatus get error', e);
     res.status(500).json({ success: false, error: e.toString() });
   }
 });
 
-app.post('/api/courtStatus', async (req, res) => {
+// Ready mark for one upcoming game. Referees and the MC can both set/unset it.
+app.post('/api/courtStatus/mark', async (req, res) => {
   if (!isValidToken(getAuthToken(req))) return res.status(401).json({ success: false, error: 'Authentication failed.' });
   try {
     if (!(await requireCourtReadyOn(res))) return;
+    const division = CourtStatus.clean(req.body?.division, 100);
+    const gameKey = CourtStatus.clean(req.body?.gameKey, 240);
     const court = typeof req.body?.court === 'string' ? req.body.court.trim() : '';
-    const status = req.body?.status;
-    if (!CourtStatus.COURT_RE.test(court)) return res.status(400).json({ success: false, error: 'Invalid court.' });
-    if (!CourtStatus.SETTABLE_STATUSES.has(status)) return res.status(400).json({ success: false, error: 'Invalid status.' });
-    const entry = CourtStatus.setStatus({
-      court,
-      status,
-      division: req.body?.division,
-      nextMatch: req.body?.nextMatch,
-      by: cleanText(req.body?.by, 40)
-    });
-    res.json({ success: true, court: entry, courts: CourtStatus.list() });
+    if (!division || !gameKey) return res.status(400).json({ success: false, error: 'division and gameKey are required.' });
+    if (!/^[A-Za-z0-9 ._-]{1,16}$/.test(court)) return res.status(400).json({ success: false, error: 'Invalid court.' });
+    const snap = CourtStatus.setMark({ division, gameKey, court, ready: req.body?.ready === true, by: cleanText(req.body?.by, 40) });
+    res.json({ success: true, ...snap });
   } catch (e) {
-    console.error('courtStatus set error', e);
+    console.error('courtStatus mark error', e);
     res.status(500).json({ success: false, error: e.toString() });
   }
 });
 
+// Round start/undo and clearing marks — the MC (superadmin) only. The board's
+// Start round and the clock's Start both record the start here.
 app.post('/api/courtStatus/round', async (req, res) => {
   if (!requireSuperAdmin(req, res)) return;
+  const action = req.body?.action;
   try {
-    const action = req.body?.action;
-    if (action === 'clear') return res.json({ success: true, courts: CourtStatus.clearAll() });
+    const division = CourtStatus.clean(req.body?.division, 100);
+    if (action === 'clearAll') return res.json({ success: true, ...CourtStatus.clearAll() });
     if (!(await requireCourtReadyOn(res))) return;
-    if (action === 'start') return res.json({ success: true, courts: CourtStatus.startRound(cleanText(req.body?.by, 40)) });
+    if (!division) return res.status(400).json({ success: false, error: 'division is required.' });
+    if (action === 'start') {
+      const roundTime = CourtStatus.clean(req.body?.roundTime, 64);
+      if (!roundTime) return res.status(400).json({ success: false, error: 'roundTime is required.' });
+      return res.json({ success: true, ...CourtStatus.startRound({ division, roundTime, by: cleanText(req.body?.by, 40) }) });
+    }
+    if (action === 'unstart') return res.json({ success: true, ...CourtStatus.unstartRound({ division }) });
+    if (action === 'clearMarks') return res.json({ success: true, ...CourtStatus.clearMarks({ division }) });
     res.status(400).json({ success: false, error: 'Unknown action.' });
   } catch (e) {
     console.error('courtStatus round error', e);

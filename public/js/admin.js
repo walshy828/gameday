@@ -1060,7 +1060,8 @@ function switchCourt(court) {
     App.state.sessionHeartbeatBeat?.(); // session list shows the new court right away
 
     const left = prev ? courtStatusOf(prev) : null;
-    const note = left?.status === 'reported' ? ` · Court ${prev} still waiting for teams` : '';
+    // Only worth saying when the old court's next game is in the round about to start.
+    const note = left?.status === 'waiting' && left.inR ? ` · Court ${prev} still waiting for teams` : '';
     toast(`Now on Court ${court}${note}`);
     try { navigator.vibrate && navigator.vibrate(30); } catch (e) { /* unsupported */ }
 }
@@ -1641,8 +1642,8 @@ async function saveMatchResultFromModal() {
             toast(`✓ Saved — ${describeResult(winner, playersRemaining)}`);
         }
         try { navigator.vibrate && navigator.vibrate(40); } catch (e) { /* unsupported */ }
-        // Optional court-ready flow: puts this court into "waiting for teams".
-        courtReadyOnSave(game, matchData.winner);
+        // Court Ready: the referee's bar follows the court they just reported.
+        courtReadyOnSave(game);
 
         const sheetFailed = result.sheetsMirror && !result.sheetsMirror.success && !result.sheetsMirror.skipped;
         // Refresh standings/schedule in the background. loadData() resets the

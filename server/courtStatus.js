@@ -1,80 +1,86 @@
 // server/courtStatus.js
 // Court readiness board (optional, behind the `courtReadyEnabled` feature
-// setting). Referees mark a physical court "ready" once both teams for the
-// next game are standing on it, so the MC doesn't have to walk every court.
+// setting). The board's court statuses are NOT stored here — every client
+// derives them from the schedule (which games are reported) and the round
+// clock, so they can never drift out of sync. This module only keeps the two
+// facts the schedule can't tell us:
 //
-// Deliberately in-memory only: it never touches the Google Sheet, Firebase or
-// MariaDB. A server restart just empties the board (courts then show as in
-// play until their next report), which is harmless for a live-ops signal.
+//   marks  — "both teams are on the court" for a specific upcoming game,
+//            keyed by division + game (round|court|team1|team2), not by court,
+//            so a mark can't leak onto a different game.
+//   starts — per division, which round the MC started (board Start round or
+//            the clock's Start), so "in play" means the round actually began.
 //
-// Statuses, per court:
-//   reported — the game on this court was just reported; waiting for teams
-//   ready    — referee confirmed both next teams are on the court
-//   idle     — reported, and this court has no next game (bye / done)
-//   playing  — MC started the round (set by startRound)
+// Deliberately in-memory only: never the Google Sheet, Firebase or MariaDB. A
+// restart only loses ready taps (clients fall back to the running clock for
+// "in play"), and everything else rebuilds from the schedule.
 import { broadcastCourtStatusUpdate } from './socket.js';
 
-export const COURT_RE = /^[A-Za-z0-9 ._-]{1,16}$/;
-export const SETTABLE_STATUSES = new Set(['reported', 'ready', 'idle']);
+const MAX_MARKS = 1000;
 
-const courts = new Map();
+const marks = new Map();  // `${division}\u0000${gameKey}` -> { division, gameKey, court, by, at }
+const starts = new Map(); // division -> { roundTime, by, at }
 
-function clean(v, max) {
+export function clean(v, max) {
   if (typeof v !== 'string') return '';
   return v.replace(/[\u0000-\u001f\u007f]/g, ' ').trim().slice(0, max);
 }
 
-function cleanNextMatch(m) {
-  if (!m || typeof m !== 'object') return null;
-  const team1 = clean(m.team1, 60);
-  const team2 = clean(m.team2, 60);
-  if (!team1 && !team2) return null;
-  return { team1, team2, roundTime: clean(m.roundTime, 30), match: clean(m.match, 30) };
-}
-
-export function list() {
-  return [...courts.values()].sort((a, b) => a.court.localeCompare(b.court, undefined, { numeric: true }));
+export function snapshot() {
+  return {
+    marks: [...marks.values()],
+    starts: Object.fromEntries(starts)
+  };
 }
 
 function changed() {
-  broadcastCourtStatusUpdate(list());
+  broadcastCourtStatusUpdate(snapshot());
 }
 
-/**
- * Sets one court's status. `nextMatch` is kept from the previous entry when
- * not supplied (e.g. "ready"/undo taps don't resend it).
- */
-export function setStatus({ court, status, division, nextMatch, by }) {
-  const prev = courts.get(court);
-  const next = {
-    court,
-    status,
-    division: clean(division, 60) || prev?.division || '',
-    nextMatch: nextMatch === undefined ? (prev?.nextMatch ?? null) : cleanNextMatch(nextMatch),
-    updatedBy: clean(by, 40) || 'Referee',
-    updatedAt: Date.now()
-  };
-  if (status === 'ready' && !prev?.readyAt) next.readyAt = next.updatedAt;
-  else if (status === 'ready') next.readyAt = prev.readyAt;
-  courts.set(court, next);
-  changed();
-  return next;
-}
-
-/** MC starts the round: every court that was waiting or ready is now in play. */
-export function startRound(by) {
-  const now = Date.now();
-  for (const [key, c] of courts) {
-    if (c.status === 'idle') continue;
-    courts.set(key, { court: c.court, status: 'playing', division: c.division, nextMatch: c.nextMatch, updatedBy: clean(by, 40) || 'MC', updatedAt: now });
+/** Marks (or unmarks) one upcoming game's teams as on the court. */
+export function setMark({ division, gameKey, court, ready, by }) {
+  const key = `${division}\u0000${gameKey}`;
+  if (ready) {
+    marks.delete(key); // re-insert so the newest is last (oldest pruned first)
+    marks.set(key, { division, gameKey, court, by: clean(by, 40) || 'Referee', at: Date.now() });
+    while (marks.size > MAX_MARKS) marks.delete(marks.keys().next().value);
+  } else {
+    marks.delete(key);
   }
   changed();
-  return list();
+  return snapshot();
+}
+
+/** Records that `roundTime` is in play for `division` (idempotent for the same round). */
+export function startRound({ division, roundTime, by }) {
+  const prev = starts.get(division);
+  if (prev?.roundTime !== roundTime) {
+    starts.set(division, { roundTime, by: clean(by, 40) || 'MC', at: Date.now() });
+    changed();
+  }
+  return snapshot();
+}
+
+/** Undo an accidental start: the round goes back to waiting/ready. */
+export function unstartRound({ division }) {
+  if (starts.delete(division)) changed();
+  return snapshot();
+}
+
+/** Clears ready marks for one division (or every division). Starts are kept. */
+export function clearMarks({ division } = {}) {
+  let removed = false;
+  for (const [key, m] of marks) {
+    if (!division || m.division === division) { marks.delete(key); removed = true; }
+  }
+  if (removed) changed();
+  return snapshot();
 }
 
 export function clearAll() {
-  if (courts.size === 0) return list();
-  courts.clear();
+  if (marks.size === 0 && starts.size === 0) return snapshot();
+  marks.clear();
+  starts.clear();
   changed();
-  return list();
+  return snapshot();
 }
