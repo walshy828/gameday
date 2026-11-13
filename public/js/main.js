@@ -80,6 +80,8 @@ import { initChat, syncChatRole, switchChatChannel, sendChatMessage, jumpToChatB
 import { renderPlayoffsView } from './playoffs.js';
 import { renderMyTeam } from './myTeam.js';
 import { isFollowed } from './follow.js';
+import { initPresence } from './presence.js';
+import { initUsage } from './usage.js';
 import { setGameManagerAllowance } from './gameManagerUI.js';
 
 const IS_LOCAL_BACKEND = window.__DATA_BACKEND__ === 'local';
@@ -557,6 +559,8 @@ document.addEventListener('DOMContentLoaded', () => {
   // --- INITIAL KICKOFF ACTIONS ---
   fetchDivisionNames();
   updateAdminUI();
+  initPresence(); // Setup → Live now counts (sends only on change)
+  initUsage();
 
   // Initialize timer overlay for superadmin if applicable
   if (typeof window.initTimerOverlay === 'function') window.initTimerOverlay();

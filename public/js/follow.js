@@ -1,7 +1,8 @@
 // public/js/follow.js
 // "Follow a team" — no login. A parent or coach picks the team they care
-// about once per division; it's remembered on this phone only (localStorage,
-// never sent anywhere) and drives the "My team" card (myTeam.js) plus the
+// about once per division; it's remembered on this phone (localStorage) and
+// only leaves it as an anonymous count for the superadmin's Setup → Live now
+// card (presence.js; no names, nothing stored server-side). It drives the "My team" card (myTeam.js) plus the
 // gold highlights in standings, schedule and the playoff bracket.
 //
 // Changing the choice fires a window 'followchange' event; main.js re-renders

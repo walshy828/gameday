@@ -1,0 +1,16 @@
+{
+  "version": "0.0.1",
+  "configurations": [
+    {
+      "name": "gameday-dev",
+      "runtimeExecutable": "node",
+      "runtimeArgs": [
+        "server/index.js"
+      ],
+      "port": 8899,
+      "env": {
+        "PORT": "8899"
+      }
+    }
+  ]
+}

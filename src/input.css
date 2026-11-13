@@ -374,3 +374,9 @@ button:not(:disabled):active,
 /* Raffle: busy buttons show a spinner. */
 .rf-spin { display: inline-block; width: 11px; height: 11px; margin-right: 4px; vertical-align: -1px; border: 2px solid currentColor; border-right-color: transparent; border-radius: 50%; animation: rf-spin .7s linear infinite; }
 @keyframes rf-spin { to { transform: rotate(360deg); } }
+
+/* Setup → quick-jump chips between groups (Live now, Event day, Sync, Configuration, Seasons & data). */
+.setup-jump { min-width: 0; max-width: 100%; display: flex; gap: 6px; overflow-x: auto; scrollbar-width: none; padding: 2px 0 4px; }
+.setup-jump::-webkit-scrollbar { display: none; }
+.setup-jump a { flex: none; border: 1px solid rgb(255 255 255 / .15); background: rgb(255 255 255 / .05); color: rgb(255 255 255 / .75); border-radius: 9999px; padding: 6px 12px; font-size: 12px; font-weight: 600; white-space: nowrap; }
+.setup-jump a:hover { color: #fff; border-color: #E7B84B; }

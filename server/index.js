@@ -8,6 +8,7 @@ import * as SheetsMirror from './sheetsMirror.js';
 import * as SheetsSync from './sheetsSync.js';
 import { applySyncSettings, computeAutoSyncExpiry, initSyncScheduler, scheduleResultSync } from './syncScheduler.js';
 import { initSocket, broadcastDiscrepancyPing } from './socket.js';
+import { setRoleResolver, requestCounter, getUsageSummary } from './presence.js';
 import { listOpenDiscrepancies, dismissDiscrepancy, notifyIfHighImpact } from './discrepancies.js';
 import * as Roster from './rosterSheets.js';
 import * as Raffle from './raffleSheets.js';
@@ -64,6 +65,8 @@ app.set('trust proxy', TRUST_PROXY ? (/^\d+$/.test(TRUST_PROXY) ? Number(TRUST_P
 app.use(helmet({ contentSecurityPolicy: false, crossOriginEmbedderPolicy: false, crossOriginResourcePolicy: false }));
 app.use(compression());
 app.use(express.json({ limit: '256kb' }));
+// Counts API requests/5xx per minute for Setup → Live now (one integer bump, see server/presence.js).
+app.use('/api', requestCounter);
 // Generous per-IP cap on writes (a venue's phones share one NAT address); login has its own stricter throttle.
 app.use('/api', rateLimit({
   windowMs: 60 * 1000,
@@ -1127,6 +1130,14 @@ app.get('/api/session/active', async (req, res) => {
   }
 });
 
+// Live usage for Setup → Live now (superadmin). Counts come from the
+// in-memory socket map in server/presence.js; no database or sheet reads.
+app.get('/api/usage', (req, res) => {
+  if (!requireSuperAdmin(req, res)) return;
+  res.set('Cache-Control', 'no-store');
+  res.json(getUsageSummary());
+});
+
 app.get('/api/session/history', async (req, res) => {
   if (!requireSuperAdmin(req, res)) return;
   try {
@@ -1384,6 +1395,7 @@ function isValidToken(tokenFromClient) {
 
 const PORT = process.env.PORT || 8888;
 const httpServer = http.createServer(app);
+setRoleResolver(chatRoleOf);
 initSocket(httpServer);
 httpServer.listen(PORT, () => console.log(`Server started at http://localhost:${PORT} (DATA_BACKEND=${DATA_BACKEND})`));
 

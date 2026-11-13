@@ -3,6 +3,7 @@
 // Split out from server/index.js so server/datastores/localStore.js can
 // trigger broadcasts after a write without a circular import.
 import { Server } from 'socket.io';
+import { trackSocket } from './presence.js';
 
 let io = null;
 
@@ -12,6 +13,8 @@ export function initSocket(httpServer) {
   });
 
   io.on('connection', (socket) => {
+    // Live usage (Setup → Live now): in-memory only, see server/presence.js.
+    trackSocket(socket);
     // A tab watches one division at a time: joining one leaves the others, and
     // the ack tells the client it is now subscribed (so it can fetch current
     // state without missing an update that lands between fetch and join).

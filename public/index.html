@@ -1548,26 +1548,171 @@
 
                     <!-- SETTINGS VIEW (Superadmin only) -->
                     <div id="settings-view" class="screen hidden">
-                        <div class="mt-3.5 grid gap-2.5">
-                            <div class="setup-group-head"><h3>Sync &amp; results</h3><p>How the Google Sheet and official results flow into the app.</p></div>
-                            <!-- 1. Auto-Update Official Results -->
+                        <div class="mt-3.5 grid grid-cols-1 gap-2.5">
+                            <!-- Quick jump between Setup groups -->
+                            <nav class="setup-jump" aria-label="Setup sections">
+                                <a href="#setup-live" data-setup-jump>Live now</a><a href="#setup-event" data-setup-jump>Event day</a><a href="#setup-sync" data-setup-jump>Sync</a><a href="#setup-config" data-setup-jump>Configuration</a><a href="#setup-data" data-setup-jump>Seasons &amp; data</a>
+                            </nav>
+                            <div id="setup-live" class="setup-group-head scroll-mt-20"><h3>Live now</h3><p>Who is using the app right now and how the server is holding up.</p></div>
+                            <!-- Live now: connections by role/division/followed team + server health — usage.js, server/presence.js -->
+                            <section class="card-dark p-4 space-y-3">
+                                <div class="flex items-center justify-between gap-3">
+                                    <div class="flex items-center gap-2 min-w-0">
+                                        <h3 class="text-lg font-bold text-white">📡 Live now</h3>
+                                        <span class="tip">
+                                            <button type="button" class="tip-btn" aria-label="About live now">ⓘ</button>
+                                            <span class="tip-body">Everyone with the app open right now, counted from their live-update connection: signed-in staff by role, and everyone else (parents, coaches, players) as participants. Shows which divisions they are watching, which teams they follow, and whether the server is keeping up. Kept in server memory only; nothing is stored and no names are sent.</span>
+                                        </span>
+                                    </div>
+                                    <span id="usage-health" class="flex-none rounded-full border border-white/15 px-2.5 py-1 text-[11px] font-bold text-white/50">Checking…</span>
+                                </div>
+                                <div id="usage-body" class="space-y-3"><p class="text-sm text-white/50">Loading…</p></div>
+                            </section>
+
+                            <!-- 4. Signed-in users (active by default) -->
+                            <section id="signed-in-users-card" class="card-dark p-4 space-y-3 scroll-mt-20">
+                                <div class="flex items-center justify-between gap-2 flex-wrap">
+                                    <h3 class="text-lg font-bold text-white">🟢 Signed-in users</h3>
+                                    <button id="inactive-users-toggle" type="button" onclick="toggleInactiveUsers()" class="setup-link hidden text-sm"></button>
+                                </div>
+                                <p class="text-sm text-gray-400">Active now across Referee, Tournament Admin, and
+                                    Parent logins. Refreshes every 15s.</p>
+                                <div class="overflow-x-auto rounded-lg border border-gray-800">
+                                    <table class="min-w-full divide-y divide-gray-800 text-sm">
+                                        <thead class="bg-gray-800/70">
+                                            <tr>
+                                                <th class="px-3 py-2 text-left text-xs font-semibold uppercase tracking-wider text-gray-400"></th>
+                                                <th class="px-3 py-2 text-left text-xs font-semibold uppercase tracking-wider text-gray-400">Name</th>
+                                                <th class="px-3 py-2 text-left text-xs font-semibold uppercase tracking-wider text-gray-400">Role</th>
+                                                <th class="px-3 py-2 text-left text-xs font-semibold uppercase tracking-wider text-gray-400">Court</th>
+                                                <th class="px-3 py-2 text-left text-xs font-semibold uppercase tracking-wider text-gray-400">Device</th>
+                                                <th class="px-3 py-2 text-left text-xs font-semibold uppercase tracking-wider text-gray-400">IP</th>
+                                                <th class="px-3 py-2 text-left text-xs font-semibold uppercase tracking-wider text-gray-400">Last active</th>
+                                            </tr>
+                                        </thead>
+                                        <tbody id="active-sessions-table-body" class="divide-y divide-gray-800">
+                                            <tr>
+                                                <td colspan="7" class="text-center py-3 text-gray-500">Loading…</td>
+                                            </tr>
+                                        </tbody>
+                                    </table>
+                                </div>
+
+                                <button type="button" class="setup-link text-sm" data-target="session-history-panel" onclick="toggleSetupPanel(this)">
+                                    <span class="chev">▸</span> Sign-in history</button>
+                                <div id="session-history-panel" class="hidden space-y-2">
+                                    <p class="text-sm text-gray-400">Recent logins across all roles, most recent first.</p>
+                                    <div class="overflow-x-auto rounded-lg border border-gray-800">
+                                        <table class="min-w-full divide-y divide-gray-800 text-sm">
+                                            <thead class="bg-gray-800/70">
+                                                <tr>
+                                                    <th class="px-3 py-2 text-left text-xs font-semibold uppercase tracking-wider text-gray-400">Time</th>
+                                                    <th class="px-3 py-2 text-left text-xs font-semibold uppercase tracking-wider text-gray-400">Name</th>
+                                                    <th class="px-3 py-2 text-left text-xs font-semibold uppercase tracking-wider text-gray-400">Role</th>
+                                                    <th class="px-3 py-2 text-left text-xs font-semibold uppercase tracking-wider text-gray-400">Court</th>
+                                                    <th class="px-3 py-2 text-left text-xs font-semibold uppercase tracking-wider text-gray-400">Device</th>
+                                                    <th class="px-3 py-2 text-left text-xs font-semibold uppercase tracking-wider text-gray-400">IP</th>
+                                                    <th class="px-3 py-2 text-left text-xs font-semibold uppercase tracking-wider text-gray-400">Status</th>
+                                                </tr>
+                                            </thead>
+                                            <tbody id="session-history-table-body" class="divide-y divide-gray-800">
+                                                <tr>
+                                                    <td colspan="7" class="text-center py-3 text-gray-500">Loading…</td>
+                                                </tr>
+                                            </tbody>
+                                        </table>
+                                    </div>
+                                </div>
+                            </section>
+
+
+                            <div id="setup-event" class="setup-group-head scroll-mt-20"><h3>Event day</h3><p>Things you use or switch on while the tournament is running.</p></div>
+                            <!-- 3. Announcement manager -->
+                            <section class="card-dark p-4 space-y-3">
+                                <h3 class="text-lg font-bold text-white">📣 Announcement manager</h3>
+                                <textarea id="announcement-draft" rows="3"
+                                    placeholder="e.g. Grades 5–6 semifinals move to Court 1 at 4:20."
+                                    class="w-full p-3 bg-gray-700 border border-gray-600 rounded-lg text-white shadow-sm focus:border-accent focus:ring focus:ring-accent/50 transition duration-150 text-sm"></textarea>
+                                <div class="flex gap-2">
+                                    <button id="announcement-post-btn" onclick="postAnnouncementFromSetup()"
+                                        class="btn-gold px-4 py-2 text-sm">Post announcement</button>
+                                    <button id="announcement-cancel-btn" onclick="cancelAnnouncementEdit()"
+                                        class="hidden px-4 py-2 rounded-lg bg-gray-700 text-gray-300 text-sm">Cancel
+                                        edit</button>
+                                </div>
+                                <div id="setup-announcements-list" class="grid gap-2 pt-2 border-t border-gray-800">
+                                </div>
+                            </section>
+
+                            <!-- Court readiness board -->
                             <section class="card-dark p-4">
                                 <div class="flex items-center justify-between gap-3">
                                     <div class="flex items-center gap-2 min-w-0">
-                                        <h3 class="text-lg font-bold text-white">✅ Auto-Update Official Results</h3>
+                                        <h3 class="text-lg font-bold text-white">🟢 Court Ready</h3>
                                         <span class="tip">
-                                            <button type="button" class="tip-btn" aria-label="About auto-update official results">ⓘ</button>
-                                            <span class="tip-body">When a game is reported, also set the official winner/players columns in the Google Sheet — but only for fields that don't already have a value. Existing official results are never overwritten; the unofficial (submitted) columns are always updated regardless.</span>
+                                            <button type="button" class="tip-btn" aria-label="About court ready">ⓘ</button>
+                                            <span class="tip-body">After a referee reports a game they get a "Mark ready" button to tap once both next teams are on the court. The Admin tab shows you a court board with an "All courts ready" alert and a Start round button. Lives only in the app (never the Google Sheet) and is cleared when switched off. Off by default.</span>
                                         </span>
                                     </div>
                                     <label class="switch flex-none">
-                                        <input type="checkbox" id="auto-update-official-results-toggle"
-                                            onchange="toggleAutoUpdateOfficialResults(this.checked)">
+                                        <input type="checkbox" id="court-ready-toggle" onchange="toggleCourtReady(this.checked)">
                                         <span class="slider round"></span>
                                     </label>
                                 </div>
                             </section>
 
+                            <!-- 1b. Team check-in (Roster) -->
+                            <section class="card-dark p-4">
+                                <div class="flex items-center justify-between gap-3">
+                                    <div class="flex items-center gap-2 min-w-0">
+                                        <h3 class="text-lg font-bold text-white">🎟️ Team Check-In</h3>
+                                        <span class="tip">
+                                            <button type="button" class="tip-btn" aria-label="About team check-in">ⓘ</button>
+                                            <span class="tip-body">Shows the check-in counter, ticks and Check in card in Roster. Off by default so registration work stays uncluttered; switch it on the morning of the event. Nothing is deleted when turned off. This switch is separate from the one in the Registrations sheet's Team Management tool.</span>
+                                        </span>
+                                    </div>
+                                    <label class="switch flex-none">
+                                        <input type="checkbox" id="checkin-toggle" onchange="toggleCheckin(this.checked)">
+                                        <span class="slider round"></span>
+                                    </label>
+                                </div>
+                            </section>
+
+                            <!-- 6. Result-discrepancy alerts (this browser only) -->
+                            <section class="card-dark p-4">
+                                <div class="flex items-center justify-between gap-3">
+                                    <div class="min-w-0">
+                                        <h3 class="text-lg font-bold text-white">⚠️ Result discrepancy alerts</h3>
+                                        <p class="text-[11px] text-white/50">When a referee's result differs from official. Applies to this device only — set the clock operator's to “Off”.</p>
+                                    </div>
+                                    <select id="discrepancy-pref-select" onchange="setDiscrepancyPref(this.value)"
+                                        class="flex-none rounded-lg border border-white/20 bg-white/[.06] px-2 py-2 text-sm text-white">
+                                        <option value="dot">Dot only</option>
+                                        <option value="full">Full</option>
+                                        <option value="off">Off</option>
+                                    </select>
+                                </div>
+                            </section>
+
+                            <!-- 5. Champion Celebration -->
+                            <section class="card-dark p-4">
+                                <div class="flex items-center justify-between gap-3">
+                                    <div class="flex items-center gap-2 min-w-0">
+                                        <h3 class="text-lg font-bold text-white">🎉 Champion Celebration</h3>
+                                        <span class="tip">
+                                            <button type="button" class="tip-btn" aria-label="About champion celebration">ⓘ</button>
+                                            <span class="tip-body">Show the tournament champion banner and confetti automatically when a division's playoff final is completed.</span>
+                                        </span>
+                                    </div>
+                                    <label class="switch flex-none">
+                                        <input type="checkbox" id="champion-celebration-toggle"
+                                            onchange="toggleChampionCelebration(this.checked)">
+                                        <span class="slider round"></span>
+                                    </label>
+                                </div>
+                            </section>
+
+                            <div id="setup-sync" class="setup-group-head scroll-mt-20"><h3>Sync &amp; results</h3><p>How the Google Sheet and official results flow into the app.</p></div>
                             <!-- 2. Google Sheet Sync -->
                             <section class="card-dark p-4 space-y-3">
                                 <div class="flex items-center justify-between flex-wrap gap-2">
@@ -1712,38 +1857,40 @@
                                 </div>
                             </section>
 
-                            <div class="setup-group-head"><h3>Event day</h3><p>Things you switch on or use while the tournament is running.</p></div>
-                            <!-- 1b. Team check-in (Roster) -->
+                            <!-- 1. Auto-Update Official Results -->
                             <section class="card-dark p-4">
                                 <div class="flex items-center justify-between gap-3">
                                     <div class="flex items-center gap-2 min-w-0">
-                                        <h3 class="text-lg font-bold text-white">🎟️ Team Check-In</h3>
+                                        <h3 class="text-lg font-bold text-white">✅ Auto-Update Official Results</h3>
                                         <span class="tip">
-                                            <button type="button" class="tip-btn" aria-label="About team check-in">ⓘ</button>
-                                            <span class="tip-body">Shows the check-in counter, ticks and Check in card in Roster. Off by default so registration work stays uncluttered; switch it on the morning of the event. Nothing is deleted when turned off. This switch is separate from the one in the Registrations sheet's Team Management tool.</span>
+                                            <button type="button" class="tip-btn" aria-label="About auto-update official results">ⓘ</button>
+                                            <span class="tip-body">When a game is reported, also set the official winner/players columns in the Google Sheet — but only for fields that don't already have a value. Existing official results are never overwritten; the unofficial (submitted) columns are always updated regardless.</span>
                                         </span>
                                     </div>
                                     <label class="switch flex-none">
-                                        <input type="checkbox" id="checkin-toggle" onchange="toggleCheckin(this.checked)">
+                                        <input type="checkbox" id="auto-update-official-results-toggle"
+                                            onchange="toggleAutoUpdateOfficialResults(this.checked)">
                                         <span class="slider round"></span>
                                     </label>
                                 </div>
                             </section>
 
-                            <!-- Court readiness board -->
+                            <div id="setup-config" class="setup-group-head scroll-mt-20"><h3>Configuration</h3><p>Set once before the event, then rarely touched.</p></div>
+                            <!-- Match entry: players-left quick-tap range -->
                             <section class="card-dark p-4">
                                 <div class="flex items-center justify-between gap-3">
                                     <div class="flex items-center gap-2 min-w-0">
-                                        <h3 class="text-lg font-bold text-white">🟢 Court Ready</h3>
+                                        <h3 class="text-lg font-bold text-white">🔢 Max players left</h3>
                                         <span class="tip">
-                                            <button type="button" class="tip-btn" aria-label="About court ready">ⓘ</button>
-                                            <span class="tip-body">After a referee reports a game they get a "Mark ready" button to tap once both next teams are on the court. The Admin tab shows you a court board with an "All courts ready" alert and a Start round button. Lives only in the app (never the Google Sheet) and is cleared when switched off. Off by default.</span>
+                                            <button type="button" class="tip-btn" aria-label="About max players left">ⓘ</button>
+                                            <span class="tip-body">Referees report the winner's players left by tapping a number from 1 up to this. Match it to the most players a team can have on the court. Applies to every division on the next screen refresh.</span>
                                         </span>
                                     </div>
-                                    <label class="switch flex-none">
-                                        <input type="checkbox" id="court-ready-toggle" onchange="toggleCourtReady(this.checked)">
-                                        <span class="slider round"></span>
-                                    </label>
+                                    <select id="max-players-left-select" onchange="setMaxPlayersLeft(this.value)"
+                                        class="flex-none rounded-lg border border-gray-600 bg-gray-700 px-3 py-2 text-sm font-semibold text-white">
+                                        <option>4</option><option>5</option><option>6</option><option>7</option><option selected>8</option>
+                                        <option>9</option><option>10</option><option>11</option><option>12</option>
+                                    </select>
                                 </div>
                             </section>
 
@@ -1764,132 +1911,6 @@
                                 </div>
                             </section>
 
-                            <!-- Match entry: players-left quick-tap range -->
-                            <section class="card-dark p-4">
-                                <div class="flex items-center justify-between gap-3">
-                                    <div class="flex items-center gap-2 min-w-0">
-                                        <h3 class="text-lg font-bold text-white">🔢 Max players left</h3>
-                                        <span class="tip">
-                                            <button type="button" class="tip-btn" aria-label="About max players left">ⓘ</button>
-                                            <span class="tip-body">Referees report the winner's players left by tapping a number from 1 up to this. Match it to the most players a team can have on the court. Applies to every division on the next screen refresh.</span>
-                                        </span>
-                                    </div>
-                                    <select id="max-players-left-select" onchange="setMaxPlayersLeft(this.value)"
-                                        class="flex-none rounded-lg border border-gray-600 bg-gray-700 px-3 py-2 text-sm font-semibold text-white">
-                                        <option>4</option><option>5</option><option>6</option><option>7</option><option selected>8</option>
-                                        <option>9</option><option>10</option><option>11</option><option>12</option>
-                                    </select>
-                                </div>
-                            </section>
-
-                            <!-- 3. Announcement manager -->
-                            <section class="card-dark p-4 space-y-3">
-                                <h3 class="text-lg font-bold text-white">📣 Announcement manager</h3>
-                                <textarea id="announcement-draft" rows="3"
-                                    placeholder="e.g. Grades 5–6 semifinals move to Court 1 at 4:20."
-                                    class="w-full p-3 bg-gray-700 border border-gray-600 rounded-lg text-white shadow-sm focus:border-accent focus:ring focus:ring-accent/50 transition duration-150 text-sm"></textarea>
-                                <div class="flex gap-2">
-                                    <button id="announcement-post-btn" onclick="postAnnouncementFromSetup()"
-                                        class="btn-gold px-4 py-2 text-sm">Post announcement</button>
-                                    <button id="announcement-cancel-btn" onclick="cancelAnnouncementEdit()"
-                                        class="hidden px-4 py-2 rounded-lg bg-gray-700 text-gray-300 text-sm">Cancel
-                                        edit</button>
-                                </div>
-                                <div id="setup-announcements-list" class="grid gap-2 pt-2 border-t border-gray-800">
-                                </div>
-                            </section>
-
-                            <!-- 5. Champion Celebration -->
-                            <section class="card-dark p-4">
-                                <div class="flex items-center justify-between gap-3">
-                                    <div class="flex items-center gap-2 min-w-0">
-                                        <h3 class="text-lg font-bold text-white">🎉 Champion Celebration</h3>
-                                        <span class="tip">
-                                            <button type="button" class="tip-btn" aria-label="About champion celebration">ⓘ</button>
-                                            <span class="tip-body">Show the tournament champion banner and confetti automatically when a division's playoff final is completed.</span>
-                                        </span>
-                                    </div>
-                                    <label class="switch flex-none">
-                                        <input type="checkbox" id="champion-celebration-toggle"
-                                            onchange="toggleChampionCelebration(this.checked)">
-                                        <span class="slider round"></span>
-                                    </label>
-                                </div>
-                            </section>
-
-                            <!-- 6. Result-discrepancy alerts (this browser only) -->
-                            <section class="card-dark p-4">
-                                <div class="flex items-center justify-between gap-3">
-                                    <div class="min-w-0">
-                                        <h3 class="text-lg font-bold text-white">⚠️ Result discrepancy alerts</h3>
-                                        <p class="text-[11px] text-white/50">When a referee's result differs from official. Applies to this device only — set the clock operator's to “Off”.</p>
-                                    </div>
-                                    <select id="discrepancy-pref-select" onchange="setDiscrepancyPref(this.value)"
-                                        class="flex-none rounded-lg border border-white/20 bg-white/[.06] px-2 py-2 text-sm text-white">
-                                        <option value="dot">Dot only</option>
-                                        <option value="full">Full</option>
-                                        <option value="off">Off</option>
-                                    </select>
-                                </div>
-                            </section>
-
-                            <div class="setup-group-head"><h3>People &amp; access</h3><p>Who is signed in, and the password for each role.</p></div>
-                            <!-- 4. Signed-in users (active by default) -->
-                            <section class="card-dark p-4 space-y-3">
-                                <div class="flex items-center justify-between gap-2 flex-wrap">
-                                    <h3 class="text-lg font-bold text-white">🟢 Signed-in users</h3>
-                                    <button id="inactive-users-toggle" type="button" onclick="toggleInactiveUsers()" class="setup-link hidden text-sm"></button>
-                                </div>
-                                <p class="text-sm text-gray-400">Active now across Referee, Tournament Admin, and
-                                    Parent logins. Refreshes every 15s.</p>
-                                <div class="overflow-x-auto rounded-lg border border-gray-800">
-                                    <table class="min-w-full divide-y divide-gray-800 text-sm">
-                                        <thead class="bg-gray-800/70">
-                                            <tr>
-                                                <th class="px-3 py-2 text-left text-xs font-semibold uppercase tracking-wider text-gray-400"></th>
-                                                <th class="px-3 py-2 text-left text-xs font-semibold uppercase tracking-wider text-gray-400">Name</th>
-                                                <th class="px-3 py-2 text-left text-xs font-semibold uppercase tracking-wider text-gray-400">Role</th>
-                                                <th class="px-3 py-2 text-left text-xs font-semibold uppercase tracking-wider text-gray-400">Court</th>
-                                                <th class="px-3 py-2 text-left text-xs font-semibold uppercase tracking-wider text-gray-400">Device</th>
-                                                <th class="px-3 py-2 text-left text-xs font-semibold uppercase tracking-wider text-gray-400">IP</th>
-                                                <th class="px-3 py-2 text-left text-xs font-semibold uppercase tracking-wider text-gray-400">Last active</th>
-                                            </tr>
-                                        </thead>
-                                        <tbody id="active-sessions-table-body" class="divide-y divide-gray-800">
-                                            <tr>
-                                                <td colspan="7" class="text-center py-3 text-gray-500">Loading…</td>
-                                            </tr>
-                                        </tbody>
-                                    </table>
-                                </div>
-
-                                <button type="button" class="setup-link text-sm" data-target="session-history-panel" onclick="toggleSetupPanel(this)">
-                                    <span class="chev">▸</span> Sign-in history</button>
-                                <div id="session-history-panel" class="hidden space-y-2">
-                                    <p class="text-sm text-gray-400">Recent logins across all roles, most recent first.</p>
-                                    <div class="overflow-x-auto rounded-lg border border-gray-800">
-                                        <table class="min-w-full divide-y divide-gray-800 text-sm">
-                                            <thead class="bg-gray-800/70">
-                                                <tr>
-                                                    <th class="px-3 py-2 text-left text-xs font-semibold uppercase tracking-wider text-gray-400">Time</th>
-                                                    <th class="px-3 py-2 text-left text-xs font-semibold uppercase tracking-wider text-gray-400">Name</th>
-                                                    <th class="px-3 py-2 text-left text-xs font-semibold uppercase tracking-wider text-gray-400">Role</th>
-                                                    <th class="px-3 py-2 text-left text-xs font-semibold uppercase tracking-wider text-gray-400">Court</th>
-                                                    <th class="px-3 py-2 text-left text-xs font-semibold uppercase tracking-wider text-gray-400">Device</th>
-                                                    <th class="px-3 py-2 text-left text-xs font-semibold uppercase tracking-wider text-gray-400">IP</th>
-                                                    <th class="px-3 py-2 text-left text-xs font-semibold uppercase tracking-wider text-gray-400">Status</th>
-                                                </tr>
-                                            </thead>
-                                            <tbody id="session-history-table-body" class="divide-y divide-gray-800">
-                                                <tr>
-                                                    <td colspan="7" class="text-center py-3 text-gray-500">Loading…</td>
-                                                </tr>
-                                            </tbody>
-                                        </table>
-                                    </div>
-                                </div>
-                            </section>
-
                             <!-- Role passwords (shown briefly, on request) — settings.js -->
                             <section class="card-dark p-4 space-y-3">
                                 <h3 class="text-lg font-bold text-white">🔑 Role passwords</h3>
@@ -1897,7 +1918,7 @@
                                 <div id="role-passwords-body" class="grid gap-2"></div>
                             </section>
 
-                            <div class="setup-group-head"><h3>Seasons &amp; data</h3><p>Season records, backups and resets.</p></div>
+                            <div id="setup-data" class="setup-group-head scroll-mt-20"><h3>Seasons &amp; data</h3><p>Season records, backups and resets.</p></div>
                             <!-- 8. Seasons (concessions + raffle records by year) -->
                             <section class="card-dark p-4">
                                 <h3 class="text-lg font-bold text-white">📅 Seasons</h3>
