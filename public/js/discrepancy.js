@@ -37,6 +37,15 @@ export function isPlayoffMatch(game) {
     return /^P\s*\d/i.test(((game && game.match) || '').toString().trim());
 }
 
+/**
+ * Any playoff game: 'P1'… in the match column, or a round label starting 'P1'…
+ * Playoff games can never end in a tie, even when pool play allows ties
+ * (match entry hides the tie option; /api/saveMatchResult refuses it).
+ */
+export function isPlayoffGame(game) {
+    return isPlayoffMatch(game) || /^P\s*\d/i.test(((game && game.roundTime) || '').toString().trim());
+}
+
 /** Both sides name a winner and they're different teams (players remaining ignored). */
 export function winnerChanged(game) {
     if (!game || isBlank(game.winner) || isBlank(game.adminWinner)) return false;

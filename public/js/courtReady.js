@@ -27,6 +27,7 @@ import { getSocket } from './socketClient.js';
 import { getTimerSnapshot } from './timerSnapshot.js';
 import { isController } from './timerControlsUI.js';
 import { toast } from './concessionsUi.js';
+import { courtIssueFor, refFlagUp, REASONS as ISSUE_REASONS } from './courtIssues.js';
 
 const POLL_MS = 20000;
 const UNDO_MS = 10000;          // referee "Undo" after marking ready
@@ -178,6 +179,8 @@ export function ensureCourtReadyWatch() {
     } catch (e) {
         console.warn('Court status live updates unavailable, polling only:', e.message);
     }
+    // A court flag going up/down marks the board tile (and frees the ref's sticky spot).
+    window.addEventListener('courtissues', render);
     // The clock changes the phase / time's up; re-render only when its state changes.
     window.addEventListener('timersnapshot', () => {
         const st = clockState();
@@ -558,12 +561,16 @@ function tileHtml(r, phase, showCaption) {
     const dispute = disputed
         ? `<div class="mt-2 rounded-[12px] px-2 py-1.5 text-[10px] font-bold leading-[1.3]" style="background:rgba(217,80,60,.18);color:#FFB4A6">⚠ Winner changed — see top</div>`
         : '';
+    const issue = courtIssueFor(r.court);
+    const flag = issue
+        ? `<div class="mt-2 rounded-[12px] px-2 py-1.5 text-[10px] font-bold leading-[1.3]" style="background:rgba(217,80,60,.28);color:#FFD2C8">✋ Flag up · ${esc((ISSUE_REASONS.find(x => x.key === issue.reason) || {}).label || 'Other')}${issue.ackAt ? ` · ${esc(issue.ackBy || 'MC')} on the way` : ''}</div>`
+        : '';
     const owed = r.owed?.length
         ? `<div class="mt-2 rounded-[12px] px-2 py-1.5 text-[10px] font-bold leading-[1.3]" style="background:rgba(217,80,60,.18);color:#FFB4A6">⚠ ${esc(roundOf(r.owed[0]))} score missing${r.owed.length > 1 ? ` (+${r.owed.length - 1})` : ''}</div>
            <div class="mt-1.5 flex">${reportBtn(r.owed[0], `Report ${esc(timeOnly(roundOf(r.owed[0])))}`, true).replace('flex-none', 'w-full')}</div>`
         : '';
     return `
-        <div class="rounded-[20px] border p-3" style="background:${st.bg};border-color:${r.owed?.length ? 'rgba(217,80,60,.65)' : st.border}">
+        <div class="rounded-[20px] border p-3" style="background:${st.bg};border-color:${issue ? 'rgba(255,120,100,.95)' : r.owed?.length ? 'rgba(217,80,60,.65)' : st.border}${issue ? ';box-shadow:0 0 0 2px rgba(217,80,60,.35)' : ''}">
             <div class="flex items-center justify-between gap-2">
                 <div class="text-[15px] font-extrabold text-white">Court ${esc(r.court)}</div>
                 <span class="inline-block h-2.5 w-2.5 rounded-full" style="background:${st.dot}"></span>
@@ -572,6 +579,7 @@ function tileHtml(r, phase, showCaption) {
             ${g && (showCaption || r.early) && gameCaption(g) ? `<div class="mt-0.5 text-[10px] font-semibold text-white/45">${esc(gameCaption(g))}</div>` : ''}
             ${r.early ? `<button type="button" data-cr-unearly="${esc(gameKeyOf(g))}" class="mt-1 text-[10px] font-semibold underline text-white/40">Undo squeeze-in</button>` : ''}
             ${body}
+            ${flag}
             ${dispute}
             ${owed}
             ${action}
@@ -755,9 +763,10 @@ export function render() {
         panel.style.position = '';
     } else {
         shown = renderRefBar(panel, board);
-        // The referee's bar stays in reach while they scroll, under the sticky header.
+        // The referee's bar stays in reach while they scroll, under the sticky
+        // header — unless their court has an issue flag up, which takes that spot.
         const header = document.querySelector('header.app-header');
-        panel.style.position = 'sticky';
+        panel.style.position = refFlagUp() ? '' : 'sticky';
         panel.style.top = `${(header?.offsetHeight || 0) + 8}px`;
         panel.style.zIndex = '40';
     }

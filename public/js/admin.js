@@ -16,9 +16,10 @@ import { resetDanger } from './danger.js';
 import { resetDivisionData } from './divisionData.js';
 import { renderMyTeam } from './myTeam.js';
 import { getSocket } from './socketClient.js';
-import { isUrgentDiscrepancy, isPlayoffMatch } from './discrepancy.js';
+import { isUrgentDiscrepancy, isPlayoffMatch, isPlayoffGame } from './discrepancy.js';
 import { toast } from './concessionsUi.js';
 import { ensureCourtReadyWatch, onMatchSaved as courtReadyOnSave, render as renderCourtReady, resetCourtReady, followCourt as courtReadyFollow, courtStatusOf } from './courtReady.js';
+import { ensureCourtIssueWatch, stopCourtIssues, render as renderCourtIssues } from './courtIssues.js';
 
 // --- Edit history (audit trail) ---------------------------------------------
 // Every submission for a match (who, what, when, and whether it was also set as
@@ -549,6 +550,8 @@ function renderAdminMatchEntryViewImpl() {
         return acc;
     }, {});
 
+    ensureCourtIssueWatch();
+    renderCourtIssues();
     ensureCourtReadyWatch();
     renderCourtReady();
 
@@ -950,6 +953,8 @@ function updateGateAdminUI(loggedIn) {
         btn.textContent = loggedIn ? 'Log out' : 'Admin login';
         btn.onclick = loggedIn ? logoutAdmin : showAdminLoginModal;
     }
+    // Court issue flags: referees raise them, the MC is alerted on every view.
+    if (loggedIn && App.state.isAdmin) ensureCourtIssueWatch(); else stopCourtIssues();
     const showPanel = !!(loggedIn && App.state.isSuperAdmin);
     if (adminPanel) adminPanel.classList.toggle('hidden', !showPanel);
     if (showPanel) loadGateSheetLink();
@@ -1222,6 +1227,7 @@ function switchCourt(court) {
     }
 
     courtReadyFollow(court);
+    renderCourtIssues();
     updateGateAdminUI(true);
     App.state.sessionHeartbeatBeat?.(); // session list shows the new court right away
 
@@ -1446,6 +1452,7 @@ function logoutAdmin() {
     sessionStorage.removeItem('isConcessions');
     clearAuth();
     resetCourtReady();
+    stopCourtIssues();
     sessionStorage.removeItem('firebaseToken');
     sessionStorage.removeItem('reporterName');
     sessionStorage.removeItem('selectedCourt');
@@ -1602,11 +1609,23 @@ function renderWinnerTiles(game) {
         .filter(t => t && t.trim() !== '')
         .map(t => ({ value: t, label: t }));
 
-    if (App.settings.is_tie_allowed) {
+    // Ties are a pool-play option only: a playoff game always needs a winner.
+    const playoff = isPlayoffGame(game);
+    if (App.settings.is_tie_allowed && !playoff) {
         options.push({ value: 'tie', label: '🤝 Horn sounded even — tie' });
+    }
+    if (playoff && winnerSelect.value === 'tie') {
+        winnerSelect.value = '—';
+        if (playersInput) playersInput.value = 0;
     }
 
     wrap.innerHTML = '';
+    if (playoff && App.settings.is_tie_allowed) {
+        const note = document.createElement('p');
+        note.className = 'col-span-full text-[11px] leading-[1.4] text-white/55';
+        note.textContent = 'Playoff game — no ties. Pick the team that advances.';
+        wrap.appendChild(note);
+    }
     options.forEach(opt => {
         const btn = document.createElement('button');
         btn.type = 'button';
@@ -1736,6 +1755,9 @@ async function saveMatchResultFromModal() {
     }
     if (isTeamWinner(winner) && playersRemaining < 1) {
         return showError('Tap how many players the winner had left.');
+    }
+    if (winner === 'tie' && isPlayoffGame(game)) {
+        return showError('Playoff games can\'t end in a tie — pick the team that advances.');
     }
 
     const setOfficial = App.state.isSuperAdmin && !!document.getElementById('modal-official-toggle')?.checked;

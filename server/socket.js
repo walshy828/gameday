@@ -155,3 +155,10 @@ export function broadcastCourtStatusUpdate() {
   if (!io) return;
   io.emit('courtStatusUpdate');
 }
+
+// Court issue flags (see server/courtIssues.js). Data-less nudge: staff
+// refetch GET /api/courtIssues; public clients don't listen for it.
+export function broadcastCourtIssueUpdate() {
+  if (!io) return;
+  io.emit('courtIssueUpdate');
+}

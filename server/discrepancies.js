@@ -2,7 +2,7 @@
 // Finds matches where a referee-submitted (unofficial) result disagrees with
 // the official one, across every division, minus the ones a superadmin has
 // dismissed. Backend-agnostic: it only uses the Store interface.
-import axios from 'axios';
+import { pushNtfy, ntfyEnabled } from './ntfy.js';
 import { Store } from './datastores/index.js';
 import { hasDiscrepancy, discrepancySig, isPlayoffMatch, isUrgentDiscrepancy } from '../public/js/discrepancy.js';
 
@@ -59,27 +59,19 @@ export async function dismissDiscrepancy(division, firebaseIndex, by) {
 const notified = new Set();
 
 export async function notifyIfHighImpact(division, firebaseIndex) {
-  const url = process.env.NTFY_URL;
-  if (!url) return;
+  if (!ntfyEnabled()) return;
   try {
     const game = (await Store.getSchedule(division)).find(g => String(g.firebaseIndex) === String(firebaseIndex));
     if (!game || !hasDiscrepancy(game) || !isUrgentDiscrepancy(game)) return;
     const id = `${dismissKey(division, game.firebaseIndex)}|${discrepancySig(game)}`;
     if (notified.has(id)) return;
     notified.add(id);
-    await axios.post(
-      url,
-      `${game.team1} vs ${game.team2} (${game.match}, court ${game.court}): official ${game.winner}, reported ${game.adminWinner} by ${game.adminName || 'referee'}.`,
-      {
-        timeout: 5000,
-        headers: {
-          Title: `Playoff result needs review - ${division}`,
-          Priority: 'high',
-          Tags: 'warning',
-          ...(process.env.NTFY_TOKEN ? { Authorization: `Bearer ${process.env.NTFY_TOKEN}` } : {})
-        }
-      }
-    );
+    await pushNtfy({
+      title: `Playoff result needs review - ${division}`,
+      body: `${game.team1} vs ${game.team2} (${game.match}, court ${game.court}): official ${game.winner}, reported ${game.adminWinner} by ${game.adminName || 'referee'}.`,
+      priority: 'high',
+      tags: 'warning'
+    });
   } catch (e) {
     console.error('Discrepancy push failed', e.message || e);
   }

@@ -320,3 +320,13 @@ export async function courtRoundAction(authToken, action, { division, roundTime,
 export async function getPublicCourtStatus(division) {
   return await apiGet(`/courtStatus/public?division=${encodeURIComponent(division)}`);
 }
+
+// Court issue flags (always on; see server/courtIssues.js).
+export async function getCourtIssues(authToken) {
+  return await apiGet(`/courtIssues`, authToken);
+}
+
+/** action: 'raise' | 'ack' | 'clear' */
+export async function courtIssueAction(authToken, action, { court, division, reason, id, by } = {}) {
+  return await apiPost(`/courtIssues/${action}`, { authToken, court, division, reason, id, by }, { timeoutMs: 8000 });
+}

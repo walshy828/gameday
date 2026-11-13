@@ -11,6 +11,7 @@ import { initSocket, broadcastDiscrepancyPing, broadcastTrafficMode, flushPendin
 import * as Shield from './loadShield.js';
 import { setRoleResolver, requestCounter, getUsageSummary } from './presence.js';
 import { listOpenDiscrepancies, dismissDiscrepancy, notifyIfHighImpact } from './discrepancies.js';
+import { isPlayoffGame } from '../public/js/discrepancy.js';
 import * as Roster from './rosterSheets.js';
 import * as Raffle from './raffleSheets.js';
 import * as RaffleDb from './raffleDb.js';
@@ -19,6 +20,7 @@ import * as Concessions from './concessionsDb.js';
 import * as Seasons from './seasons.js';
 import { controlTimer, initTimerControl, TimerError, TIMER_ACTION_NAMES } from './timerControl.js';
 import * as CourtStatus from './courtStatus.js';
+import * as CourtIssues from './courtIssues.js';
 import crypto from 'crypto';
 import compression from 'compression';
 import helmet from 'helmet';
@@ -401,6 +403,15 @@ async function runSaveMatchResult(req, authToken) {
     const clean = await validateMatchData(req.body?.matchData);
     if (clean.error) return matchSaveReply(400, { success: false, error: clean.error });
     const matchData = clean.value;
+
+    // Ties are a pool-play option only (ALLOW_MATCH_TIE): a playoff game must
+    // name the team that advances, whatever the client sent.
+    if ((matchData.winner || '').trim().toLowerCase() === 'tie') {
+      const game = (await Store.getSchedule(matchData.sheetName)).find(g => String(g.firebaseIndex) === String(matchData.firebaseIndex));
+      if (game && isPlayoffGame(game)) {
+        return matchSaveReply(400, { success: false, error: 'Playoff games can\'t end in a tie — pick the team that advances.' });
+      }
+    }
 
     // Detailed logging for save flow
     const requestId = crypto.randomBytes(4).toString('hex');
@@ -1419,6 +1430,45 @@ app.post('/api/courtStatus/round', async (req, res) => {
     res.status(400).json({ success: false, error: 'Unknown action.' });
   } catch (e) {
     console.error('courtStatus round error', e);
+    res.status(500).json({ success: false, error: e.toString() });
+  }
+});
+
+// --- Court issue flags (always on) ---
+// A referee raises a flag on their court ("we need the MC here"); the MC
+// (superadmin) acknowledges and clears it, and the referee can take their own
+// flag down. In-memory only — see server/courtIssues.js.
+const isSuperToken = (t) => !!t && safeEqual(t, computeToken(SUPERADMIN_PASSWORD));
+
+app.get('/api/courtIssues', (req, res) => {
+  if (!isValidToken(getAuthToken(req))) return res.status(401).json({ success: false, error: 'Authentication failed.' });
+  res.set('Cache-Control', 'no-store');
+  res.json({ success: true, ...CourtIssues.snapshot() });
+});
+
+app.post('/api/courtIssues/:action', (req, res) => {
+  const authToken = getAuthToken(req);
+  if (!isValidToken(authToken)) return res.status(401).json({ success: false, error: 'Authentication failed.' });
+  const court = typeof req.body?.court === 'string' ? req.body.court.trim() : '';
+  if (!CourtIssues.isValidCourt(court)) return res.status(400).json({ success: false, error: 'Invalid court.' });
+  const by = cleanText(req.body?.by, 40);
+  const mc = isSuperToken(authToken);
+  try {
+    switch (req.params.action) {
+      case 'raise':
+        return res.json({ success: true, ...CourtIssues.raise({ court, division: req.body?.division, reason: req.body?.reason, by }) });
+      case 'ack':
+        if (!mc) return res.status(403).json({ success: false, error: 'Superadmin access required.' });
+        return res.json({ success: true, ...CourtIssues.acknowledge({ court, by }) });
+      case 'clear': {
+        const id = typeof req.body?.id === 'string' ? req.body.id.slice(0, 40) : '';
+        return res.json({ success: true, ...CourtIssues.clear({ court, id, by, byMc: mc }) });
+      }
+      default:
+        return res.status(400).json({ success: false, error: 'Unknown action.' });
+    }
+  } catch (e) {
+    console.error('courtIssues error', e);
     res.status(500).json({ success: false, error: e.toString() });
   }
 });
