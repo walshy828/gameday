@@ -1355,6 +1355,13 @@ app.post('/api/courtStatus/round', async (req, res) => {
       return res.json({ success: true, ...CourtStatus.endRound({ division, roundTime, nextRound, by }) });
     }
     if (action === 'undo') return res.json({ success: true, ...CourtStatus.undoRound({ division }) });
+    if (action === 'early' || action === 'unearly') {
+      const gameKey = CourtStatus.clean(req.body?.gameKey, 240);
+      const court = typeof req.body?.court === 'string' ? req.body.court.trim() : '';
+      if (!gameKey) return res.status(400).json({ success: false, error: 'gameKey is required.' });
+      if (action === 'early' && !/^[A-Za-z0-9 ._-]{1,16}$/.test(court)) return res.status(400).json({ success: false, error: 'Invalid court.' });
+      return res.json({ success: true, ...CourtStatus.setEarly({ division, gameKey, court, on: action === 'early', by }) });
+    }
     if (action === 'clearMarks') return res.json({ success: true, ...CourtStatus.clearMarks({ division }) });
     res.status(400).json({ success: false, error: 'Unknown action.' });
   } catch (e) {

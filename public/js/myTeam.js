@@ -19,7 +19,7 @@ import { getPublicCourtStatus } from './api.js';
 import { getRoundOrder } from './schedule.js';
 import { getSocket } from './socketClient.js';
 import { getTimerSnapshot } from './timerSnapshot.js';
-import { deriveBoard, isDone, roundOf, courtKey, hasValue } from './courtBoard.js';
+import { deriveBoard, isDone, roundOf, slotOf, courtKey, hasValue } from './courtBoard.js';
 import { getFollowed, isFollowed, openFollowPicker } from './follow.js';
 import {
     buildBracketTree, isPlayoff, isOfficial, isByeSlot, isRealTeamSlot,
@@ -29,7 +29,7 @@ import {
 const POLL_MS = 30000;
 const CONTAINERS = ['my-team-card-standings', 'my-team-card-schedule'];
 
-let pub = { division: null, enabled: false, board: null, marks: [] };
+let pub = { division: null, enabled: false, board: null, marks: [], earlies: [] };
 let watching = false;
 let fetching = false;
 let clockSig = '';
@@ -97,7 +97,7 @@ async function refresh() {
     fetching = true;
     try {
         const res = await getPublicCourtStatus(d);
-        if (res?.success) pub = { division: d, enabled: !!res.enabled, board: res.board || null, marks: res.marks || [] };
+        if (res?.success) pub = { division: d, enabled: !!res.enabled, board: res.board || null, marks: res.marks || [], earlies: res.earlies || [] };
     } catch (e) {
         // Offline / server hiccup: keep the last known board; the card still works from the schedule.
     } finally {
@@ -130,6 +130,7 @@ function board(games, order) {
         order,
         division: d,
         marks: fresh ? pub.marks : [],
+        earlies: fresh ? pub.earlies : [],
         rec: fresh ? pub.board : null,
         clock: getTimerSnapshot(d)?.state || null
     });
@@ -142,8 +143,11 @@ function board(games, order) {
  * Returns null when it has no game in B.
  */
 function nowLine(g, brd, usingBoard) {
-    if (!g || roundOf(g) !== brd.B) return null;
-    const c = courtOf(g);
+    if (!g) return null;
+    const c = brd.courtFor(g);
+    // Squeezed in early on a free court: playing now, wherever it was scheduled.
+    if (brd.earlyFor(g) && !isDone(g)) return { tone: 'live', icon: '🔴', title: `Playing now · Court ${c}` };
+    if (slotOf(g) !== brd.B) return null;
     if (!isDone(g)) {
         if (brd.phase === 'playing') return { tone: 'live', icon: '🔴', title: `Playing now${c ? ' · Court ' + c : ''}` };
         if (brd.markFor(g)) return { tone: 'ready', icon: '✓', title: `On Court ${c} · ready to start` };
@@ -276,7 +280,7 @@ function playoffCard(team, games, brd, usingBoard) {
     } else {
         vs = slotName(other);
     }
-    const at = `${/\d:\d/.test(g.roundTime || '') ? timeLabel(g.roundTime) + ' · ' : ''}${courtOf(g) ? 'Court ' + courtOf(g) : ''}`.replace(/ · $/, '');
+    const at = `${/\d:\d/.test(g.roundTime || '') ? timeLabel(g.roundTime) + ' · ' : ''}${brd.courtFor(g) ? 'Court ' + brd.courtFor(g) : ''}`.replace(/ · $/, '');
     const now = nowLine(g, brd, usingBoard);
     if (now) return { badge, ...now, sub: `${where} vs ${vs}` };
     const hadBye = mineNodes.some(n => n.isBye) && !advancedTo;
@@ -300,7 +304,7 @@ function computeCard(team) {
     if (!mine.length) return { tone: 'info', icon: '🔎', title: 'No games found', sub: 'This team isn\'t on the current schedule.' };
 
     const poolLeft = mine.some(g => !isPlayoff(g) && !isDone(g));
-    const cur = brd.B ? mine.find(g => roundOf(g) === brd.B) : null;
+    const cur = mine.find(g => brd.earlyFor(g) && !isDone(g)) || (brd.B ? mine.find(g => slotOf(g) === brd.B) : null);
 
     const hasPlayoffs = games.some(isPlayoff);
     if (cur && !isPlayoff(cur)) {
@@ -311,7 +315,7 @@ function computeCard(team) {
     }
     if (poolLeft) {
         // No game in the board round: sitting this round out (or the board is elsewhere).
-        const onByeNow = !!brd.B && games.some(g => roundOf(g) === brd.B && !isPlayoff(g));
+        const onByeNow = !!brd.B && games.some(g => slotOf(g) === brd.B && !isPlayoff(g));
         const info = nextInfo(games, order, brd.B || order[0], onByeNow);
         if (!info) return { tone: 'info', icon: '☕', title: onByeNow ? 'Bye this round' : 'Up later' };
         if (onByeNow && info.byes.length >= 2) {

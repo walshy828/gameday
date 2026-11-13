@@ -21,7 +21,7 @@
 // the MC (superadmin) gets the court board, a referee gets their court's bar.
 import { getCourtStatus, setCourtMark, courtRoundAction } from './api.js';
 import { getRoundOrder } from './schedule.js';
-import { deriveBoard as deriveBoardPure, gameKeyOf, courtKey, roundOf, hasValue } from './courtBoard.js';
+import { deriveBoard as deriveBoardPure, gameKeyOf, courtKey, roundOf, slotOf, slotKey, hasValue } from './courtBoard.js';
 import { getSocket } from './socketClient.js';
 import { getTimerSnapshot } from './timerSnapshot.js';
 import { isController } from './timerControlsUI.js';
@@ -33,6 +33,7 @@ const UNDO_MS = 10000;          // referee "Undo" after marking ready
 let watching = false;
 let marks = [];              // [{ division, gameKey, court, by, at }]
 let boards = {};             // { [division]: { round, phase, prevRound, at, by, canUndo } }
+let earlies = [];            // [{ division, gameKey, court, at, by }] squeeze-ins
 let focusCourt = null;       // referee: court of the game they last reported
 let undoUntil = 0;
 let busy = false;
@@ -107,6 +108,7 @@ function deriveBoard() {
         order: getRoundOrder(),
         division: division(),
         marks,
+        earlies,
         rec: boards[division()] || null,
         clock: clockState()
     });
@@ -124,6 +126,7 @@ function applyState(data) {
     if (!data) return;
     marks = Array.isArray(data.marks) ? data.marks : [];
     boards = data.boards && typeof data.boards === 'object' ? data.boards : {};
+    earlies = Array.isArray(data.earlies) ? data.earlies : [];
     render();
 }
 
@@ -160,7 +163,7 @@ export function ensureCourtReadyWatch() {
             if (!s) return;
             App.settings = App.settings || {};
             App.settings.courtReadyEnabled = s.courtReadyEnabled === true;
-            if (!enabled()) { marks = []; boards = {}; primed = false; }
+            if (!enabled()) { marks = []; boards = {}; earlies = []; primed = false; }
             render();
         });
     } catch (e) {
@@ -178,6 +181,7 @@ export function ensureCourtReadyWatch() {
 export function resetCourtReady() {
     marks = [];
     boards = {};
+    earlies = [];
     focusCourt = null;
     undoUntil = 0;
     primed = false;
@@ -250,10 +254,11 @@ function canRunClock() {
     return !!st && (!st.controllerId || isController(division()));
 }
 
-function setClockRoundIfMine(round) {
+/** Point the clock at a board round (a start time) using that round's first schedule label. */
+function setClockRoundIfMine(slot, board) {
     const st = clockState();
-    if (!round || !st || !canRunClock()) return;
-    if ((st.currentRound || '').trim() !== round) window.setClockRound?.(round);
+    if (!slot || !st || !canRunClock()) return;
+    if (slotKey(st.currentRound) !== slot) window.setClockRound?.(board.firstRawOf(slot));
 }
 
 /**
@@ -261,15 +266,17 @@ function setClockRoundIfMine(round) {
  * isn't running, points the clock at this round and starts it (one tap).
  */
 async function startRoundFromBoard() {
-    const { B, phase, prev } = deriveBoard();
+    const brd = deriveBoard();
+    const { B, phase, prev } = brd;
     if (!B || phase !== 'staging' || busy) return;
     busy = true;
     try {
         await post('start', { roundTime: B, prevRound: prev || '' });
         const st = clockState();
         const startBtn = document.getElementById('start-btn');
+        // Point the clock at this round even if it's still running from the last one.
+        setClockRoundIfMine(B, brd);
         if (st && !st.running && startBtn && canRunClock()) {
-            setClockRoundIfMine(B);
             if (!startBtn.disabled) startBtn.click();
             toast(`▶ ${B} round started · clock running`);
         } else if (st && !st.running && st.controllerId) {
@@ -300,7 +307,7 @@ async function endRoundFromBoard() {
     busy = true;
     try {
         await post('end', { roundTime: B, nextRound: next || '' });
-        setClockRoundIfMine(next);
+        setClockRoundIfMine(next, board);
         toast(next ? `Next up: ${next} round` : 'That was the last round');
     } catch (e) {
         toast(`Couldn't end the round: ${e.body?.error || e.message}`, true);
@@ -321,6 +328,20 @@ function wireClockStart() {
         const { B, phase, prev } = deriveBoard();
         if (B && phase === 'staging') post('start', { roundTime: B, prevRound: prev || '' }).catch(e => console.warn('Round start not recorded:', e.message));
     });
+}
+
+/** Start a later game now on a free court (or undo it). */
+async function squeezeIn(gameKey, court, on) {
+    if (busy) return;
+    busy = true;
+    try {
+        await post(on ? 'early' : 'unearly', { gameKey, court });
+        toast(on ? `⚡ Squeezed in on Court ${court}` : 'Squeeze-in undone');
+    } catch (e) {
+        toast(`Couldn't update the board: ${e.body?.error || e.message}`, true);
+    } finally {
+        busy = false;
+    }
 }
 
 async function roundAction(action) {
@@ -431,8 +452,15 @@ const STATUS_STYLE = {
     none: { label: '—', dot: 'rgba(255,255,255,.25)', bg: 'rgba(255,255,255,.03)', border: 'rgba(255,255,255,.08)', text: 'rgba(255,255,255,.4)' }
 };
 
-function tileHtml(r, phase) {
-    const st = STATUS_STYLE[r.status];
+/** "Pool A · Quarterfinals · P5" — shown when a board round mixes brackets/sub-divisions. */
+function gameCaption(g) {
+    const name = (g.roundTime || '').replace(/\s*[·|•\-–—]?\s*\d{1,2}:\d{2}\s*(AM|PM)?\s*/i, ' ').replace(/^P\s*\d+\s*[.\-:_]?\s*/i, '').trim();
+    const match = /^P\s*\d+$/i.test((g.match || '').trim()) ? g.match.trim() : '';
+    return [g.subDivision, name, match].filter(Boolean).join(' · ');
+}
+
+function tileHtml(r, phase, showCaption) {
+    const st = r.early ? { ...STATUS_STYLE.playing, label: 'IN PLAY · SQUEEZED IN' } : STATUS_STYLE[r.status];
     const g = r.game;
     let body = '';
     if (g && r.status === 'final') {
@@ -470,6 +498,8 @@ function tileHtml(r, phase) {
                 <span class="inline-block h-2.5 w-2.5 rounded-full" style="background:${st.dot}"></span>
             </div>
             <div class="mt-1 text-[11px] font-extrabold tracking-[.08em]" style="color:${st.text}">${st.label}</div>
+            ${g && (showCaption || r.early) && gameCaption(g) ? `<div class="mt-0.5 text-[10px] font-semibold text-white/45">${esc(gameCaption(g))}</div>` : ''}
+            ${r.early ? `<button type="button" data-cr-unearly="${esc(gameKeyOf(g))}" class="mt-1 text-[10px] font-semibold underline text-white/40">Undo squeeze-in</button>` : ''}
             ${body}
             ${owed}
             ${action}
@@ -480,9 +510,9 @@ function lastRoundStrip(board) {
     const { missing, prevInfo, phase } = board;
     if (missing.length) {
         const first = missing[0];
-        const round = roundOf(first);
-        const inThat = missing.filter(g => roundOf(g) === round);
-        const total = schedule().filter(g => roundOf(g) === round).length;
+        const round = slotOf(first);
+        const inThat = missing.filter(g => slotOf(g) === round);
+        const total = schedule().filter(g => slotOf(g) === round).length;
         const who = inThat.map(g => `Court ${esc(courtKey(g.court))} (${esc(g.team1)} vs ${esc(g.team2)})`).join(', ');
         const older = missing.length > inThat.length ? ` · +${missing.length - inThat.length} from earlier rounds` : '';
         return `<div class="mt-2.5 rounded-[14px] border px-3 py-2 text-[11px] leading-[1.4]" style="border-color:rgba(217,80,60,.45);background:rgba(217,80,60,.1);color:rgba(255,255,255,.85)">
@@ -494,8 +524,24 @@ function lastRoundStrip(board) {
     return '';
 }
 
+/** "⚡ Court 3 is free · start Quarterfinals P9 · Ducks vs Owls now?" */
+function squeezeStrip(board) {
+    if (!board.squeeze.length) return '';
+    return board.squeeze.map(({ court, game }) => `
+        <div class="mt-2.5 flex items-center justify-between gap-2 rounded-[14px] border px-3 py-2" style="border-color:rgba(224,184,99,.5);background:rgba(224,184,99,.08)">
+            <div class="min-w-0 text-[11px] leading-[1.4] text-white/85">
+                <span class="font-bold" style="color:var(--gold-l)">⚡ Court ${esc(court)} is free</span> · squeeze in ${esc(gameCaption(game) || roundOf(game))}:
+                <span class="font-semibold text-white">${esc(game.team1)} vs ${esc(game.team2)}</span>
+            </div>
+            <button type="button" data-cr-early="${esc(gameKeyOf(game))}" data-court="${esc(court)}" class="flex-none rounded-full px-3 py-2 text-[11px] font-bold" style="background:linear-gradient(135deg,var(--gold) 0%,var(--gold-d) 100%);color:#2A1B08">Start on Court ${esc(court)}</button>
+        </div>`).join('');
+}
+
 function renderBoard(panel, board) {
     const { B, phase, rows, summary, rec, timesUp, canUndo } = board;
+    // Captions only matter when one board round mixes brackets / sub-divisions.
+    const inB = rows.filter(r => r.game && r.inR).map(r => r.game);
+    const showCaption = new Set(inB.map(g => `${g.subDivision || ''}|${roundOf(g)}`)).size > 1;
 
     let headline;
     if (!B) headline = '<span class="text-white">All rounds played</span>';
@@ -527,8 +573,9 @@ function renderBoard(panel, board) {
                 <div class="flex flex-none items-center gap-2">${control}</div>
             </div>
             ${lastRoundStrip(board)}
+            ${squeezeStrip(board)}
             ${B && rows.length
-                ? `<div class="mt-3 grid grid-cols-2 gap-2 sm:grid-cols-4">${rows.map(r => tileHtml(r, phase)).join('')}</div>`
+                ? `<div class="mt-3 grid grid-cols-2 gap-2 sm:grid-cols-4">${rows.map(r => tileHtml(r, phase, showCaption)).join('')}</div>`
                 : (B ? '<p class="mt-2 text-[12px] text-white/45">No courts in this division\'s schedule.</p>' : '')}
             ${B && phase === 'staging' ? `<div class="mt-2.5 flex justify-end">
                 <button type="button" data-cr-clear class="text-[11px] font-semibold text-white/40 underline">Reset ready marks</button>
@@ -655,6 +702,8 @@ export function render() {
             else if ('crEnd' in el.dataset) endRoundFromBoard();
             else if ('crUndo' in el.dataset) roundAction('undo');
             else if ('crClear' in el.dataset) roundAction('clearMarks');
+            else if (el.dataset.crEarly) squeezeIn(el.dataset.crEarly, el.dataset.court, true);
+            else if (el.dataset.crUnearly) squeezeIn(el.dataset.crUnearly, '', false);
         });
     }
 }

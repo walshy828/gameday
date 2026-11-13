@@ -22,6 +22,8 @@ const MAX_MARKS = 1000;
 const marks = new Map();  // `${division}\u0000${gameKey}` -> { division, gameKey, court, by, at }
 const boards = new Map(); // division -> { round, phase, prevRound, at, by }
 const undos = new Map();  // division -> previous board (or null for "none")
+// Squeeze-ins: a game from a later (short) round started early on a free court.
+const earlies = new Map(); // `${division}\u0000${gameKey}` -> { division, gameKey, court, at, by }
 
 export function clean(v, max) {
   if (typeof v !== 'string') return '';
@@ -31,7 +33,8 @@ export function clean(v, max) {
 export function snapshot() {
   return {
     marks: [...marks.values()],
-    boards: Object.fromEntries([...boards].map(([d, b]) => [d, { ...b, canUndo: undos.has(d) }]))
+    boards: Object.fromEntries([...boards].map(([d, b]) => [d, { ...b, canUndo: undos.has(d) }])),
+    earlies: [...earlies.values()]
   };
 }
 
@@ -47,7 +50,8 @@ export function publicSnapshot(division) {
   const b = boards.get(division);
   return {
     board: b ? { round: b.round, phase: b.phase, prevRound: b.prevRound, at: b.at } : null,
-    marks: [...marks.values()].filter(m => m.division === division).map(m => ({ division, gameKey: m.gameKey, court: m.court, at: m.at }))
+    marks: [...marks.values()].filter(m => m.division === division).map(m => ({ division, gameKey: m.gameKey, court: m.court, at: m.at })),
+    earlies: [...earlies.values()].filter(e => e.division === division).map(e => ({ division, gameKey: e.gameKey, court: e.court, at: e.at }))
   };
 }
 
@@ -107,6 +111,15 @@ export function undoRound({ division }) {
   return snapshot();
 }
 
+/** Squeeze a later game in now on a free court (or undo that). */
+export function setEarly({ division, gameKey, court, on, by }) {
+  const key = `${division}\u0000${gameKey}`;
+  if (on) earlies.set(key, { division, gameKey, court, at: Date.now(), by: clean(by, 40) || 'MC' });
+  else earlies.delete(key);
+  changed();
+  return snapshot();
+}
+
 /** Clears ready marks for one division (or every division). The board round is kept. */
 export function clearMarks({ division } = {}) {
   let removed = false;
@@ -118,10 +131,11 @@ export function clearMarks({ division } = {}) {
 }
 
 export function clearAll() {
-  if (marks.size === 0 && boards.size === 0) return snapshot();
+  if (marks.size === 0 && boards.size === 0 && earlies.size === 0) return snapshot();
   marks.clear();
   boards.clear();
   undos.clear();
+  earlies.clear();
   changed();
   return snapshot();
 }
