@@ -102,7 +102,7 @@ export async function saveMatchResult(matchData) {
     await entryRef.update(updatePayload);
     // push history
     const historyRef = entryRef.child('history');
-    await historyRef.push({ name: adminName || '', winner: winner || '', playersRemaining: playersRemaining || '', notes: notes || '', date: new Date().toISOString() });
+    await historyRef.push({ name: adminName || '', winner: winner || '', playersRemaining: playersRemaining || '', notes: notes || '', official: matchData.setOfficial === true, date: new Date().toISOString() });
     return { success: true, results: { firebase: { success: true } } };
   } catch (e) {
     console.error('Firebase update failed', e);

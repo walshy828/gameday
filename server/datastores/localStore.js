@@ -87,6 +87,11 @@ export const schemaReady = (async function ensureFeatureTables() {
         INDEX idx_history_div_idx (division, match_index)
       )
     `);
+    try {
+      await pool.query('ALTER TABLE match_history ADD COLUMN set_official BOOLEAN NOT NULL DEFAULT FALSE');
+    } catch (e) {
+      if (e.code !== 'ER_DUP_FIELDNAME') throw e;
+    }
     await pool.query(`
       CREATE TABLE IF NOT EXISTS timer_state (
         division VARCHAR(191) PRIMARY KEY,
@@ -358,9 +363,9 @@ export async function saveMatchResult(matchData) {
     );
 
     await conn.query(
-      `INSERT INTO match_history (division, match_index, name, winner, players_remaining, notes)
-       VALUES (?, ?, ?, ?, ?, ?)`,
-      [sheetName, firebaseIndex, adminName || '', winner || '', playersRemaining || '', notes || '']
+      `INSERT INTO match_history (division, match_index, name, winner, players_remaining, notes, set_official)
+       VALUES (?, ?, ?, ?, ?, ?, ?)`,
+      [sheetName, firebaseIndex, adminName || '', winner || '', playersRemaining || '', notes || '', matchData.setOfficial === true]
     );
 
     await conn.commit();
@@ -426,6 +431,26 @@ export async function writeDivisionData(name, { standings, schedule, scheduleCon
 
   const snapshot = await loadDivisionSnapshot(name);
   broadcastDivisionUpdate(name, snapshot);
+}
+
+/**
+ * Every result submitted for one match, oldest first (the match_history log written by
+ * saveMatchResult). `official` = the superadmin also submitted it as the official result.
+ */
+export async function getMatchHistory(sheetName, matchIndex) {
+  const [rows] = await pool.query(
+    `SELECT name, winner, players_remaining, notes, set_official, created_at
+     FROM match_history WHERE division = ? AND match_index = ? ORDER BY created_at ASC, id ASC`,
+    [sheetName, matchIndex]
+  );
+  return rows.map(r => ({
+    name: r.name || '',
+    winner: r.winner || '',
+    playersRemaining: r.players_remaining ?? '',
+    notes: r.notes || '',
+    official: !!r.set_official,
+    at: r.created_at ? new Date(r.created_at).toISOString() : null
+  }));
 }
 
 /**

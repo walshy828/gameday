@@ -1,5 +1,5 @@
 // Avoid importing from main.js (circular). Use the api wrapper directly.
-import { validateAdmin, getDiscrepancies, dismissDiscrepancy as dismissDiscrepancyApi, saveMatchResult as apiSaveMatchResult, sendSessionHeartbeat, endSession as apiEndSession, runSheetSync, getSheetSyncConfig } from './api.js';
+import { validateAdmin, getDiscrepancies, getMatchHistory, dismissDiscrepancy as dismissDiscrepancyApi, saveMatchResult as apiSaveMatchResult, sendSessionHeartbeat, endSession as apiEndSession, runSheetSync, getSheetSyncConfig } from './api.js';
 import {
     getFilterableTeamName, parseRoundTime,
     getRoundOrder, getRosterTeams, getByeTeams,
@@ -18,6 +18,113 @@ import { renderMyTeam } from './myTeam.js';
 import { getSocket } from './socketClient.js';
 import { toast } from './concessionsUi.js';
 import { ensureCourtReadyWatch, onMatchSaved as courtReadyOnSave, render as renderCourtReady, resetCourtReady, followCourt as courtReadyFollow, courtStatusOf } from './courtReady.js';
+
+// --- Edit history (audit trail) ---------------------------------------------
+// Every submission for a match (who, what, when, and whether it was also set as
+// official), read on demand from GET /api/matchHistory only when someone expands
+// it, so it costs nothing in the normal report flow.
+const historyCache = new Map(); // "division|index" -> { at, items } | { loading } | { error }
+const HISTORY_TTL_MS = 15000;
+const openHistory = new Set();  // Needs-review items whose history is expanded
+
+const historyKey = (division, index) => `${division}|${index}`;
+
+async function loadMatchHistory(division, index, force = false) {
+    const key = historyKey(division, index);
+    const hit = historyCache.get(key);
+    if (!force && hit && hit.items && Date.now() - hit.at < HISTORY_TTL_MS) return hit;
+    const authToken = sessionStorage.getItem('adminAuthToken');
+    historyCache.set(key, { loading: true, items: hit?.items });
+    try {
+        const res = await getMatchHistory(authToken, division, index);
+        if (!res.success) throw new Error(res.error || 'failed');
+        const entry = { at: Date.now(), items: res.items || [] };
+        historyCache.set(key, entry);
+        return entry;
+    } catch (e) {
+        const entry = { error: 'Could not load the edit history.' };
+        historyCache.set(key, entry);
+        return entry;
+    }
+}
+
+function historyResult(h) {
+    const w = (h.winner || '').toString().trim();
+    if (!w || w === '—') return 'No winner (cleared)';
+    if (w === 'tie') return 'Tie';
+    const n = h.playersRemaining;
+    return `${w}${n !== '' && n !== null && n !== undefined ? ` · ${n} left` : ''}`;
+}
+
+function historyTime(iso) {
+    const d = new Date(iso);
+    if (!iso || Number.isNaN(d.getTime())) return '—';
+    const sameDay = d.toDateString() === new Date().toDateString();
+    return d.toLocaleString(undefined, sameDay
+        ? { hour: 'numeric', minute: '2-digit', second: '2-digit' }
+        : { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' });
+}
+
+/** The timeline markup for a cache entry (oldest first). */
+function historyListHtml(entry) {
+    if (!entry || (entry.loading && !entry.items)) return '<div class="text-[11px] text-white/50">Loading…</div>';
+    if (entry.error) return `<div class="text-[11px]" style="color:var(--gold-l)">${esc(entry.error)}</div>`;
+    const items = entry.items || [];
+    if (!items.length) return '<div class="text-[11px] text-white/50">No submissions recorded for this game yet.</div>';
+    return `<ol class="grid gap-1">${items.map((h, i) => {
+        const prev = items[i - 1];
+        const changed = prev && historyResult(prev) !== historyResult(h);
+        const tag = i === 0 ? 'Reported' : changed ? 'Changed' : h.official ? 'Made official' : 'Re-submitted';
+        return `
+        <li class="rounded-xl px-2.5 py-1.5" style="background:rgba(255,255,255,.04)">
+            <div class="flex flex-wrap items-baseline gap-x-1.5 text-[11px]">
+                <span class="tabular-nums text-white/55">${esc(historyTime(h.at))}</span>
+                <span class="font-semibold text-white/85">${esc(h.name || 'Unknown')}</span>
+                <span class="text-white/45">${tag}</span>
+                ${h.official ? '<span class="rounded-full px-1.5 text-[10px] font-semibold" style="background:rgba(52,168,83,.18);color:var(--ok)">OFFICIAL</span>' : ''}
+            </div>
+            <div class="text-[11.5px]" style="color:${changed ? 'var(--gold-l)' : 'rgba(255,255,255,.78)'}">${esc(historyResult(h))}</div>
+            ${h.notes ? `<div class="text-[11px] italic text-white/50">“${esc(h.notes)}”</div>` : ''}
+        </li>`;
+    }).join('')}</ol>`;
+}
+
+/** Match entry modal: a collapsed "Edit history" link under the official toggle. */
+function setupModalHistory(game) {
+    const wrap = document.getElementById('modal-history-wrap');
+    if (!wrap) return;
+    const reported = !!((game.adminWinner || '').trim() || (game.winner || '').trim() || game.lastUpdated || game.history);
+    wrap.classList.toggle('hidden', !reported);
+    const list = document.getElementById('modal-history-list');
+    const btn = document.getElementById('modal-history-toggle');
+    list.classList.add('hidden');
+    list.innerHTML = '';
+    btn.setAttribute('aria-expanded', 'false');
+    btn.querySelector('[data-caret]').textContent = '▸';
+    const division = App.config.currentSheetName;
+    const index = game.firebaseIndex;
+    btn.onclick = async () => {
+        const open = list.classList.toggle('hidden') === false;
+        btn.setAttribute('aria-expanded', String(open));
+        btn.querySelector('[data-caret]').textContent = open ? '▾' : '▸';
+        if (!open) return;
+        list.innerHTML = historyListHtml(historyCache.get(historyKey(division, index)) || { loading: true });
+        const entry = await loadMatchHistory(division, index, true);
+        // Still the same game and still open?
+        if (App.data.allScheduleData[App.admin.currentGameIndex] !== game || list.classList.contains('hidden')) return;
+        list.innerHTML = historyListHtml(entry);
+    };
+}
+
+async function toggleDiscrepancyHistory(key) {
+    const d = (App.data.discrepancies || []).find(x => x.key === key);
+    if (!d) return;
+    if (openHistory.has(key)) { openHistory.delete(key); renderAdminMatchEntryViewImpl(); return; }
+    openHistory.add(key);
+    renderAdminMatchEntryViewImpl();
+    await loadMatchHistory(d.division, d.firebaseIndex, true);
+    if (openHistory.has(key)) renderAdminMatchEntryViewImpl();
+}
 
 // --- Result discrepancies (superadmin) -------------------------------------
 // A referee-submitted result that differs from the official one. The server
@@ -72,6 +179,7 @@ function wireDiscrepancyActions(listEl) {
         const key = holder.dataset.discKey;
         const act = btn.dataset.act;
         if (act === 'edit') return reviewDiscrepancy(key);
+        if (act === 'history') return toggleDiscrepancyHistory(key);
         // Use reported / Keep official change what the manager sees as the
         // result, so they take a second click on the same button (inline,
         // no browser dialog). It disarms itself after a few seconds.
@@ -234,7 +342,9 @@ function renderDiscrepancyPanel(container) {
                         <button data-act="use" class="${btn}" style="${armed(g, 'use') ? 'background:var(--ok);color:#06210F;border:0' : 'background:linear-gradient(135deg,var(--gold) 0%,var(--gold-d) 100%);color:#2A1B08;border:0'}">${armed(g, 'use') ? 'Tap again to confirm' : 'Use reported'}</button>
                         <button data-act="edit" class="${btn}" style="${ghost}">${other ? 'Open division' : 'Edit'}</button>
                         <button data-act="keep" class="${btn}" style="${armed(g, 'keep') ? 'background:var(--ok);color:#06210F;border:0' : ghost}">${armed(g, 'keep') ? 'Tap again to confirm' : 'Keep official'}</button>
+                        <button data-act="history" aria-expanded="${openHistory.has(g.key)}" class="${btn}" style="background:transparent;color:rgba(255,255,255,.7);border:1px dashed rgba(255,255,255,.2)">Edit history ${openHistory.has(g.key) ? '▾' : '▸'}</button>
                     </div>
+                    ${openHistory.has(g.key) ? `<div class="mt-2">${historyListHtml(historyCache.get(historyKey(g.division, g.firebaseIndex)) || { loading: true })}</div>` : ''}
                 </div>`;
             }).join('')}
         </div>
@@ -1388,6 +1498,7 @@ function showMatchEntryModal(gameIndex) {
         document.getElementById('modal-official-toggle').checked = !!App.settings.autoUpdateOfficialResultsEnabled;
     }
 
+    setupModalHistory(game);
     renderMatchEntryControls(game);
     modal.classList.remove('hidden');
 }

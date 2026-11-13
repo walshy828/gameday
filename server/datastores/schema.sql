@@ -57,6 +57,7 @@ CREATE TABLE IF NOT EXISTS match_history (
   winner VARCHAR(191),
   players_remaining VARCHAR(64),
   notes TEXT,
+  set_official BOOLEAN NOT NULL DEFAULT FALSE,
   created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
   INDEX idx_history_div_idx (division, match_index)
 );

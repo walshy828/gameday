@@ -156,6 +156,10 @@ export async function getDiscrepancies(authToken) {
   return await apiGet(`/discrepancies`, authToken);
 }
 
+export async function getMatchHistory(authToken, division, index) {
+  return await apiGet(`/matchHistory?division=${encodeURIComponent(division)}&index=${encodeURIComponent(index)}`, authToken);
+}
+
 export async function dismissDiscrepancy(authToken, division, firebaseIndex, by) {
   return await apiPost(`/discrepancies/dismiss`, { authToken, division, firebaseIndex, by });
 }

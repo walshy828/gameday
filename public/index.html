@@ -2110,6 +2110,12 @@
                     <span class="text-[12px] leading-[1.45] text-white/80"><span class="font-semibold" style="color:var(--gold-l)">Also submit as official result</span><br>Overwrites the official result in the sheet with the winner and players above (no winner clears it), then refreshes standings.</span>
                 </label></div>
 
+                <div id="modal-history-wrap" class="hidden">
+                    <button type="button" id="modal-history-toggle" aria-expanded="false" aria-controls="modal-history-list"
+                        class="text-[11.5px] font-medium text-white/55 underline decoration-white/25 underline-offset-2 hover:text-white/80"><span data-caret>▸</span> Edit history</button>
+                    <div id="modal-history-list" class="mt-1.5 hidden max-h-48 overflow-y-auto"></div>
+                </div>
+
                 <div class="grid grid-cols-[1fr_2.2fr] gap-2">
                     <button onclick="hideMatchEntryModal()"
                         class="rounded-[18px] border border-white/15 bg-white/[.07] p-4 text-[13px] font-semibold leading-none text-[#F1F1F2]">Cancel</button>

@@ -422,6 +422,10 @@ async function runSaveMatchResult(req, authToken) {
       }
     }
 
+    // The history log records whether this save really set the official result
+    // (the client's flag is only honored for the superadmin token).
+    matchData.setOfficial = forceOfficial;
+
     // Primary write — Firebase RTDB or local MariaDB, depending on DATA_BACKEND.
     let storeResult = null;
     try {
@@ -506,6 +510,25 @@ async function runSaveMatchResult(req, authToken) {
 function matchSaveReply(status, body) {
   return { status, body };
 }
+
+// --- Match edit history (audit trail), any referee or the superadmin ---
+// Every submission for one match, oldest first: who, what, when, and whether it
+// was also submitted as official. Read on demand when someone expands it.
+app.get('/api/matchHistory', async (req, res) => {
+  if (!isValidToken(getAuthToken(req))) return res.status(401).json({ success: false, error: 'Authentication failed.' });
+  try {
+    const division = cleanText(req.query.division, 191);
+    const idx = String(req.query.index ?? '');
+    if (!division || /[.#$\[\]\/]/.test(division) || !/^\d{1,6}$/.test(idx)) {
+      return res.status(400).json({ success: false, error: 'division and index are required' });
+    }
+    if (typeof Store.getMatchHistory !== 'function') return res.json({ success: true, items: [] });
+    res.json({ success: true, items: await Store.getMatchHistory(division, Number(idx)) });
+  } catch (e) {
+    console.error('match history error', e);
+    res.status(500).json({ success: false, error: e.toString() });
+  }
+});
 
 // --- Result discrepancies (referee-reported vs official), superadmin only ---
 

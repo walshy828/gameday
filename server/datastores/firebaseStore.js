@@ -36,6 +36,26 @@ export async function saveMatchResult(matchData) {
   return Sheets.saveMatchResult(matchData);
 }
 
+/**
+ * Every result submitted for one match, oldest first (the per-match `history`
+ * node written by saveMatchResult). Same shape as localStore.getMatchHistory.
+ */
+export async function getMatchHistory(sheetName, matchIndex) {
+  const snap = await admin.database().ref(`dodgeball-tournament/divisions/${sheetName}/schedule/${matchIndex}/history`).once('value');
+  const val = snap.val() || {};
+  return Object.values(val)
+    .filter(h => h && typeof h === 'object')
+    .map(h => ({
+      name: h.name || '',
+      winner: h.winner || '',
+      playersRemaining: h.playersRemaining ?? '',
+      notes: h.notes || '',
+      official: h.official === true,
+      at: h.date || null
+    }))
+    .sort((a, b) => String(a.at || '').localeCompare(String(b.at || '')));
+}
+
 export async function getTimerState() {
   return { unsupported: true, reason: 'Timer state is managed client-side against Firebase RTDB in firebase mode.' };
 }
