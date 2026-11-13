@@ -330,3 +330,16 @@ export async function getCourtIssues(authToken) {
 export async function courtIssueAction(authToken, action, { court, division, reason, id, by } = {}) {
   return await apiPost(`/courtIssues/${action}`, { authToken, court, division, reason, id, by }, { timeoutMs: 8000 });
 }
+
+// Public feedback (no login to send; superadmin reads it — see server/feedback.js).
+export async function submitFeedback({ kind, message, name, division, team, website }) {
+  return await apiPost(`/feedback`, { kind, message, name, division, team, website }, { timeoutMs: 10000 });
+}
+
+export async function getFeedback(authToken) {
+  return await apiGet(`/feedback`, authToken);
+}
+
+export async function feedbackAction(authToken, id, action, { status, by } = {}) {
+  return await apiPost(`/feedback/${encodeURIComponent(id)}/${action}`, { authToken, status, by }, { timeoutMs: 8000 });
+}

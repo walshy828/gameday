@@ -169,7 +169,8 @@ CREATE TABLE IF NOT EXISTS feature_settings (
   checkin_enabled BOOLEAN NOT NULL DEFAULT FALSE,
   roster_edit_enabled BOOLEAN NOT NULL DEFAULT TRUE,
   max_players_left INT NOT NULL DEFAULT 8, -- highest players-left quick-tap button in match entry
-  court_ready_enabled BOOLEAN NOT NULL DEFAULT FALSE -- referees can mark a court "ready" for the MC (state itself is in-memory)
+  court_ready_enabled BOOLEAN NOT NULL DEFAULT FALSE, -- referees can mark a court "ready" for the MC (state itself is in-memory)
+  feedback_enabled BOOLEAN NOT NULL DEFAULT TRUE -- parents/coaches can send feedback from the Info tab
 );
 
 -- Existing audit-log table (already written to unconditionally by
@@ -192,6 +193,22 @@ CREATE TABLE IF NOT EXISTS discrepancy_dismissals (
   sig VARCHAR(512) NOT NULL,
   dismissed_by VARCHAR(191),
   dismissed_at BIGINT NOT NULL
+);
+
+-- Public feedback from parents/coaches (no login), read by the superadmin in
+-- Setup. kind: compliment | complaint | suggestion; status: new | read | resolved.
+CREATE TABLE IF NOT EXISTS feedback (
+  id INT AUTO_INCREMENT PRIMARY KEY,
+  kind VARCHAR(16) NOT NULL,
+  message TEXT NOT NULL,
+  name VARCHAR(80) NULL,
+  division VARCHAR(191) NULL,
+  team VARCHAR(191) NULL,
+  created_at BIGINT NOT NULL,
+  status VARCHAR(16) NOT NULL DEFAULT 'new',
+  handled_by VARCHAR(80) NULL,
+  handled_at BIGINT NULL,
+  INDEX idx_feedback_created (created_at)
 );
 
 -- Database backup of every raffle sale made through the app (server/raffleDb.js). sync_status: pending = saved

@@ -3,7 +3,7 @@
 // DATA_BACKEND=local. Realtime push (replacing Firebase RTDB's built-in
 // listeners) is done via Socket.IO broadcasts after each write.
 import { pool } from '../db.js';
-import { broadcastDivisionUpdate, broadcastTimerUpdate, broadcastSyncStatus, broadcastAnnouncementUpdate, broadcastChatUpdate, broadcastChatLeadPing, broadcastFeatureSettingsUpdate, broadcastDiscrepancyPing } from '../socket.js';
+import { broadcastDivisionUpdate, broadcastTimerUpdate, broadcastSyncStatus, broadcastAnnouncementUpdate, broadcastChatUpdate, broadcastChatLeadPing, broadcastFeatureSettingsUpdate, broadcastDiscrepancyPing, broadcastFeedbackPing } from '../socket.js';
 
 export const backend = 'local';
 
@@ -250,12 +250,32 @@ export const schemaReady = (async function ensureFeatureTables() {
     } catch (e) {
       if (e.code !== 'ER_DUP_FIELDNAME') throw e;
     }
+    try {
+      await pool.query('ALTER TABLE feature_settings ADD COLUMN feedback_enabled BOOLEAN NOT NULL DEFAULT TRUE');
+    } catch (e) {
+      if (e.code !== 'ER_DUP_FIELDNAME') throw e;
+    }
     await pool.query(`
       CREATE TABLE IF NOT EXISTS discrepancy_dismissals (
         dismiss_key VARCHAR(255) PRIMARY KEY,
         sig VARCHAR(512) NOT NULL,
         dismissed_by VARCHAR(191),
         dismissed_at BIGINT NOT NULL
+      )
+    `);
+    await pool.query(`
+      CREATE TABLE IF NOT EXISTS feedback (
+        id INT AUTO_INCREMENT PRIMARY KEY,
+        kind VARCHAR(16) NOT NULL,
+        message TEXT NOT NULL,
+        name VARCHAR(80) NULL,
+        division VARCHAR(191) NULL,
+        team VARCHAR(191) NULL,
+        created_at BIGINT NOT NULL,
+        status VARCHAR(16) NOT NULL DEFAULT 'new',
+        handled_by VARCHAR(80) NULL,
+        handled_at BIGINT NULL,
+        INDEX idx_feedback_created (created_at)
       )
     `);
     await pool.query(`
@@ -561,7 +581,7 @@ export async function updateSyncSettings(patch) {
 }
 
 export async function getFeatureSettings() {
-  const [rows] = await pool.query('SELECT champion_celebration_enabled, auto_update_official_results_enabled, checkin_enabled, roster_edit_enabled, max_players_left, court_ready_enabled FROM feature_settings WHERE id = 1');
+  const [rows] = await pool.query('SELECT champion_celebration_enabled, auto_update_official_results_enabled, checkin_enabled, roster_edit_enabled, max_players_left, court_ready_enabled, feedback_enabled FROM feature_settings WHERE id = 1');
   const row = rows[0];
   return {
     championCelebrationEnabled: row ? !!row.champion_celebration_enabled : true,
@@ -569,7 +589,8 @@ export async function getFeatureSettings() {
     checkinEnabled: row ? !!row.checkin_enabled : false,
     rosterEditEnabled: row ? !!row.roster_edit_enabled : true,
     maxPlayersLeft: row && Number(row.max_players_left) >= 1 ? Number(row.max_players_left) : 8,
-    courtReadyEnabled: row ? !!row.court_ready_enabled : false
+    courtReadyEnabled: row ? !!row.court_ready_enabled : false,
+    feedbackEnabled: row && row.feedback_enabled != null ? !!row.feedback_enabled : true
   };
 }
 
@@ -577,14 +598,15 @@ export async function updateFeatureSettings(patch) {
   const current = await getFeatureSettings();
   const next = { ...current, ...patch };
   await pool.query(
-    `INSERT INTO feature_settings (id, champion_celebration_enabled, auto_update_official_results_enabled, checkin_enabled, roster_edit_enabled, max_players_left, court_ready_enabled) VALUES (1, ?, ?, ?, ?, ?, ?)
+    `INSERT INTO feature_settings (id, champion_celebration_enabled, auto_update_official_results_enabled, checkin_enabled, roster_edit_enabled, max_players_left, court_ready_enabled, feedback_enabled) VALUES (1, ?, ?, ?, ?, ?, ?, ?)
      ON DUPLICATE KEY UPDATE champion_celebration_enabled = VALUES(champion_celebration_enabled),
        auto_update_official_results_enabled = VALUES(auto_update_official_results_enabled),
        checkin_enabled = VALUES(checkin_enabled),
        roster_edit_enabled = VALUES(roster_edit_enabled),
        max_players_left = VALUES(max_players_left),
-       court_ready_enabled = VALUES(court_ready_enabled)`,
-    [next.championCelebrationEnabled, next.autoUpdateOfficialResultsEnabled, next.checkinEnabled, next.rosterEditEnabled, next.maxPlayersLeft, next.courtReadyEnabled]
+       court_ready_enabled = VALUES(court_ready_enabled),
+       feedback_enabled = VALUES(feedback_enabled)`,
+    [next.championCelebrationEnabled, next.autoUpdateOfficialResultsEnabled, next.checkinEnabled, next.rosterEditEnabled, next.maxPlayersLeft, next.courtReadyEnabled, next.feedbackEnabled]
   );
   const settings = await getFeatureSettings();
   broadcastFeatureSettingsUpdate(settings);
@@ -945,4 +967,43 @@ export async function clearDivisionData(division) {
   for (const name of names) broadcastDivisionUpdate(name, await loadDivisionSnapshot(name));
   broadcastDiscrepancyPing();
   return result;
+}
+
+
+// ---------------------------------------------------------------------------
+// Public feedback (compliment / complaint / suggestion), read by the superadmin.
+// status: new → read → resolved. See server/feedback.js for validation.
+// ---------------------------------------------------------------------------
+function mapFeedbackRow(r) {
+  return {
+    id: String(r.id), kind: r.kind, message: r.message, name: r.name || '',
+    division: r.division || '', team: r.team || '', createdAt: Number(r.created_at),
+    status: r.status || 'new', handledBy: r.handled_by || '', handledAt: r.handled_at ? Number(r.handled_at) : null
+  };
+}
+
+export async function addFeedback(f) {
+  const [res] = await pool.query(
+    'INSERT INTO feedback (kind, message, name, division, team, created_at, status) VALUES (?, ?, ?, ?, ?, ?, ?)',
+    [f.kind, f.message, f.name || null, f.division || null, f.team || null, f.createdAt, 'new']
+  );
+  broadcastFeedbackPing();
+  return { ...f, id: String(res.insertId), status: 'new', handledBy: '', handledAt: null };
+}
+
+export async function listFeedback(limit = 500) {
+  const [rows] = await pool.query('SELECT * FROM feedback ORDER BY created_at DESC LIMIT ?', [limit]);
+  return rows.map(mapFeedbackRow);
+}
+
+export async function setFeedbackStatus(id, status, by) {
+  const [res] = await pool.query('UPDATE feedback SET status = ?, handled_by = ?, handled_at = ? WHERE id = ?', [status, by || '', Date.now(), Number(id)]);
+  broadcastFeedbackPing();
+  return res.affectedRows > 0;
+}
+
+export async function deleteFeedback(id) {
+  const [res] = await pool.query('DELETE FROM feedback WHERE id = ?', [Number(id)]);
+  broadcastFeedbackPing();
+  return res.affectedRows > 0;
 }

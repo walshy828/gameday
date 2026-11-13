@@ -162,3 +162,10 @@ export function broadcastCourtIssueUpdate() {
   if (!io) return;
   io.emit('courtIssueUpdate');
 }
+
+// Public feedback (see server/feedback.js). Data-less nudge for signed-in staff
+// only (the superadmin's Setup inbox refetches GET /api/feedback).
+export function broadcastFeedbackPing() {
+  if (!io) return;
+  io.to('tier:staff').emit('feedbackUpdate');
+}

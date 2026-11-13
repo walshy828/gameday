@@ -11,6 +11,17 @@
       "env": {
         "PORT": "8899"
       }
+    },
+    {
+      "name": "gameday-alt",
+      "runtimeExecutable": "node",
+      "runtimeArgs": [
+        "server/index.js"
+      ],
+      "port": 8901,
+      "env": {
+        "PORT": "8901"
+      }
     }
   ]
 }

@@ -20,6 +20,7 @@ import { isUrgentDiscrepancy, isPlayoffMatch, isPlayoffGame } from './discrepanc
 import { toast } from './concessionsUi.js';
 import { ensureCourtReadyWatch, onMatchSaved as courtReadyOnSave, render as renderCourtReady, resetCourtReady, followCourt as courtReadyFollow, courtStatusOf } from './courtReady.js';
 import { ensureCourtIssueWatch, stopCourtIssues, render as renderCourtIssues } from './courtIssues.js';
+import { ensureFeedbackWatch, stopFeedback } from './feedback.js';
 
 // --- Edit history (audit trail) ---------------------------------------------
 // Every submission for a match (who, what, when, and whether it was also set as
@@ -955,6 +956,8 @@ function updateGateAdminUI(loggedIn) {
     }
     // Court issue flags: referees raise them, the MC is alerted on every view.
     if (loggedIn && App.state.isAdmin) ensureCourtIssueWatch(); else stopCourtIssues();
+    // Parent/coach feedback: the superadmin's inbox in Setup + complaint banner.
+    if (loggedIn && App.state.isSuperAdmin) ensureFeedbackWatch(); else stopFeedback();
     const showPanel = !!(loggedIn && App.state.isSuperAdmin);
     if (adminPanel) adminPanel.classList.toggle('hidden', !showPanel);
     if (showPanel) loadGateSheetLink();
@@ -1453,6 +1456,7 @@ function logoutAdmin() {
     clearAuth();
     resetCourtReady();
     stopCourtIssues();
+    stopFeedback();
     sessionStorage.removeItem('firebaseToken');
     sessionStorage.removeItem('reporterName');
     sessionStorage.removeItem('selectedCourt');

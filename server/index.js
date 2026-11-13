@@ -21,6 +21,7 @@ import * as Seasons from './seasons.js';
 import { controlTimer, initTimerControl, TimerError, TIMER_ACTION_NAMES } from './timerControl.js';
 import * as CourtStatus from './courtStatus.js';
 import * as CourtIssues from './courtIssues.js';
+import * as Feedback from './feedback.js';
 import crypto from 'crypto';
 import compression from 'compression';
 import helmet from 'helmet';
@@ -131,7 +132,8 @@ app.get('/api/allData', async (req, res) => {
         checkinEnabled: featureSettings.checkinEnabled,
         rosterEditEnabled: featureSettings.rosterEditEnabled,
         maxPlayersLeft: featureSettings.maxPlayersLeft,
-        courtReadyEnabled: featureSettings.courtReadyEnabled
+        courtReadyEnabled: featureSettings.courtReadyEnabled,
+        feedbackEnabled: featureSettings.feedbackEnabled
       };
       const [standings, schedule, scheduleConfig] = await Promise.all([
         Store.getStandings(sheetName),
@@ -1313,13 +1315,14 @@ app.post('/api/sheetSync/settings', async (req, res) => {
 app.post('/api/featureSettings', async (req, res) => {
   if (!requireSuperAdmin(req, res)) return;
   try {
-    const { championCelebrationEnabled, autoUpdateOfficialResultsEnabled, checkinEnabled, rosterEditEnabled, maxPlayersLeft, courtReadyEnabled } = req.body || {};
+    const { championCelebrationEnabled, autoUpdateOfficialResultsEnabled, checkinEnabled, rosterEditEnabled, maxPlayersLeft, courtReadyEnabled, feedbackEnabled } = req.body || {};
     const patch = {};
     if (typeof championCelebrationEnabled === 'boolean') patch.championCelebrationEnabled = championCelebrationEnabled;
     if (typeof autoUpdateOfficialResultsEnabled === 'boolean') patch.autoUpdateOfficialResultsEnabled = autoUpdateOfficialResultsEnabled;
     if (typeof checkinEnabled === 'boolean') patch.checkinEnabled = checkinEnabled;
     if (typeof rosterEditEnabled === 'boolean') patch.rosterEditEnabled = rosterEditEnabled;
     if (typeof courtReadyEnabled === 'boolean') patch.courtReadyEnabled = courtReadyEnabled;
+    if (typeof feedbackEnabled === 'boolean') patch.feedbackEnabled = feedbackEnabled;
     if (maxPlayersLeft !== undefined) {
       if (!Number.isInteger(maxPlayersLeft) || maxPlayersLeft < 1 || maxPlayersLeft > 20) {
         return res.status(400).json({ success: false, error: 'maxPlayersLeft must be a whole number from 1 to 20.' });
@@ -1469,6 +1472,72 @@ app.post('/api/courtIssues/:action', (req, res) => {
     }
   } catch (e) {
     console.error('courtIssues error', e);
+    res.status(500).json({ success: false, error: e.toString() });
+  }
+});
+
+// --- Public feedback (no login) ---
+// Parents/coaches send a compliment, complaint or suggestion from the Info tab;
+// only the superadmin can read it (Setup → Feedback). See server/feedback.js.
+const feedbackLimiter = rateLimit({
+  windowMs: 10 * 60 * 1000,
+  // A venue's phones share one NAT address, so this only stops a runaway script.
+  limit: Number(process.env.FEEDBACK_LIMIT_PER_10MIN) || 30,
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: { success: false, error: 'Too much feedback from this network — try again in a few minutes.' }
+});
+
+app.post('/api/feedback', feedbackLimiter, async (req, res) => {
+  // Honeypot: a hidden field real people never fill. Pretend it worked.
+  if (req.body?.website) return res.json({ success: true });
+  try {
+    // Setup → Feedback switch (on by default). Off hides the form; refuse stale tabs too.
+    if ((await Store.getFeatureSettings()).feedbackEnabled === false) {
+      return res.status(403).json({ success: false, error: 'Feedback is turned off right now.' });
+    }
+  } catch (e) { /* settings unreadable: let the save below decide */ }
+  const { error, value } = Feedback.parseSubmission(req.body);
+  if (error) return res.status(400).json({ success: false, error });
+  try {
+    const saved = await Feedback.submit(value);
+    res.json({ success: true, id: saved.id });
+  } catch (e) {
+    console.error('feedback submit error', e);
+    res.status(500).json({ success: false, error: 'Could not save your feedback. Please try again.' });
+  }
+});
+
+app.get('/api/feedback', async (req, res) => {
+  if (!requireSuperAdmin(req, res)) return;
+  res.set('Cache-Control', 'no-store');
+  try {
+    res.json({ success: true, items: await Feedback.list() });
+  } catch (e) {
+    console.error('feedback list error', e);
+    res.status(500).json({ success: false, error: e.toString() });
+  }
+});
+
+app.post('/api/feedback/:id/:action', async (req, res) => {
+  if (!requireSuperAdmin(req, res)) return;
+  const id = String(req.params.id || '').slice(0, 64);
+  const by = cleanText(req.body?.by, 80);
+  try {
+    let ok;
+    if (req.params.action === 'status') {
+      const status = req.body?.status;
+      if (!Feedback.STATUSES.includes(status)) return res.status(400).json({ success: false, error: 'Invalid status.' });
+      ok = await Feedback.setStatus(id, status, by);
+    } else if (req.params.action === 'delete') {
+      ok = await Feedback.remove(id);
+    } else {
+      return res.status(400).json({ success: false, error: 'Unknown action.' });
+    }
+    if (!ok) return res.status(404).json({ success: false, error: 'Feedback not found.' });
+    res.json({ success: true });
+  } catch (e) {
+    console.error('feedback update error', e);
     res.status(500).json({ success: false, error: e.toString() });
   }
 });

@@ -36,6 +36,7 @@ import {
 } from './navigation.js';
 
 import { openShareModal, closeShareModal, copyShareLink } from './share.js';
+import { openFeedback, applyFeedbackSetting, initFeedbackSetting } from './feedback.js';
 import { initOffline } from './offline.js';
 
 import {
@@ -58,6 +59,7 @@ import {
     toggleAutoUpdateOfficialResults,
     toggleCheckin,
     toggleCourtReady,
+    toggleFeedback,
     toggleRosterEdit,
     setMaxPlayersLeft,
     setSyncInterval,
@@ -221,6 +223,7 @@ async function loadData(divisionName) {
     // Update app settings (coming from backend now)
     App.settings = settings || {};
     App.settings.is_tie_allowed = settings?.is_tie_allowed ?? true;
+    applyFeedbackSetting();
     // Initialize Google Analytics if configured from server-side settings
     // (we initialize here after /api/allData ensures App.settings is populated)
     try {
@@ -561,6 +564,7 @@ document.addEventListener('DOMContentLoaded', () => {
   updateAdminUI();
   initPresence(); // Setup → Live now counts (sends only on change)
   initUsage();
+  initFeedbackSetting(); // hide/show the Info tab's feedback card live
 
   // Initialize timer overlay for superadmin if applicable
   if (typeof window.initTimerOverlay === 'function') window.initTimerOverlay();
@@ -680,7 +684,7 @@ exposeGlobals({
   getCurrentFilteredTeam
 });
 
-exposeGlobals({ openShareModal, closeShareModal, copyShareLink });
+exposeGlobals({ openShareModal, closeShareModal, copyShareLink, openFeedback });
 
 // Expose settings view handlers (used by inline onclick handlers in index.html)
 exposeGlobals({
@@ -691,6 +695,7 @@ exposeGlobals({
   toggleAutoUpdateOfficialResults,
   toggleCheckin,
   toggleCourtReady,
+  toggleFeedback,
   toggleRosterEdit,
   setMaxPlayersLeft,
   setSyncInterval,

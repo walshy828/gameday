@@ -7,12 +7,13 @@
 // unused by the frontend and exist only to satisfy the shared Store interface.
 import * as Sheets from '../sheets.js';
 import admin, { createCustomToken as fbCreateCustomToken } from '../firebase.js';
-import { broadcastSyncStatus, broadcastFeatureSettingsUpdate, broadcastDiscrepancyPing } from '../socket.js';
+import { broadcastSyncStatus, broadcastFeatureSettingsUpdate, broadcastDiscrepancyPing, broadcastFeedbackPing } from '../socket.js';
 
 const SYNC_SETTINGS_PATH = 'dodgeball-tournament/settings/sheetSync';
 const MAX_SYNC_LOG_ENTRIES = 100;
 const DISCREPANCY_PATH = 'dodgeball-tournament/discrepancyDismissals';
 const FEATURE_SETTINGS_PATH = 'dodgeball-tournament/settings/features';
+const FEEDBACK_PATH = 'dodgeball-tournament/feedback';
 
 export async function getDivisionNames() {
   return Sheets.getDivisionNames();
@@ -223,7 +224,8 @@ export async function getFeatureSettings() {
     checkinEnabled: val.checkinEnabled === true,
     rosterEditEnabled: val.rosterEditEnabled !== false,
     maxPlayersLeft: clampMaxPlayersLeft(val.maxPlayersLeft),
-    courtReadyEnabled: val.courtReadyEnabled === true
+    courtReadyEnabled: val.courtReadyEnabled === true,
+    feedbackEnabled: val.feedbackEnabled !== false
   };
 }
 
@@ -328,3 +330,49 @@ export async function setDiscrepancyDismissal(key, sig, by) {
 }
 
 export const backend = 'firebase';
+
+
+// ---------------------------------------------------------------------------
+// Public feedback (compliment / complaint / suggestion), read by the superadmin.
+// Stored server-side only (the browser never reads this path directly).
+// ---------------------------------------------------------------------------
+const FEEDBACK_KEY_RE = /^[A-Za-z0-9_-]{1,64}$/;
+
+export async function addFeedback(f) {
+  const ref = admin.database().ref(FEEDBACK_PATH).push();
+  const row = { kind: f.kind, message: f.message, name: f.name || '', division: f.division || '', team: f.team || '', createdAt: f.createdAt, status: 'new' };
+  await ref.set(row);
+  broadcastFeedbackPing();
+  return { ...row, id: ref.key, handledBy: '', handledAt: null };
+}
+
+export async function listFeedback(limit = 500) {
+  const snap = await admin.database().ref(FEEDBACK_PATH).orderByChild('createdAt').limitToLast(limit).once('value');
+  const out = [];
+  Object.entries(snap.val() || {}).forEach(([id, v]) => {
+    if (!v) return;
+    out.push({ id, kind: v.kind, message: v.message || '', name: v.name || '', division: v.division || '', team: v.team || '',
+      createdAt: v.createdAt || 0, status: v.status || 'new', handledBy: v.handledBy || '', handledAt: v.handledAt || null });
+  });
+  return out.sort((a, b) => b.createdAt - a.createdAt);
+}
+
+export async function setFeedbackStatus(id, status, by) {
+  if (!FEEDBACK_KEY_RE.test(String(id))) return false;
+  const ref = admin.database().ref(`${FEEDBACK_PATH}/${id}`);
+  const snap = await ref.once('value');
+  if (!snap.exists()) return false;
+  await ref.update({ status, handledBy: by || '', handledAt: Date.now() });
+  broadcastFeedbackPing();
+  return true;
+}
+
+export async function deleteFeedback(id) {
+  if (!FEEDBACK_KEY_RE.test(String(id))) return false;
+  const ref = admin.database().ref(`${FEEDBACK_PATH}/${id}`);
+  const snap = await ref.once('value');
+  if (!snap.exists()) return false;
+  await ref.remove();
+  broadcastFeedbackPing();
+  return true;
+}
