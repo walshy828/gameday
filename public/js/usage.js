@@ -3,7 +3,7 @@
 // role, division and followed team, plus server health. Reads GET /api/usage
 // (in-memory counts from server/presence.js) every 10s, but only while the
 // Setup page is on screen in a visible tab, so it costs nothing otherwise.
-import { getUsage } from './api.js';
+import { getUsage, setTrafficMode } from './api.js';
 
 const POLL_MS = 10000;
 const ROLE_ROWS = [
@@ -21,6 +21,12 @@ const VIEW_LABELS = {
 };
 
 let last = null;
+let trafficBusy = false;
+const TRAFFIC = [
+    { mode: 'normal', label: 'Normal', desc: 'Everyone gets live updates instantly.' },
+    { mode: 'ease', label: 'Ease', desc: 'Staff instant. Participants\u2019 updates batched every 5s, their screens re-check half as often.' },
+    { mode: 'protect', label: 'Protect', desc: 'Staff instant. Crew-chat parents every 5s, participants every 30s and a quarter as often.' }
+];
 let fetching = false;
 let failed = false;
 const open = new Set(); // detail panels kept open across re-renders
@@ -171,6 +177,44 @@ function serverHtml(u, h) {
     </div>`;
 }
 
+function trafficHtml(u, h) {
+    const cur = (u.traffic && u.traffic.mode) || 'normal';
+    const info = TRAFFIC.find(t => t.mode === cur) || TRAFFIC[0];
+    const since = u.traffic && u.traffic.changedAt && cur !== 'normal' ? ` · since ${clock(u.traffic.changedAt)}` : '';
+    const hint = cur === 'normal' && h.label === 'Strained'
+        ? '<p class="text-[12px] text-red-200">The server is struggling. Try Ease first; staff keep full speed.</p>' : '';
+    return `<div class="rounded-xl border ${cur === 'normal' ? 'border-white/10' : 'border-yellow-500/50 bg-yellow-500/[.06]'} p-3 space-y-2">
+        <div class="flex items-center justify-between gap-2">
+            <div class="text-sm font-semibold text-white">🚦 Traffic priority</div>
+            <div class="flex rounded-lg border border-white/15 overflow-hidden" role="group" aria-label="Traffic priority">
+                ${TRAFFIC.map(t => `<button type="button" data-traffic="${t.mode}" ${trafficBusy ? 'disabled' : ''}
+                    class="px-3 py-1.5 text-[12px] font-bold ${t.mode === cur ? 'bg-[#E7B84B] text-black' : 'text-white/70 hover:text-white'}"
+                    aria-pressed="${t.mode === cur}">${t.label}</button>`).join('')}
+            </div>
+        </div>
+        <p class="text-[12px] text-white/55">${info.desc}${since}</p>${hint}
+        <p class="text-[11px] text-white/35">Order: tournament admins → referees → raffle &amp; concessions → crew-chat parents → participants. Resets to Normal if the server restarts.</p>
+    </div>`;
+}
+
+async function changeTraffic(mode) {
+    const token = sessionStorage.getItem('adminAuthToken');
+    if (!token || trafficBusy) return;
+    if (mode === 'protect' && !confirm('Protect: participants will see scores up to 30 seconds late until you switch back. Continue?')) return;
+    trafficBusy = true; render();
+    try {
+        const info = await setTrafficMode(token, mode);
+        if (last) last.traffic = info;
+        window.showStatus?.(`Traffic priority: ${info.label}.`, false);
+    } catch (e) {
+        window.showStatus?.('Couldn\u2019t change traffic priority.', true);
+    } finally {
+        trafficBusy = false;
+    }
+    refreshUsage();
+    render();
+}
+
 function render() {
     const body = document.getElementById('usage-body');
     const pill = document.getElementById('usage-health');
@@ -193,6 +237,7 @@ function render() {
             ${stat(u.peak.total, 'Peak today', u.peak.at ? `at ${clock(u.peak.at)}` : '')}
         </div>
         ${rolesHtml(u)}
+        ${trafficHtml(u, h)}
         <div><div class="text-[11px] font-semibold uppercase tracking-wider text-white/55 mb-1">Connected, last ${Math.max(1, u.history.length)} min</div>${sparkline(u.history, 'total', v => plural(v, 'connection'))}</div>
         <div class="flex flex-wrap gap-x-5 gap-y-1 text-sm">
             ${panelLink('divisions', 'Divisions &amp; followed teams')}
@@ -211,6 +256,8 @@ document.addEventListener('click', (e) => {
     if (p) { const id = p.dataset.usagePanel; open.has(id) ? open.delete(id) : open.add(id); render(); return; }
     const d = e.target.closest?.('[data-usage-division]');
     if (d) { const n = d.dataset.usageDivision; openDivisions.has(n) ? openDivisions.delete(n) : openDivisions.add(n); render(); return; }
+    const tb = e.target.closest?.('[data-traffic]');
+    if (tb) { changeTraffic(tb.dataset.traffic); return; }
     const sj = e.target.closest?.('[data-setup-jump]');
     if (sj) { e.preventDefault(); document.querySelector(sj.getAttribute('href'))?.scrollIntoView({ behavior: 'smooth', block: 'start' }); return; }
     const j = e.target.closest?.('[data-usage-jump]');

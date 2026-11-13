@@ -18,6 +18,7 @@
 import { getPublicCourtStatus } from './api.js';
 import { getRoundOrder } from './schedule.js';
 import { getSocket } from './socketClient.js';
+import { trafficPollFactor } from './presence.js';
 import { getTimerSnapshot } from './timerSnapshot.js';
 import { deriveBoard, isDone, roundOf, slotOf, courtKey, hasValue } from './courtBoard.js';
 import { getFollowed, isFollowed, openFollowPicker } from './follow.js';
@@ -119,7 +120,13 @@ function startWatch() {
         const sig = st ? [st.running, st.startAfterRoundRunning, st.currentRound, st.startTime].join('|') : '';
         if (sig !== clockSig) { clockSig = sig; renderMyTeam(); }
     });
-    setInterval(() => { if (!document.hidden && getFollowed()) refresh(); }, POLL_MS);
+    // Under traffic priority (Ease/Protect) the server asks public tabs to poll less often.
+    let ticks = 0;
+    setInterval(() => {
+        ticks++;
+        if (ticks % trafficPollFactor() !== 0) return;
+        if (!document.hidden && getFollowed()) refresh();
+    }, POLL_MS);
 }
 
 function board(games, order) {

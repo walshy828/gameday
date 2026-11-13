@@ -7,7 +7,8 @@ import { Store } from './datastores/index.js';
 import * as SheetsMirror from './sheetsMirror.js';
 import * as SheetsSync from './sheetsSync.js';
 import { applySyncSettings, computeAutoSyncExpiry, initSyncScheduler, scheduleResultSync } from './syncScheduler.js';
-import { initSocket, broadcastDiscrepancyPing } from './socket.js';
+import { initSocket, broadcastDiscrepancyPing, broadcastTrafficMode, flushPendingDivisionUpdates } from './socket.js';
+import * as Shield from './loadShield.js';
 import { setRoleResolver, requestCounter, getUsageSummary } from './presence.js';
 import { listOpenDiscrepancies, dismissDiscrepancy, notifyIfHighImpact } from './discrepancies.js';
 import * as Roster from './rosterSheets.js';
@@ -117,23 +118,26 @@ const SECRET_SALT = process.env.SECRET_SALT;
 app.get('/api/allData', async (req, res) => {
   try {
     const sheetName = req.query.sheetName || 'Sheet1';
-    const featureSettings = await Store.getFeatureSettings();
-    const settings = {
-      is_tie_allowed: (process.env.ALLOW_MATCH_TIE === 'true') || false,
-      ga_measurement_id: process.env.GA_MEASUREMENT_ID || null,
-      championCelebrationEnabled: featureSettings.championCelebrationEnabled,
-      autoUpdateOfficialResultsEnabled: featureSettings.autoUpdateOfficialResultsEnabled,
-      checkinEnabled: featureSettings.checkinEnabled,
-      rosterEditEnabled: featureSettings.rosterEditEnabled,
-      maxPlayersLeft: featureSettings.maxPlayersLeft,
-      courtReadyEnabled: featureSettings.courtReadyEnabled
-    };
-    const [standings, schedule, scheduleConfig] = await Promise.all([
-      Store.getStandings(sheetName),
-      Store.getSchedule(sheetName),
-      Store.getScheduleConfig(sheetName)
-    ]);
-    res.json({ settings, standings, schedule, scheduleConfig });
+    // Public loads share a short cache (server/loadShield.js); staff tokens bypass it.
+    res.json(await Shield.cachedRead(req, `allData:${sheetName}`, async () => {
+      const featureSettings = await Store.getFeatureSettings();
+      const settings = {
+        is_tie_allowed: (process.env.ALLOW_MATCH_TIE === 'true') || false,
+        ga_measurement_id: process.env.GA_MEASUREMENT_ID || null,
+        championCelebrationEnabled: featureSettings.championCelebrationEnabled,
+        autoUpdateOfficialResultsEnabled: featureSettings.autoUpdateOfficialResultsEnabled,
+        checkinEnabled: featureSettings.checkinEnabled,
+        rosterEditEnabled: featureSettings.rosterEditEnabled,
+        maxPlayersLeft: featureSettings.maxPlayersLeft,
+        courtReadyEnabled: featureSettings.courtReadyEnabled
+      };
+      const [standings, schedule, scheduleConfig] = await Promise.all([
+        Store.getStandings(sheetName),
+        Store.getSchedule(sheetName),
+        Store.getScheduleConfig(sheetName)
+      ]);
+      return { settings, standings, schedule, scheduleConfig };
+    }));
   } catch (e) {
     console.error('getAllData error', e);
     res.status(500).json({ error: e.toString() });
@@ -141,10 +145,9 @@ app.get('/api/allData', async (req, res) => {
 });
 
 // route: getDivisionNames
-app.get('/api/divisions', async (_req, res) => {
+app.get('/api/divisions', async (req, res) => {
   try {
-    const names = await Store.getDivisionNames();
-    res.json(await SheetsSync.orderDivisionsBySheet(names));
+    res.json(await Shield.cachedRead(req, 'divisions', async () => SheetsSync.orderDivisionsBySheet(await Store.getDivisionNames())));
   } catch (e) {
     console.error('getDivisionNames', e);
     res.status(500).json({ error: e.toString() });
@@ -893,10 +896,9 @@ app.post('/api/timer/:action', async (req, res) => {
 // ("tournament manager") token. Works identically on either DATA_BACKEND —
 // all persistence/broadcast differences are inside the Store implementation.
 
-app.get('/api/announcements', async (_req, res) => {
+app.get('/api/announcements', async (req, res) => {
   try {
-    const list = await Store.getAnnouncements();
-    res.json(list);
+    res.json(await Shield.cachedRead(req, 'announcements', () => Store.getAnnouncements()));
   } catch (e) {
     res.status(500).json({ error: e.toString() });
   }
@@ -1135,7 +1137,23 @@ app.get('/api/session/active', async (req, res) => {
 app.get('/api/usage', (req, res) => {
   if (!requireSuperAdmin(req, res)) return;
   res.set('Cache-Control', 'no-store');
-  res.json(getUsageSummary());
+  res.json({ ...getUsageSummary(), traffic: Shield.getModeInfo() });
+});
+
+// Traffic priority (Setup → Live now): Normal / Ease / Protect. In memory —
+// a restart returns to Normal. See server/loadShield.js.
+app.get('/api/traffic', (req, res) => {
+  if (!requireSuperAdmin(req, res)) return;
+  res.json(Shield.getModeInfo());
+});
+
+app.post('/api/traffic', (req, res) => {
+  if (!requireSuperAdmin(req, res)) return;
+  const mode = req.body?.mode;
+  if (!Shield.MODES[mode]) return res.status(400).json({ success: false, error: 'mode must be normal, ease or protect.' });
+  const info = Shield.setMode(mode);
+  console.log(`Traffic priority set to ${info.label}`);
+  res.json({ success: true, ...info });
 });
 
 app.get('/api/session/history', async (req, res) => {
@@ -1396,6 +1414,12 @@ function isValidToken(tokenFromClient) {
 const PORT = process.env.PORT || 8888;
 const httpServer = http.createServer(app);
 setRoleResolver(chatRoleOf);
+Shield.setRoleResolver(chatRoleOf);
+Shield.setModeListener(() => {
+  // Lowering the level releases any batched public updates right away.
+  if (Shield.getMode() === 'normal') flushPendingDivisionUpdates();
+  broadcastTrafficMode();
+});
 initSocket(httpServer);
 httpServer.listen(PORT, () => console.log(`Server started at http://localhost:${PORT} (DATA_BACKEND=${DATA_BACKEND})`));
 

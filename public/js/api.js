@@ -70,12 +70,18 @@ async function apiDelete(endpoint, body) {
 }
 
 // Expose functions your app can use
+// Signed-in staff send their token on these public reads so the server's
+// traffic-priority cache (server/loadShield.js) always gives them fresh data.
+function staffToken() {
+  try { return sessionStorage.getItem('adminAuthToken') || undefined; } catch (e) { return undefined; }
+}
+
 export async function getAllData(sheetName) {
-  return await apiGet(`/allData?sheetName=${encodeURIComponent(sheetName)}`);
+  return await apiGet(`/allData?sheetName=${encodeURIComponent(sheetName)}`, staffToken());
 }
 
 export async function getDivisions() {
-  return await apiGet(`/divisions`);
+  return await apiGet(`/divisions`, staffToken());
 }
 
 export async function validateAdmin(password, reporterName, court, sessionId) {
@@ -100,6 +106,14 @@ export async function getLoginHistory(authToken) {
 
 export async function getUsage(authToken) {
   return await apiGet(`/usage`, authToken);
+}
+
+export async function getTrafficMode(authToken) {
+  return await apiGet(`/traffic`, authToken);
+}
+
+export async function setTrafficMode(authToken, mode) {
+  return await apiPost(`/traffic`, { authToken, mode });
 }
 
 export async function getRolePasswords(authToken) {

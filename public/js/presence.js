@@ -18,6 +18,18 @@ const CHECK_MS = 5000;
 
 let socket = null;
 let lastSig = '';
+let pollFactor = 1;
+
+/** How much to stretch public polling (server traffic priority: 1 Normal, 2 Ease, 4 Protect). Staff are never slowed. */
+export function trafficPollFactor() {
+    if (sessionStorage.getItem('adminAuthToken')) return 1;
+    return pollFactor;
+}
+
+function setFactor(m) {
+    const f = Number(m && m.pollFactor);
+    pollFactor = Number.isInteger(f) && f >= 1 && f <= 10 ? f : 1;
+}
 
 function deviceId() {
     try {
@@ -50,13 +62,15 @@ function report(force = false) {
     const sig = JSON.stringify(snap);
     if (!force && sig === lastSig) return;
     lastSig = sig;
-    socket.emit('presence', snap);
+    // The ack carries the current traffic level, in case the connect-time push arrived before we listened.
+    socket.emit('presence', snap, (ack) => setFactor(ack));
 }
 
 export function initPresence() {
     try { socket = getSocket(); } catch (e) { return; } // Socket.IO not loaded: no tracking, app unaffected
     // Each (re)connect is a new server-side entry, so always resend then.
     socket.on('connect', () => report(true));
+    socket.on('trafficMode', setFactor);
     if (socket.connected) report(true);
     window.addEventListener('followchange', () => report());
     document.addEventListener('visibilitychange', () => report());

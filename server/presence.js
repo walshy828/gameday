@@ -18,6 +18,7 @@
 //   id the browser made, never sent anywhere else.
 import os from 'node:os';
 import { monitorEventLoopDelay } from 'node:perf_hooks';
+import { tierOf, getModeInfo } from './loadShield.js';
 
 export const ROLES = ['superadmin', 'admin', 'parent', 'raffle', 'concessions', 'public'];
 
@@ -61,11 +62,15 @@ export function requestCounter(req, res, next) {
 export function trackSocket(socket) {
   if (conns.size >= MAX_CONNECTIONS_TRACKED) return;
   const now = Date.now();
+  // Priority room (server/loadShield.js): staff get live pushes first.
+  let tierRoom = 'tier:public';
+  socket.join(tierRoom);
   conns.set(socket.id, { role: 'public', division: '', team: '', court: '', view: '', visible: true, device: '', since: now, at: 0 });
   notePeak(now);
 
   let token = null;
-  socket.on('presence', (msg) => {
+  socket.on('presence', (msg, ack) => {
+    if (typeof ack === 'function') ack({ mode: getModeInfo().mode, pollFactor: getModeInfo().pollFactor });
     const c = conns.get(socket.id);
     if (!c || !msg || typeof msg !== 'object') return;
     const t = Date.now();
@@ -76,6 +81,8 @@ export function trackSocket(socket) {
     if (nextToken !== token) {
       token = nextToken;
       c.role = (token && roleOf(token)) || 'public';
+      const nextRoom = `tier:${tierOf(c.role)}`;
+      if (nextRoom !== tierRoom) { socket.leave(tierRoom); socket.join(nextRoom); tierRoom = nextRoom; }
     }
     c.division = clip(msg.division, 80);
     c.team = clip(msg.team, 80);
