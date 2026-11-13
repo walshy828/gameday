@@ -14,6 +14,7 @@ import { saveAuth, clearAuth, loadAuth } from './concessionsStore.js';
 import { resetSeasons } from './seasons.js';
 import { resetDanger } from './danger.js';
 import { resetDivisionData } from './divisionData.js';
+import { renderMyTeam } from './myTeam.js';
 import { getSocket } from './socketClient.js';
 import { toast } from './concessionsUi.js';
 import { ensureCourtReadyWatch, onMatchSaved as courtReadyOnSave, render as renderCourtReady, resetCourtReady, followCourt as courtReadyFollow, courtStatusOf } from './courtReady.js';
@@ -805,6 +806,8 @@ function updateGateAdminUI(loggedIn) {
  * Updates the visual state of the Admin button and conditional UI elements.
  */
 function updateAdminUI() {
+    // Signed-in staff/parents aren't nudged to follow a team; refresh the card.
+    try { renderMyTeam(); } catch (e) { /* card not ready yet */ }
     const adminButton = document.getElementById('admin-button');
     const adminStatusText = document.getElementById('admin-status-text');
     const adminEntryTab = document.getElementById('admin-entry-tab');

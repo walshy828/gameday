@@ -105,8 +105,20 @@ export function openFollowPicker(division = currentDivision()) {
     document.body.appendChild(wrap);
 }
 
-/** After picking a division on the gate: ask once (skippable) if nothing was chosen yet. */
+/** Anyone signed in (court admin, superadmin, parent, raffle, concessions). */
+export function isSignedIn() {
+    const s = App.state || {};
+    if (s.isAdmin || s.isSuperAdmin || s.isParent || s.isRaffle || s.isConcessions) return true;
+    try { return !!sessionStorage.getItem('adminAuthToken'); } catch (e) { return false; }
+}
+
+/**
+ * After picking a division on the gate: ask once (skippable) if nothing was
+ * chosen yet. Only the no-login crowd (participants, parents, coaches) is
+ * asked; signed-in staff can still follow a team from the card/picker.
+ */
 export function maybeAskFollow(division = currentDivision()) {
+    if (isSignedIn()) return;
     if (hasChosen(division)) return;
     if (!(App.data?.teamNames || []).length) return;
     openFollowPicker(division);

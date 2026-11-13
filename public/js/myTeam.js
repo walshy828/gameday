@@ -21,7 +21,7 @@ import { getSocket } from './socketClient.js';
 import { trafficPollFactor } from './presence.js';
 import { getTimerSnapshot } from './timerSnapshot.js';
 import { deriveBoard, isDone, roundOf, slotOf, courtKey, hasValue } from './courtBoard.js';
-import { getFollowed, isFollowed, openFollowPicker } from './follow.js';
+import { getFollowed, isFollowed, isSignedIn, openFollowPicker } from './follow.js';
 import {
     buildBracketTree, isPlayoff, isOfficial, isByeSlot, isRealTeamSlot,
     teamSeed, teamLabel, cleanRoundLabel, defaultRoundLabel
@@ -397,7 +397,7 @@ export function renderMyTeam() {
     const games = schedule();
     let html = '';
     if (!team) {
-        html = games.length && (App.data?.teamNames || []).length ? promptHtml() : '';
+        html = !isSignedIn() && games.length && (App.data?.teamNames || []).length ? promptHtml() : '';
     } else {
         if (pub.division !== division()) refresh();
         const card = computeCard(team);
