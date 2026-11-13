@@ -1377,7 +1377,8 @@ app.post('/api/courtStatus/mark', async (req, res) => {
     const court = typeof req.body?.court === 'string' ? req.body.court.trim() : '';
     if (!division || !gameKey) return res.status(400).json({ success: false, error: 'division and gameKey are required.' });
     if (!/^[A-Za-z0-9 ._-]{1,16}$/.test(court)) return res.status(400).json({ success: false, error: 'Invalid court.' });
-    const snap = CourtStatus.setMark({ division, gameKey, court, ready: req.body?.ready === true, by: cleanText(req.body?.by, 40) });
+    const onlyIfAt = Number.isFinite(req.body?.onlyIfAt) ? req.body.onlyIfAt : null;
+    const snap = CourtStatus.setMark({ division, gameKey, court, ready: req.body?.ready === true, by: cleanText(req.body?.by, 40), onlyIfAt });
     res.json({ success: true, ...snap });
   } catch (e) {
     console.error('courtStatus mark error', e);

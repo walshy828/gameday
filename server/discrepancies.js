@@ -4,7 +4,7 @@
 // dismissed. Backend-agnostic: it only uses the Store interface.
 import axios from 'axios';
 import { Store } from './datastores/index.js';
-import { hasDiscrepancy, discrepancySig, isPlayoffMatch } from '../public/js/discrepancy.js';
+import { hasDiscrepancy, discrepancySig, isPlayoffMatch, isUrgentDiscrepancy } from '../public/js/discrepancy.js';
 
 export const dismissKey = (division, firebaseIndex) => `${division}|${firebaseIndex}`;
 
@@ -29,7 +29,8 @@ const toItem = (division, g, dismissed) => {
     adminWinner: g.adminWinner || '',
     adminPlayersRemaining: g.adminPlayersRemaining ?? '',
     lastUpdated: g.lastUpdated || null,
-    playoff: isPlayoffMatch(g)
+    playoff: isPlayoffMatch(g),
+    urgent: isUrgentDiscrepancy(g)
   };
 };
 
@@ -52,7 +53,7 @@ export async function dismissDiscrepancy(division, firebaseIndex, by) {
   return { ok: true };
 }
 
-// --- Optional push for high-impact (playoff) games ---------------------------
+// --- Optional push for high-impact games (playoff winner changed) ---------------------------
 // Off unless NTFY_URL (full topic URL, e.g. https://ntfy.example.com/gameday)
 // is set. Sent at most once per distinct disputed value, never to the UI.
 const notified = new Set();
@@ -62,7 +63,7 @@ export async function notifyIfHighImpact(division, firebaseIndex) {
   if (!url) return;
   try {
     const game = (await Store.getSchedule(division)).find(g => String(g.firebaseIndex) === String(firebaseIndex));
-    if (!game || !isPlayoffMatch(game) || !hasDiscrepancy(game)) return;
+    if (!game || !hasDiscrepancy(game) || !isUrgentDiscrepancy(game)) return;
     const id = `${dismissKey(division, game.firebaseIndex)}|${discrepancySig(game)}`;
     if (notified.has(id)) return;
     notified.add(id);

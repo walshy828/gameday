@@ -29,14 +29,23 @@ async function apiGet(endpoint, authToken) {
   }
 }
 
-async function apiPost(endpoint, body) {
+async function apiPost(endpoint, body, { timeoutMs } = {}) {
   const { token, rest } = splitToken(body);
   const baseURL = window.location.origin;
-  const res = await fetch(`${baseURL}/api${endpoint}`, {
-    method: "POST",
-    headers: { "Content-Type": "application/json", ...authHeaders(token) },
-    body: JSON.stringify(rest),
-  });
+  // Optional timeout so a request stuck on venue Wi-Fi fails (AbortError) instead of hanging forever.
+  const ctrl = timeoutMs ? new AbortController() : null;
+  const timer = ctrl ? setTimeout(() => ctrl.abort(), timeoutMs) : null;
+  let res;
+  try {
+    res = await fetch(`${baseURL}/api${endpoint}`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json", ...authHeaders(token) },
+      body: JSON.stringify(rest),
+      ...(ctrl ? { signal: ctrl.signal } : {}),
+    });
+  } finally {
+    if (timer) clearTimeout(timer);
+  }
   if (!res.ok) {
     const text = await res.text();
     let parsed;
@@ -299,8 +308,8 @@ export async function getCourtStatus(authToken) {
   return await apiGet(`/courtStatus`, authToken);
 }
 
-export async function setCourtMark(authToken, { division, gameKey, court, ready, by }) {
-  return await apiPost(`/courtStatus/mark`, { authToken, division, gameKey, court, ready, by });
+export async function setCourtMark(authToken, { division, gameKey, court, ready, by, onlyIfAt }) {
+  return await apiPost(`/courtStatus/mark`, { authToken, division, gameKey, court, ready, by, onlyIfAt }, { timeoutMs: 8000 });
 }
 
 export async function courtRoundAction(authToken, action, { division, roundTime, prevRound, nextRound, gameKey, court, by } = {}) {

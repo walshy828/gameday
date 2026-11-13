@@ -36,3 +36,20 @@ export function discrepancySig(game) {
 export function isPlayoffMatch(game) {
     return /^P\s*\d/i.test(((game && game.match) || '').toString().trim());
 }
+
+/** Both sides name a winner and they're different teams (players remaining ignored). */
+export function winnerChanged(game) {
+    if (!game || isBlank(game.winner) || isBlank(game.adminWinner)) return false;
+    return game.adminWinner.toString().trim() !== game.winner.toString().trim();
+}
+
+/**
+ * A playoff game whose reported winner differs from the official one: the
+ * bracket may be advancing the wrong team, so the MC must settle it before
+ * calling the next round. Players-remaining differences don't count here
+ * (they don't change who advances). Works on schedule games and on
+ * /api/discrepancies items alike (both carry match/winner/adminWinner).
+ */
+export function isUrgentDiscrepancy(game) {
+    return isPlayoffMatch(game) && winnerChanged(game);
+}

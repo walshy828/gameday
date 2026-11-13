@@ -16,6 +16,7 @@ import { resetDanger } from './danger.js';
 import { resetDivisionData } from './divisionData.js';
 import { renderMyTeam } from './myTeam.js';
 import { getSocket } from './socketClient.js';
+import { isUrgentDiscrepancy, isPlayoffMatch } from './discrepancy.js';
 import { toast } from './concessionsUi.js';
 import { ensureCourtReadyWatch, onMatchSaved as courtReadyOnSave, render as renderCourtReady, resetCourtReady, followCourt as courtReadyFollow, courtStatusOf } from './courtReady.js';
 
@@ -173,6 +174,7 @@ function wireDiscrepancyActions(listEl) {
     if (listEl.dataset.discWired) return;
     listEl.dataset.discWired = '1';
     listEl.addEventListener('click', e => {
+        if (e.target.closest('[data-passive-toggle]')) return togglePassiveOpen();
         const btn = e.target.closest('[data-act]');
         const holder = btn && btn.closest('[data-disc-key]');
         if (!btn || !holder) return;
@@ -204,8 +206,10 @@ function updateDiscrepancyBadge() {
     const pref = getDiscrepancyPref();
     const dot = document.getElementById('discrepancy-dot');
     if (dot) {
+        const urgent = getOpenDiscrepancies().filter(isUrgentDiscrepancy).length;
         dot.classList.toggle('hidden', n === 0);
-        dot.title = n ? `${n} result${n === 1 ? '' : 's'} need review` : '';
+        dot.classList.toggle('urgent', urgent > 0);
+        dot.title = urgent ? `Playoff winner changed — ${urgent} to settle` : n ? `${n} result${n === 1 ? '' : 's'} need review` : '';
     }
     const gate = document.getElementById('gate-discrepancy-btn');
     if (gate) {
@@ -315,41 +319,87 @@ async function openDiscrepancyReview() {
     switchView('admin-entry');
 }
 
-/** "Needs review" card pinned above the match list (superadmin only). */
-function renderDiscrepancyPanel(container) {
-    const open = getOpenDiscrepancies();
-    if (!open.length) return;
-    const card = document.createElement('section');
-    card.id = 'discrepancy-panel';
-    card.className = 'rounded-[26px] border p-3.5';
-    card.style.background = 'rgba(224,184,99,.07)';
-    card.style.borderColor = 'rgba(224,184,99,.45)';
-    const fmt = (w, n) => `${esc((w || '—').toString().trim() || '—')}${n !== undefined && n !== null && n !== '' ? ` · ${esc(String(n))} left` : ''}`;
-    const armed = (g, act) => !!pendingConfirm && pendingConfirm.key === g.key && pendingConfirm.act === act;
+// Two places on the Admin page, by how soon the MC must act:
+// - urgent (#discrepancy-urgent, very top): a playoff game whose reported
+//   winner differs from the official one. The bracket advances the official
+//   winner, so this must be settled before the next round is called.
+// - passive (#discrepancy-passive, under the court board, above the filters):
+//   everything else (pool play, playoff players-left only). One line,
+//   collapsed by default; it can be fixed as later rounds go on.
+const DISC_PASSIVE_OPEN_KEY = 'discrepancyPassiveOpen';
+let passiveOpenMemory = null; // fallback when localStorage is blocked
+
+function passiveOpen() {
+    if (passiveOpenMemory !== null) return passiveOpenMemory;
+    try { return localStorage.getItem(DISC_PASSIVE_OPEN_KEY) === '1'; } catch { return false; }
+}
+
+function togglePassiveOpen() {
+    passiveOpenMemory = !passiveOpen();
+    try { localStorage.setItem(DISC_PASSIVE_OPEN_KEY, passiveOpenMemory ? '1' : '0'); } catch { /* per-session only */ }
+    renderDiscrepancyPanels();
+}
+
+function discrepancyItemHtml(g, urgent) {
+    const other = g.division !== App.config.currentSheetName;
+    const fmt = (w, n) => `${esc((w || '—').toString().trim() || '—')}${!urgent && n !== undefined && n !== null && n !== '' ? ` · ${esc(String(n))} left` : ''}`;
+    const armed = act => !!pendingConfirm && pendingConfirm.key === g.key && pendingConfirm.act === act;
     const btn = 'rounded-[13px] px-3 py-2 text-[11px] font-semibold leading-none';
     const ghost = 'background:rgba(255,255,255,.08);color:rgba(255,255,255,.85);border:1px solid rgba(255,255,255,.14)';
-    card.innerHTML = `
-        <div class="text-[11px] font-semibold tracking-[.08em]" style="color:var(--gold-l)">NEEDS REVIEW (${open.length})</div>
-        <div class="mt-2 grid gap-[5px]">
-            ${open.map(g => {
-                const other = g.division !== App.config.currentSheetName;
-                return `
-                <div class="rounded-2xl px-3 py-2.5" style="background:rgba(255,255,255,.05)" data-disc-key="${escAttr(g.key)}">
-                    <div class="text-[11px] font-semibold" style="color:rgba(255,255,255,.86)">${other ? `${esc(g.division)} · ` : ''}${esc(g.roundTime)} · C${esc(g.court || '?')} · ${esc(g.team1)} vs ${esc(g.team2)}</div>
-                    <div class="mt-1 text-[11px]" style="color:var(--ok)">Official: ${fmt(g.winner, g.playersRemaining)}</div>
-                    <div class="text-[11px]" style="color:var(--gold-l)">Reported by ${esc(g.adminName || '—')}: ${fmt(g.adminWinner, g.adminPlayersRemaining)}</div>
-                    <div class="mt-2 flex flex-wrap gap-1.5">
-                        <button data-act="use" class="${btn}" style="${armed(g, 'use') ? 'background:var(--ok);color:#06210F;border:0' : 'background:linear-gradient(135deg,var(--gold) 0%,var(--gold-d) 100%);color:#2A1B08;border:0'}">${armed(g, 'use') ? 'Tap again to confirm' : 'Use reported'}</button>
-                        <button data-act="edit" class="${btn}" style="${ghost}">${other ? 'Open division' : 'Edit'}</button>
-                        <button data-act="keep" class="${btn}" style="${armed(g, 'keep') ? 'background:var(--ok);color:#06210F;border:0' : ghost}">${armed(g, 'keep') ? 'Tap again to confirm' : 'Keep official'}</button>
-                        <button data-act="history" aria-expanded="${openHistory.has(g.key)}" class="${btn}" style="background:transparent;color:rgba(255,255,255,.7);border:1px dashed rgba(255,255,255,.2)">Edit history ${openHistory.has(g.key) ? '▾' : '▸'}</button>
-                    </div>
-                    ${openHistory.has(g.key) ? `<div class="mt-2">${historyListHtml(historyCache.get(historyKey(g.division, g.firebaseIndex)) || { loading: true })}</div>` : ''}
-                </div>`;
-            }).join('')}
-        </div>
-    `;
-    container.appendChild(card);
+    const confirmStyle = 'background:var(--ok);color:#06210F;border:0';
+    const primary = urgent
+        ? 'background:linear-gradient(135deg,#e2604a 0%,var(--warn) 100%);color:#fff;border:0'
+        : 'background:linear-gradient(135deg,var(--gold) 0%,var(--gold-d) 100%);color:#2A1B08;border:0';
+    const label = [other ? esc(g.division) : '', isPlayoffMatch(g) ? esc(g.match) : '', esc(g.roundTime), `C${esc(g.court || '?')}`].filter(Boolean).join(' · ');
+    return `
+        <div class="rounded-2xl px-3 py-2.5" style="background:rgba(255,255,255,.05)" data-disc-key="${escAttr(g.key)}">
+            <div class="text-[11px] font-semibold" style="color:rgba(255,255,255,.86)">${label} · ${esc(g.team1)} vs ${esc(g.team2)}</div>
+            ${urgent ? `
+            <div class="mt-1 text-[12px] font-semibold" style="color:var(--ok)">Official (bracket advances): ${fmt(g.winner)}</div>
+            <div class="text-[12px] font-semibold" style="color:#FF9C8A">${esc(g.adminName || 'Referee')} now reports: ${fmt(g.adminWinner)}</div>`
+            : `
+            <div class="mt-1 text-[11px]" style="color:var(--ok)">Official: ${fmt(g.winner, g.playersRemaining)}</div>
+            <div class="text-[11px]" style="color:var(--gold-l)">Reported by ${esc(g.adminName || '—')}: ${fmt(g.adminWinner, g.adminPlayersRemaining)}</div>`}
+            <div class="mt-2 flex flex-wrap gap-1.5">
+                <button data-act="use" class="${btn}" style="${armed('use') ? confirmStyle : primary}">${armed('use') ? 'Tap again to confirm' : (urgent ? `Make ${esc((g.adminWinner || '').toString().trim())} official` : 'Use reported')}</button>
+                <button data-act="edit" class="${btn}" style="${ghost}">${other ? 'Open division' : 'Edit'}</button>
+                <button data-act="keep" class="${btn}" style="${armed('keep') ? confirmStyle : ghost}">${armed('keep') ? 'Tap again to confirm' : 'Keep official'}</button>
+                <button data-act="history" aria-expanded="${openHistory.has(g.key)}" class="${btn}" style="background:transparent;color:rgba(255,255,255,.7);border:1px dashed rgba(255,255,255,.2)">Edit history ${openHistory.has(g.key) ? '▾' : '▸'}</button>
+            </div>
+            ${openHistory.has(g.key) ? `<div class="mt-2">${historyListHtml(historyCache.get(historyKey(g.division, g.firebaseIndex)) || { loading: true })}</div>` : ''}
+        </div>`;
+}
+
+/** Renders both review areas (superadmin only; empty and hidden otherwise). */
+function renderDiscrepancyPanels() {
+    const urgentEl = document.getElementById('discrepancy-urgent');
+    const passiveEl = document.getElementById('discrepancy-passive');
+    if (!urgentEl || !passiveEl) return;
+    wireDiscrepancyActions(urgentEl);
+    wireDiscrepancyActions(passiveEl);
+    const open = App.state.isAdmin ? getOpenDiscrepancies() : [];
+    const urgent = open.filter(isUrgentDiscrepancy);
+    const passive = open.filter(g => !isUrgentDiscrepancy(g));
+
+    urgentEl.classList.toggle('hidden', urgent.length === 0);
+    urgentEl.innerHTML = urgent.length ? `
+        <section role="alert" class="rounded-[26px] border-2 p-3.5" style="background:rgba(217,80,60,.14);border-color:var(--warn)">
+            <div class="text-[12px] font-bold tracking-[.06em]" style="color:#FF9C8A">⚠ PLAYOFF WINNER CHANGED${urgent.length > 1 ? ` (${urgent.length})` : ''}</div>
+            <div class="mt-0.5 text-[11px] leading-[1.4]" style="color:rgba(255,255,255,.7)">The referee changed the winner after it went official. Settle it before calling the next playoff round.</div>
+            <div class="mt-2 grid gap-[5px]">${urgent.map(g => discrepancyItemHtml(g, true)).join('')}</div>
+        </section>` : '';
+
+    passiveEl.classList.toggle('hidden', passive.length === 0);
+    if (!passive.length) { passiveEl.innerHTML = ''; return; }
+    const expanded = passiveOpen();
+    passiveEl.innerHTML = `
+        <section class="rounded-[22px] border px-3.5 py-2.5" style="background:rgba(224,184,99,.05);border-color:rgba(224,184,99,.3)">
+            <button type="button" data-passive-toggle aria-expanded="${expanded}" class="flex w-full items-center justify-between gap-2 text-left">
+                <span class="text-[11px] font-semibold tracking-[.08em]" style="color:var(--gold-l)">NEEDS REVIEW (${passive.length})</span>
+                <span class="text-[11px] text-white/55">${expanded ? 'Hide ▾' : 'Show ▸'}</span>
+            </button>
+            ${expanded ? `<div class="mt-2 grid gap-[5px]">${passive.map(g => discrepancyItemHtml(g, false)).join('')}</div>` : ''}
+        </section>`;
 }
 
 /** A game counts as reported for admin purposes once it has an admin-submitted or official result. */
@@ -393,6 +443,7 @@ function isAdminReported(game) {
 
 // Core renderer (kept private) — we'll expose a debounced public wrapper below
 function renderAdminMatchEntryViewImpl() {
+    renderDiscrepancyPanels();
     if (!App.state.isAdmin) {
         document.getElementById('admin-match-list').innerHTML = '<p class="py-4 text-center text-sm text-white/45">Please sign in to access match entry.</p>';
         return;
@@ -501,9 +552,11 @@ function renderAdminMatchEntryViewImpl() {
     ensureCourtReadyWatch();
     renderCourtReady();
 
+    const gamesHeading = document.getElementById('admin-games-heading');
+    if (gamesHeading) gamesHeading.textContent = selectedCourt === 'all' ? 'All games' : `Court ${selectedCourt} games`;
+
     matchListDiv.innerHTML = '';
     wireDiscrepancyActions(matchListDiv);
-    renderDiscrepancyPanel(matchListDiv);
     updateDiscrepancyBadge();
 
     // ... (Filter Info rendering logic remains the same) ...

@@ -55,16 +55,30 @@ export function publicSnapshot(division) {
   };
 }
 
-/** Marks (or unmarks) one game's teams as on the court. */
-export function setMark({ division, gameKey, court, ready, by }) {
+/**
+ * Marks (or unmarks) one game's teams as on the court. Built for two referees
+ * on one court and a slow venue network:
+ * - ready: the FIRST tap wins. A later or retried tap changes nothing and gets
+ *   `already` (who marked it, when), so that phone can say "already marked
+ *   ready by Maya" instead of claiming the mark (and offering an Undo of it).
+ * - unready with `onlyIfAt` (the referee's Undo): only removes the mark if it
+ *   is still the one they made; otherwise it is left and `kept` is returned.
+ *   A plain "Not ready" (no onlyIfAt) always clears it.
+ */
+export function setMark({ division, gameKey, court, ready, by, onlyIfAt = null }) {
   const key = `${division}\u0000${gameKey}`;
+  const cur = marks.get(key);
   if (ready) {
-    marks.delete(key); // re-insert so the newest is last (oldest pruned first)
-    marks.set(key, { division, gameKey, court, by: clean(by, 40) || 'Referee', at: Date.now() });
+    if (cur) return { ...snapshot(), already: { by: cur.by, at: cur.at } };
+    const mark = { division, gameKey, court, by: clean(by, 40) || 'Referee', at: Date.now() };
+    marks.set(key, mark);
     while (marks.size > MAX_MARKS) marks.delete(marks.keys().next().value);
-  } else {
-    marks.delete(key);
+    changed();
+    return { ...snapshot(), mark: { by: mark.by, at: mark.at } };
   }
+  if (!cur) return snapshot();
+  if (onlyIfAt !== null && cur.at !== onlyIfAt) return { ...snapshot(), kept: { by: cur.by, at: cur.at } };
+  marks.delete(key);
   changed();
   return snapshot();
 }

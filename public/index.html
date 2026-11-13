@@ -296,6 +296,11 @@
             border: 1.5px solid rgba(20, 20, 22, .9);
         }
 
+        #discrepancy-dot.urgent {
+            background: var(--warn);
+            box-shadow: 0 0 0 3px rgba(217, 80, 60, .35);
+        }
+
         #discrepancy-dot.hidden {
             display: none;
         }
@@ -1481,12 +1486,27 @@
                             </div>
                         </div>
 
+                        <!-- Playoff winner changed (superadmin): pinned to the top so the MC
+                             settles it before calling the next round — admin.js. -->
+                        <div id="discrepancy-urgent" class="hidden mt-2.5"></div>
+
                         <!-- Court readiness (optional, Setup → Court Ready): referee's
                              "Mark ready" bar or the MC's court board — courtReady.js. -->
                         <div id="court-ready-panel" class="hidden mt-2.5"></div>
 
+                        <!-- Other results needing review (pool play, playoff players-left only):
+                             compact and collapsed by default — admin.js. -->
+                        <div id="discrepancy-passive" class="hidden mt-2.5"></div>
+
                         <!-- Timer controls now live in the header-clock popover (any page,
                              superadmin only) — see #timer-overlay-panel and timerOverlay.js. -->
+
+                        <!-- Games section: a clear break between the live tools above
+                             (review, court board / ready bar) and the filtered game list. -->
+                        <div class="mt-6 flex items-center gap-2.5 px-1">
+                            <h2 id="admin-games-heading" class="flex-none text-[11px] font-bold uppercase tracking-[.16em] text-white/60">All games</h2>
+                            <span class="h-px flex-1 bg-white/15"></span>
+                        </div>
 
                         <!-- Filters (reused from the schedule view) -->
                         <div class="mt-2.5">
@@ -1683,7 +1703,7 @@
                                 <div class="flex items-center justify-between gap-3">
                                     <div class="min-w-0">
                                         <h3 class="text-lg font-bold text-white">⚠️ Result discrepancy alerts</h3>
-                                        <p class="text-[11px] text-white/50">When a referee's result differs from official. Applies to this device only — set the clock operator's to “Off”.</p>
+                                        <p class="text-[11px] text-white/50">When a referee's result differs from official. A changed playoff winner is pinned to the top of Admin; other differences sit under the court board. Applies to this device only — set the clock operator's to “Off”.</p>
                                     </div>
                                     <select id="discrepancy-pref-select" onchange="setDiscrepancyPref(this.value)"
                                         class="flex-none rounded-lg border border-white/20 bg-white/[.06] px-2 py-2 text-sm text-white">

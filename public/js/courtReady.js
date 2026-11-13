@@ -20,6 +20,7 @@
 // Rendered into #court-ready-panel at the top of the admin match entry view:
 // the MC (superadmin) gets the court board, a referee gets their court's bar.
 import { getCourtStatus, setCourtMark, courtRoundAction } from './api.js';
+import { isUrgentDiscrepancy } from './discrepancy.js';
 import { getRoundOrder } from './schedule.js';
 import { deriveBoard as deriveBoardPure, gameKeyOf, courtKey, roundOf, slotOf, slotKey, hasValue } from './courtBoard.js';
 import { getSocket } from './socketClient.js';
@@ -37,6 +38,9 @@ let earlies = [];            // [{ division, gameKey, court, at, by }] squeeze-i
 let focusCourt = null;       // referee: court of the game they last reported
 let undoUntil = 0;
 let busy = false;
+let pending = null;           // { court, ready } while a mark request is in flight (button shows "Marking…")
+let myMark = null;            // { court, at } the mark this phone just made (its Undo only removes that one)
+let writeSeq = 0;             // bumped when a mark/round response lands; older in-flight refreshes are dropped
 let stale = false;           // set on logout so the next sign-in refetches
 let clockSig = '';
 // superadmin alert edge detection
@@ -133,9 +137,14 @@ function applyState(data) {
 async function refresh() {
     const t = token();
     if (!App.state.isAdmin || !t) return;
+    const seenWrite = writeSeq;
     try {
         const res = await getCourtStatus(t);
         if (!res.success) return;
+        // A write landed while this read was in flight: the read may predate
+        // it (on a slow network) and would flip the court back for a moment.
+        // The write's own response is newer; the socket nudge refreshes again.
+        if (seenWrite !== writeSeq) return;
         App.settings = App.settings || {};
         App.settings.courtReadyEnabled = res.enabled === true;
         applyState(res);
@@ -184,6 +193,8 @@ export function resetCourtReady() {
     earlies = [];
     focusCourt = null;
     undoUntil = 0;
+    pending = null;
+    myMark = null;
     primed = false;
     stale = true;
     const panel = document.getElementById('court-ready-panel');
@@ -207,7 +218,17 @@ export function followCourt(court) {
 
 // --- actions -------------------------------------------------------------------------
 
-async function setReady(court, ready) {
+function myName() {
+    return App.state.reporterName || localStorage.getItem('lastAdminName') || '';
+}
+
+/**
+ * Marks / unmarks a court's next game. Two referees on one court, or a slow
+ * venue network, are expected: the server keeps the FIRST ready tap (later or
+ * retried taps get `already`), a referee's Undo only removes the mark they
+ * made, and a timed-out request is safe to tap again.
+ */
+async function setReady(court, ready, { onlyIfAt = null } = {}) {
     if (busy) return;
     const row = deriveBoard().rows.find(r => r.court === court);
     if (!row?.game) return;
@@ -216,34 +237,60 @@ async function setReady(court, ready) {
         return;
     }
     busy = true;
+    pending = { court, ready };
+    render();
     try {
         const res = await setCourtMark(token(), {
             division: division(),
             gameKey: gameKeyOf(row.game),
             court,
             ready,
-            by: App.state.reporterName || localStorage.getItem('lastAdminName') || ''
+            by: myName(),
+            onlyIfAt
         });
+        writeSeq++;
+        pending = null;
         if (ready) {
             try { navigator.vibrate && navigator.vibrate(40); } catch (e) { /* unsupported */ }
-            if (!App.state.isSuperAdmin) {
+            const already = res.already;
+            // A retry after a timeout can find this phone's own earlier tap: that's a success.
+            const mine = !already || (already.by && already.by === (myName() || 'Referee'));
+            if (!mine) {
+                undoUntil = 0;
+                toast(`Court ${court} was already marked ready${already.by ? ` by ${already.by}` : ''}`);
+            } else if (!App.state.isSuperAdmin) {
+                myMark = { court, at: (res.mark || already).at };
                 undoUntil = Date.now() + UNDO_MS;
                 setTimeout(render, UNDO_MS + 50);
-                toast(`✓ Court ${court} marked ready`, false, { label: 'Undo', run: () => setReady(court, false) });
+                toast(`✓ Court ${court} marked ready`, false, { label: 'Undo', run: () => setReady(court, false, { onlyIfAt: myMark?.court === court ? myMark.at : null }) });
             }
         } else {
             undoUntil = 0;
+            myMark = null;
+            if (res.kept) toast(`Court ${court} was marked ready again${res.kept.by ? ` by ${res.kept.by}` : ''} — left as ready`);
         }
         applyState(res);
     } catch (e) {
-        toast(e.status === 409 ? 'Court ready is turned off.' : `Couldn't update court: ${e.body?.error || e.message}`, true);
+        pending = null;
+        render();
+        const offline = e.name === 'AbortError' || !e.status;
+        toast(e.status === 409 ? 'Court ready is turned off.'
+            : offline ? `No connection — Court ${court} was not ${ready ? 'marked ready' : 'changed'}. Tap again.`
+            : `Couldn't update court: ${e.body?.error || e.message}`, true);
+        refresh(); // the request may still have landed: show what the server has
     } finally {
         busy = false;
     }
 }
 
+/** Button label/attrs while this phone's request for `court` is in flight. */
+function pendingFor(court, ready) {
+    return !!pending && pending.court === court && pending.ready === ready;
+}
+
 async function post(action, extra) {
     const res = await courtRoundAction(token(), action, { division: division(), by: App.state.reporterName || 'MC', ...extra });
+    writeSeq++;
     applyState(res);
     return res;
 }
@@ -265,10 +312,29 @@ function setClockRoundIfMine(slot, board) {
  * Start round: records the start and, if this tab can run the clock and it
  * isn't running, points the clock at this round and starts it (one tap).
  */
+/**
+ * Playoff games in this division whose referee-reported winner differs from
+ * the official one (open, not dismissed; the alert-level "Off" hides them).
+ * The bracket advances the official winner, so starting/ending a round on top
+ * of one asks first. Shown at the top of Admin by admin.js.
+ */
+function disputedPlayoffGames() {
+    if (!App.state.isSuperAdmin || window.getDiscrepancyPref?.() === 'off') return [];
+    return (App.data?.discrepancies || []).filter(d => d.division === division() && isUrgentDiscrepancy(d));
+}
+
+function confirmDisputes(verb) {
+    const list = disputedPlayoffGames();
+    if (!list.length) return true;
+    const lines = list.map(d => `• ${d.match || ''} ${d.team1} vs ${d.team2}: official ${d.winner}, referee now says ${d.adminWinner}`).join('\n');
+    return confirm(`Playoff winner changed — not settled yet:\n${lines}\n\nThe bracket uses the official winner. ${verb} anyway?`);
+}
+
 async function startRoundFromBoard() {
     const brd = deriveBoard();
     const { B, phase, prev } = brd;
     if (!B || phase !== 'staging' || busy) return;
+    if (!confirmDisputes(`Start the ${B} round`)) return;
     busy = true;
     try {
         await post('start', { roundTime: B, prevRound: prev || '' });
@@ -303,6 +369,7 @@ async function endRoundFromBoard() {
         const list = open.map(r => `Court ${r.court}`).join(', ');
         if (!confirm(`${list} ${open.length === 1 ? 'hasn\'t' : 'haven\'t'} reported yet.\n\nEnd the ${B} round anyway? Missing scores can still come in and show under "Last round".`)) return;
     }
+    if (!confirmDisputes(`End the ${B} round`)) return;
     const next = nextAfter(B);
     busy = true;
     try {
@@ -483,10 +550,14 @@ function tileHtml(r, phase, showCaption) {
         : r.status === 'final'
         ? `<div class="mt-2 flex justify-end">${reportBtn(g, 'Edit', false)}</div>`
         : r.status === 'waiting'
-        ? `<button type="button" data-cr-ready="${esc(r.court)}" class="mt-2 w-full rounded-full px-3 py-2 text-[11px] font-bold" style="background:rgba(46,158,99,.25);color:#B9F0D0">Mark ready</button>`
+        ? `<button type="button" data-cr-ready="${esc(r.court)}" ${pendingFor(r.court, true) ? 'disabled aria-busy="true"' : ''} class="mt-2 w-full rounded-full px-3 py-2 text-[11px] font-bold disabled:opacity-60" style="background:rgba(46,158,99,.25);color:#B9F0D0">${pendingFor(r.court, true) ? 'Marking…' : 'Mark ready'}</button>`
         : r.status === 'ready'
-            ? `<button type="button" data-cr-unready="${esc(r.court)}" class="mt-2 w-full rounded-full px-3 py-2 text-[11px] font-semibold" style="background:rgba(255,255,255,.06);color:rgba(255,255,255,.6)">Not ready</button>`
+            ? `<button type="button" data-cr-unready="${esc(r.court)}" ${pendingFor(r.court, false) ? 'disabled aria-busy="true"' : ''} class="mt-2 w-full rounded-full px-3 py-2 text-[11px] font-semibold disabled:opacity-60" style="background:rgba(255,255,255,.06);color:rgba(255,255,255,.6)">${pendingFor(r.court, false) ? 'Updating…' : 'Not ready'}</button>`
             : '';
+    const disputed = g && disputedPlayoffGames().some(d => String(d.firebaseIndex) === String(g.firebaseIndex));
+    const dispute = disputed
+        ? `<div class="mt-2 rounded-[12px] px-2 py-1.5 text-[10px] font-bold leading-[1.3]" style="background:rgba(217,80,60,.18);color:#FFB4A6">⚠ Winner changed — see top</div>`
+        : '';
     const owed = r.owed?.length
         ? `<div class="mt-2 rounded-[12px] px-2 py-1.5 text-[10px] font-bold leading-[1.3]" style="background:rgba(217,80,60,.18);color:#FFB4A6">⚠ ${esc(roundOf(r.owed[0]))} score missing${r.owed.length > 1 ? ` (+${r.owed.length - 1})` : ''}</div>
            <div class="mt-1.5 flex">${reportBtn(r.owed[0], `Report ${esc(timeOnly(roundOf(r.owed[0])))}`, true).replace('flex-none', 'w-full')}</div>`
@@ -501,6 +572,7 @@ function tileHtml(r, phase, showCaption) {
             ${g && (showCaption || r.early) && gameCaption(g) ? `<div class="mt-0.5 text-[10px] font-semibold text-white/45">${esc(gameCaption(g))}</div>` : ''}
             ${r.early ? `<button type="button" data-cr-unearly="${esc(gameKeyOf(g))}" class="mt-1 text-[10px] font-semibold underline text-white/40">Undo squeeze-in</button>` : ''}
             ${body}
+            ${dispute}
             ${owed}
             ${action}
         </div>`;
@@ -646,8 +718,9 @@ function renderRefBar(panel, board) {
                     <div class="min-w-0">
                         <div class="text-[13px] font-extrabold" style="color:#B9F0D0">✓ Court ${esc(court)} ready</div>
                         <div class="mt-0.5 text-[11px] text-white/60">${teams} · waiting on the MC to start.</div>
+                        ${r.mark?.by ? `<div class="mt-0.5 text-[10px] text-white/45">Marked by ${esc(r.mark.by)} · ${ago(r.mark.at)}</div>` : ''}
                     </div>
-                    <button type="button" data-cr-unready="${esc(court)}" class="flex-none rounded-full border border-white/20 bg-white/[.06] px-3 py-2 text-[11px] font-semibold text-white/70">${canUndo ? 'Undo' : 'Not ready'}</button>
+                    <button type="button" data-cr-unready="${esc(court)}" ${canUndo ? 'data-cr-undo-mine' : ''} ${pendingFor(court, false) ? 'disabled aria-busy="true"' : ''} class="flex-none rounded-full border border-white/20 bg-white/[.06] px-3 py-2 text-[11px] font-semibold text-white/70 disabled:opacity-60">${pendingFor(court, false) ? 'Updating…' : canUndo ? 'Undo' : 'Not ready'}</button>
                 </div>
             </section>`;
         return true;
@@ -657,8 +730,8 @@ function renderRefBar(panel, board) {
         <section class="rounded-[22px] border p-3.5" style="background:rgba(224,184,99,.1);border-color:rgba(224,184,99,.55)">
             <div class="text-[10px] tracking-[.16em] font-semibold uppercase" style="color:var(--gold-l)">Court ${esc(court)} · ${esc(board.B)} round · next up</div>
             <div class="mt-1 text-[13px] font-semibold text-white">${teams}</div>
-            <button type="button" data-cr-ready="${esc(court)}" class="mt-3 w-full rounded-full px-4 py-3.5 text-[14px] font-extrabold" style="background:linear-gradient(135deg,var(--ok) 0%,#21774a 100%);color:#fff">
-                Both teams on court — Mark ready
+            <button type="button" data-cr-ready="${esc(court)}" ${pendingFor(court, true) ? 'disabled aria-busy="true"' : ''} class="mt-3 w-full rounded-full px-4 py-3.5 text-[14px] font-extrabold disabled:opacity-70" style="background:linear-gradient(135deg,var(--ok) 0%,#21774a 100%);color:#fff">
+                ${pendingFor(court, true) ? 'Marking ready…' : 'Both teams on court — Mark ready'}
             </button>
         </section>`;
     return true;
@@ -697,7 +770,12 @@ export function render() {
             if (!el) return;
             if (el.dataset.crReport !== undefined) window.showMatchEntryModal?.(Number(el.dataset.crReport));
             else if (el.dataset.crReady) setReady(el.dataset.crReady, true);
-            else if (el.dataset.crUnready) setReady(el.dataset.crUnready, false);
+            else if (el.dataset.crUnready) {
+                const c = el.dataset.crUnready;
+                // Undo (shortly after this phone marked it) only removes this phone's own mark.
+                const own = 'crUndoMine' in el.dataset && myMark?.court === c ? myMark.at : null;
+                setReady(c, false, { onlyIfAt: own });
+            }
             else if ('crStart' in el.dataset) startRoundFromBoard();
             else if ('crEnd' in el.dataset) endRoundFromBoard();
             else if ('crUndo' in el.dataset) roundAction('undo');
