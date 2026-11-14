@@ -22,7 +22,7 @@
 import { getCourtStatus, setCourtMark, courtRoundAction } from './api.js';
 import { isUrgentDiscrepancy } from './discrepancy.js';
 import { getRoundOrder } from './schedule.js';
-import { deriveBoard as deriveBoardPure, gameKeyOf, courtKey, roundOf, slotOf, slotKey, hasValue } from './courtBoard.js';
+import { deriveBoard as deriveBoardPure, gameKeyOf, courtKey, roundOf, slotOf, slotKey, hasValue, clockPlaying } from './courtBoard.js';
 import { getSocket } from './socketClient.js';
 import { getTimerSnapshot } from './timerSnapshot.js';
 import { isController } from './timerControlsUI.js';
@@ -44,6 +44,7 @@ let myMark = null;            // { court, at } the mark this phone just made (it
 let writeSeq = 0;             // bumped when a mark/round response lands; older in-flight refreshes are dropped
 let stale = false;           // set on logout so the next sign-in refetches
 let clockSig = '';
+let latched = '';             // division|round|clock start already recorded by latchClockStart
 // superadmin alert edge detection
 let primed = false;
 let last = { allReady: false, ready: new Set(), timesUp: false, missing: 0, missingRound: null, round: undefined, phase: undefined };
@@ -398,6 +399,29 @@ function wireClockStart() {
         const { B, phase, prev } = deriveBoard();
         if (B && phase === 'staging') post('start', { roundTime: B, prevRound: prev || '' }).catch(e => console.warn('Round start not recorded:', e.message));
     });
+}
+
+/**
+ * The board shows a round as in play only because the clock is running it —
+ * no "playing" record on the server (the clock was started from a tab without
+ * the board, the start POST failed, or the server restarted). Record it now,
+ * while the clock makes it unambiguous: otherwise the moment time runs out (or
+ * the clock is stopped) the board would fall back to calling that same round's
+ * teams — WAITING FOR TEAMS / Mark ready instead of IN PLAY / Report — on every
+ * court still owed a score. Superadmin only; once per clock start.
+ */
+function latchClockStart(board) {
+    if (!App.state.isSuperAdmin || !enabled() || busy) return;
+    const { B, phase, rec, prev, advanced } = board;
+    if (!B || phase !== 'playing' || advanced) return;
+    if (rec && rec.round === B && rec.phase === 'playing') return;
+    const st = clockState();
+    if (!clockPlaying(st, B, rec)) return;
+    const sig = `${division()}|${B}|${st.startTime}`;
+    if (latched === sig) return;
+    latched = sig;
+    post('start', { roundTime: B, prevRound: prev || '' })
+        .catch(e => { latched = ''; console.warn('Round start not recorded:', e.message); });
 }
 
 /** Start a later game now on a free court (or undo it). */
@@ -760,6 +784,7 @@ export function render() {
     if (App.state.isSuperAdmin) {
         alertOnChanges(board);
         renderBoard(panel, board);
+        latchClockStart(board);
         panel.style.position = '';
     } else {
         shown = renderRefBar(panel, board);

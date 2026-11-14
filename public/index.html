@@ -306,7 +306,11 @@
         }
 
         /* Chat channels: crew = maroon (everyone), lead = violet (admins & parents only) */
-        :root { --lead-a: #8B7CF6; --lead-b: #5B4BC4; }
+        :root {
+            --lead-a: #8B7CF6;
+            --lead-b: #5B4BC4;
+        }
+
         #chat-view {
             --ch-a: var(--mar-l);
             --ch-b: var(--mar);
@@ -314,6 +318,7 @@
             --ch-tint: rgba(166, 48, 63, .12);
             --ch-border: rgba(166, 48, 63, .35);
         }
+
         #chat-view[data-channel="lead"] {
             --ch-a: var(--lead-a);
             --ch-b: var(--lead-b);
@@ -321,26 +326,72 @@
             --ch-tint: rgba(139, 124, 246, .12);
             --ch-border: rgba(139, 124, 246, .45);
         }
+
         #chat-view[data-channel="lead"] #chat-scroll-area {
             background: linear-gradient(180deg, rgba(139, 124, 246, .07), transparent 40%);
             border-radius: 14px;
         }
-        #chat-channel-banner { background: var(--ch-tint); border: 1px solid var(--ch-border); color: rgba(255, 255, 255, .8); }
-        #chat-composer { border-color: var(--ch-border); }
+
+        #chat-channel-banner {
+            background: var(--ch-tint);
+            border: 1px solid var(--ch-border);
+            color: rgba(255, 255, 255, .8);
+        }
+
+        #chat-composer {
+            border-color: var(--ch-border);
+        }
+
         .chat-seg {
-            display: flex; flex-direction: column; align-items: center; gap: 1px;
-            border-radius: 12px; padding: 7px 8px; color: rgba(255, 255, 255, .55);
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            gap: 1px;
+            border-radius: 12px;
+            padding: 7px 8px;
+            color: rgba(255, 255, 255, .55);
             transition: background .15s, color .15s;
         }
-        .chat-seg-title { font-size: 12px; font-weight: 700; display: inline-flex; align-items: center; gap: 5px; }
-        .chat-seg-sub { font-size: 10px; font-weight: 500; opacity: .75; }
-        .chat-seg[data-ch="crew"].chat-seg-on { background: linear-gradient(135deg, var(--mar-l), var(--mar)); color: #fff; }
-        .chat-seg[data-ch="lead"].chat-seg-on { background: linear-gradient(135deg, var(--lead-a), var(--lead-b)); color: #fff; }
-        .chat-seg-badge {
-            min-width: 16px; height: 16px; padding: 0 4px; border-radius: 999px;
-            background: var(--warn); color: #fff; font-size: 10px; line-height: 16px; text-align: center;
+
+        .chat-seg-title {
+            font-size: 12px;
+            font-weight: 700;
+            display: inline-flex;
+            align-items: center;
+            gap: 5px;
         }
-        .chat-seg[data-ch="lead"] .chat-seg-badge { background: var(--lead-a); }
+
+        .chat-seg-sub {
+            font-size: 10px;
+            font-weight: 500;
+            opacity: .75;
+        }
+
+        .chat-seg[data-ch="crew"].chat-seg-on {
+            background: linear-gradient(135deg, var(--mar-l), var(--mar));
+            color: #fff;
+        }
+
+        .chat-seg[data-ch="lead"].chat-seg-on {
+            background: linear-gradient(135deg, var(--lead-a), var(--lead-b));
+            color: #fff;
+        }
+
+        .chat-seg-badge {
+            min-width: 16px;
+            height: 16px;
+            padding: 0 4px;
+            border-radius: 999px;
+            background: var(--warn);
+            color: #fff;
+            font-size: 10px;
+            line-height: 16px;
+            text-align: center;
+        }
+
+        .chat-seg[data-ch="lead"] .chat-seg-badge {
+            background: var(--lead-a);
+        }
 
         .tab-active,
         .tab-admin-active {
@@ -379,9 +430,20 @@
         /* Chat tab: lock the page so only the message list scrolls. The wrapper's
            min-h-screen and <main>'s pb-28 normally pad the page past the viewport,
            which caused the second (page) scrollbar and the blank gap under the composer. */
-        html.chat-locked, html.chat-locked body { overflow: hidden; height: 100dvh; overscroll-behavior: none; }
-        html.chat-locked #main-wrapper { min-height: 0; }
-        html.chat-locked main { padding-bottom: 0; }
+        html.chat-locked,
+        html.chat-locked body {
+            overflow: hidden;
+            height: 100dvh;
+            overscroll-behavior: none;
+        }
+
+        html.chat-locked #main-wrapper {
+            min-height: 0;
+        }
+
+        html.chat-locked main {
+            padding-bottom: 0;
+        }
 
         /* Toggle switch — design tokens: 46×26 track, 22px knob, white on a
      rgba(255,255,255,.14) off-track. `.slider-ok` opts into the green ON fill
@@ -733,7 +795,9 @@
         /* ==========================================================
            PLAYOFF BRACKET (ported from scoreboard.html)
         ========================================================== */
-        .bracket-wrap { position: relative; }
+        .bracket-wrap {
+            position: relative;
+        }
 
         .bracket-fit {
             position: relative;
@@ -745,41 +809,81 @@
             touch-action: pan-x pan-y;
             -webkit-overflow-scrolling: touch;
         }
-        .bracket-fit.is-zoomed { max-height: 72vh; overscroll-behavior: contain; }
+
+        .bracket-fit.is-zoomed {
+            max-height: 72vh;
+            overscroll-behavior: contain;
+        }
 
         .bracket-zoom-ctl {
             position: absolute;
-            right: 6px; bottom: 30px;
+            right: 6px;
+            bottom: 30px;
             display: flex;
             border-radius: 999px;
             overflow: hidden;
-            background: rgba(20,24,34,.88);
-            border: 1px solid rgba(255,255,255,.18);
-            box-shadow: 0 2px 10px rgba(0,0,0,.45);
+            background: rgba(20, 24, 34, .88);
+            border: 1px solid rgba(255, 255, 255, .18);
+            box-shadow: 0 2px 10px rgba(0, 0, 0, .45);
             backdrop-filter: blur(6px);
         }
+
         .bracket-zoom-ctl button {
-            min-width: 44px; height: 44px;
-            color: #fff; font-size: 20px; font-weight: 700; line-height: 1;
-            background: transparent; border: 0;
+            min-width: 44px;
+            height: 44px;
+            color: #fff;
+            font-size: 20px;
+            font-weight: 700;
+            line-height: 1;
+            background: transparent;
+            border: 0;
             touch-action: manipulation;
         }
-        .bracket-zoom-ctl button + button { border-left: 1px solid rgba(255,255,255,.12); }
-        .bracket-zoom-ctl button:active:not(:disabled) { background: rgba(255,255,255,.14); }
-        .bracket-zoom-ctl button:disabled { opacity: .3; }
-        .bracket-zoom-ctl button[data-zoom="fit"] { font-size: 13px; letter-spacing: .04em; padding: 0 10px; opacity: .6; }
-        .bracket-zoom-ctl button[data-zoom="fit"].is-zoomed { opacity: 1; color: var(--gold, #f5c542); }
+
+        .bracket-zoom-ctl button+button {
+            border-left: 1px solid rgba(255, 255, 255, .12);
+        }
+
+        .bracket-zoom-ctl button:active:not(:disabled) {
+            background: rgba(255, 255, 255, .14);
+        }
+
+        .bracket-zoom-ctl button:disabled {
+            opacity: .3;
+        }
+
+        .bracket-zoom-ctl button[data-zoom="fit"] {
+            font-size: 13px;
+            letter-spacing: .04em;
+            padding: 0 10px;
+            opacity: .6;
+        }
+
+        .bracket-zoom-ctl button[data-zoom="fit"].is-zoomed {
+            opacity: 1;
+            color: var(--gold, #f5c542);
+        }
 
         .bracket-zoom-hint {
             margin-top: 6px;
             text-align: center;
             font-size: 11px;
-            color: rgba(255,255,255,.4);
+            color: rgba(255, 255, 255, .4);
         }
-        .bracket-wrap.is-zoomed .bracket-zoom-hint { display: none; }
 
-        .bracket-fit::-webkit-scrollbar { height: 4px; width: 4px; }
-        .bracket-fit::-webkit-scrollbar-thumb { background: rgba(255,255,255,.14); border-radius: 2px; }
+        .bracket-wrap.is-zoomed .bracket-zoom-hint {
+            display: none;
+        }
+
+        .bracket-fit::-webkit-scrollbar {
+            height: 4px;
+            width: 4px;
+        }
+
+        .bracket-fit::-webkit-scrollbar-thumb {
+            background: rgba(255, 255, 255, .14);
+            border-radius: 2px;
+        }
 
         .bracket-canvas {
             position: relative;
@@ -788,8 +892,10 @@
 
         .bracket-conn-layer {
             position: absolute;
-            top: 0; left: 0;
-            width: 100%; height: 100%;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
             pointer-events: none;
             overflow: visible;
         }
@@ -801,9 +907,11 @@
             align-items: center;
             justify-content: center;
             gap: 1px;
-            font-size: 9px; font-weight: 700;
-            letter-spacing: .14em; text-transform: uppercase;
-            color: rgba(255,255,255,.42);
+            font-size: 9px;
+            font-weight: 700;
+            letter-spacing: .14em;
+            text-transform: uppercase;
+            color: rgba(255, 255, 255, .42);
             text-align: center;
             overflow: hidden;
         }
@@ -811,89 +919,118 @@
         .bracket-round-hdr .round-key {
             font-size: 8px;
             letter-spacing: .1em;
-            color: rgba(255,255,255,.2);
+            color: rgba(255, 255, 255, .2);
         }
 
         .bracket-match {
             position: absolute;
             border-radius: 10px;
-            border: 1px solid rgba(255,255,255,.12);
-            background: rgba(255,255,255,.05);
+            border: 1px solid rgba(255, 255, 255, .12);
+            background: rgba(255, 255, 255, .05);
             overflow: hidden;
             display: flex;
             flex-direction: column;
         }
 
         .bracket-match.live {
-            border-color: rgba(224,184,99,.35);
-            background: rgba(224,184,99,.05);
+            border-color: rgba(224, 184, 99, .35);
+            background: rgba(224, 184, 99, .05);
         }
 
         .bracket-match.champion {
-            border-color: rgba(224,184,99,.5);
-            background: rgba(224,184,99,.07);
-            box-shadow: 0 0 28px rgba(224,184,99,.12);
+            border-color: rgba(224, 184, 99, .5);
+            background: rgba(224, 184, 99, .07);
+            box-shadow: 0 0 28px rgba(224, 184, 99, .12);
         }
 
         .bracket-team-row {
-            display: flex; align-items: center; gap: 7px;
+            display: flex;
+            align-items: center;
+            gap: 7px;
             padding: 0 9px;
             flex: 1;
             min-height: 0;
-            border-bottom: 1px solid rgba(255,255,255,.07);
-            font-size: 12px; font-weight: 600;
-            color: rgba(255,255,255,.65);
+            border-bottom: 1px solid rgba(255, 255, 255, .07);
+            font-size: 12px;
+            font-weight: 600;
+            color: rgba(255, 255, 255, .65);
         }
 
-        .bracket-team-row:last-child { border-bottom: none; }
+        .bracket-team-row:last-child {
+            border-bottom: none;
+        }
 
         .bracket-team-row.winner {
             color: var(--gold-l);
-            background: rgba(224,184,99,.1);
+            background: rgba(224, 184, 99, .1);
             font-weight: 700;
         }
 
-        .bracket-team-row.eliminated { color: rgba(255,255,255,.3); }
+        .bracket-team-row.eliminated {
+            color: rgba(255, 255, 255, .3);
+        }
+
         /* Team followed on this phone (follow.js): gold edge + star, also when eliminated. */
-        .bracket-team-row.followed { box-shadow: inset 3px 0 0 var(--gold); background: rgba(224,184,99,.12); }
-        .bracket-team-row.followed .bt-name { color: var(--gold-l); font-weight: 800; }
-        .bracket-team-row.followed .bt-name::after { content: ' ★'; color: var(--gold); }
+        .bracket-team-row.followed {
+            box-shadow: inset 3px 0 0 var(--gold);
+            background: rgba(224, 184, 99, .12);
+        }
+
+        .bracket-team-row.followed .bt-name {
+            color: var(--gold-l);
+            font-weight: 800;
+        }
+
+        .bracket-team-row.followed .bt-name::after {
+            content: ' ★';
+            color: var(--gold);
+        }
 
         .bracket-match.is-bye {
             border-style: dashed;
-            border-color: rgba(255,255,255,.09);
-            background: rgba(255,255,255,.02);
+            border-color: rgba(255, 255, 255, .09);
+            background: rgba(255, 255, 255, .02);
         }
 
-        .bracket-match-tag.is-bye { color: rgba(255,255,255,.2); }
+        .bracket-match-tag.is-bye {
+            color: rgba(255, 255, 255, .2);
+        }
 
         .bracket-team-row.bye {
-            color: rgba(255,255,255,.2);
-            font-size: 9px; font-weight: 800;
-            letter-spacing: .18em; text-transform: uppercase;
+            color: rgba(255, 255, 255, .2);
+            font-size: 9px;
+            font-weight: 800;
+            letter-spacing: .18em;
+            text-transform: uppercase;
         }
 
         .bracket-team-row.bye .bt-seed {
-            background: rgba(255,255,255,.03);
-            color: rgba(255,255,255,.14);
+            background: rgba(255, 255, 255, .03);
+            color: rgba(255, 255, 255, .14);
         }
 
         .bracket-team-row.placeholder {
-            color: rgba(255,255,255,.28);
+            color: rgba(255, 255, 255, .28);
             font-style: italic;
         }
 
         .bt-seed {
-            width: 18px; height: 18px; border-radius: 5px;
-            display: flex; align-items: center; justify-content: center;
-            font-size: 9px; font-weight: 700; flex-shrink: 0;
-            background: rgba(255,255,255,.07);
-            color: rgba(255,255,255,.35);
+            width: 18px;
+            height: 18px;
+            border-radius: 5px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 9px;
+            font-weight: 700;
+            flex-shrink: 0;
+            background: rgba(255, 255, 255, .07);
+            color: rgba(255, 255, 255, .35);
         }
 
         .bracket-team-row.placeholder .bt-seed {
-            background: rgba(255,255,255,.04);
-            color: rgba(255,255,255,.2);
+            background: rgba(255, 255, 255, .04);
+            color: rgba(255, 255, 255, .2);
         }
 
         .bracket-team-row.winner .bt-seed {
@@ -901,10 +1038,17 @@
             color: var(--gold-l);
         }
 
-        .bt-name { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+        .bt-name {
+            flex: 1;
+            min-width: 0;
+            overflow: hidden;
+            text-overflow: ellipsis;
+            white-space: nowrap;
+        }
 
         .bt-win-label {
-            font-size: 9px; font-weight: 800;
+            font-size: 9px;
+            font-weight: 800;
             color: var(--gold-d);
             letter-spacing: .06em;
             flex-shrink: 0;
@@ -914,15 +1058,18 @@
             position: absolute;
             padding: 0 5px;
             border-radius: 4px;
-            font-size: 8px; font-weight: 800;
+            font-size: 8px;
+            font-weight: 800;
             letter-spacing: .08em;
             line-height: 13px;
-            background: rgba(20,20,22,.95);
-            color: rgba(255,255,255,.3);
+            background: rgba(20, 20, 22, .95);
+            color: rgba(255, 255, 255, .3);
             z-index: 2;
         }
 
-        .bracket-match-tag.champion { color: var(--gold-d); }
+        .bracket-match-tag.champion {
+            color: var(--gold-d);
+        }
 
         .bracket-champ {
             position: absolute;
@@ -931,29 +1078,34 @@
             gap: 8px;
             padding: 0 12px;
             border-radius: 10px;
-            border: 1px solid rgba(224,184,99,.45);
-            background: rgba(224,184,99,.1);
-            font-size: 12px; font-weight: 800;
+            border: 1px solid rgba(224, 184, 99, .45);
+            background: rgba(224, 184, 99, .1);
+            font-size: 12px;
+            font-weight: 800;
             color: var(--gold-l);
             overflow: hidden;
         }
 
         .bracket-champ .bc-label {
-            font-size: 8px; font-weight: 800;
+            font-size: 8px;
+            font-weight: 800;
             letter-spacing: .16em;
             color: var(--gold-d);
         }
 
         .bracket-champ .bc-name {
-            flex: 1; min-width: 0;
-            overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+            flex: 1;
+            min-width: 0;
+            overflow: hidden;
+            text-overflow: ellipsis;
+            white-space: nowrap;
         }
 
         .bracket-empty-state {
             padding: 28px 16px;
             text-align: center;
             font-size: 13px;
-            color: rgba(255,255,255,.3);
+            color: rgba(255, 255, 255, .3);
             line-height: 1.6;
         }
     </style>
@@ -981,7 +1133,12 @@
                 </div>
                 <button type="button" onclick="openShareModal()" title="Share this app" aria-label="Share this app"
                     class="flex-none w-10 h-10 inline-flex items-center justify-center rounded-full border border-white/20 bg-white/[.06] text-white/70">
-                    <svg class="w-[18px] h-[18px]" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 12v7a1 1 0 0 0 1 1h14a1 1 0 0 0 1-1v-7"/><path d="M16 6l-4-4-4 4"/><path d="M12 2v13"/></svg>
+                    <svg class="w-[18px] h-[18px]" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+                        stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                        <path d="M4 12v7a1 1 0 0 0 1 1h14a1 1 0 0 0 1-1v-7" />
+                        <path d="M16 6l-4-4-4 4" />
+                        <path d="M12 2v13" />
+                    </svg>
                 </button>
             </div>
             <p class="text-sm text-white/60 mt-5 max-w-[36ch]"><strong>Let's play!</strong> Pick your division below
@@ -1005,29 +1162,39 @@
                     <button type="button" id="gate-discrepancy-btn" onclick="openDiscrepancyReview()"
                         class="hidden rounded-xl border px-4 py-3 text-sm font-semibold text-left"
                         style="border-color:rgba(224,184,99,.5);background:rgba(224,184,99,.1);color:var(--gold-l)">
-                        Results need review <span id="gate-discrepancy-count" class="ml-1 rounded-full px-2 py-0.5 text-[11px]" style="background:var(--gold);color:#2A1B08">0</span>
-                        <span class="block text-[11px] font-normal text-white/50">Referee-reported results that differ from official</span></button>
+                        Results need review <span id="gate-discrepancy-count"
+                            class="ml-1 rounded-full px-2 py-0.5 text-[11px]"
+                            style="background:var(--gold);color:#2A1B08">0</span>
+                        <span class="block text-[11px] font-normal text-white/50">Referee-reported results that differ
+                            from official</span></button>
                     <button type="button" onclick="openGameManagerFromGate()"
                         class="rounded-xl border border-white/20 bg-white/[.06] px-4 py-3 text-sm font-semibold text-white/85 text-left">
-                        Game Management<span class="block text-[11px] font-normal text-white/50">Pace vs. schedule &amp; how to finish on time</span></button>
+                        Game Management<span class="block text-[11px] font-normal text-white/50">Pace vs. schedule &amp;
+                            how to finish on time</span></button>
                     <button type="button" onclick="openConcessionsFromGate()"
                         class="rounded-xl border border-white/20 bg-white/[.06] px-4 py-3 text-sm font-semibold text-white/85 text-left">
-                        Concessions<span class="block text-[11px] font-normal text-white/50">Sell, history, reports &amp; items</span></button>
+                        Concessions<span class="block text-[11px] font-normal text-white/50">Sell, history, reports
+                            &amp; items</span></button>
                     <button type="button" onclick="openRaffleFromGate()"
                         class="rounded-xl border border-white/20 bg-white/[.06] px-4 py-3 text-sm font-semibold text-white/85 text-left">
-                        Raffle<span class="block text-[11px] font-normal text-white/50">Sell tickets, sales &amp; report</span></button>
+                        Raffle<span class="block text-[11px] font-normal text-white/50">Sell tickets, sales &amp;
+                            report</span></button>
                     <button type="button" onclick="openInfoFromGate()"
                         class="rounded-xl border border-white/20 bg-white/[.06] px-4 py-3 text-sm font-semibold text-white/85 text-left">
-                        Info<span class="block text-[11px] font-normal text-white/50">Tournament info &amp; announcements</span></button>
+                        Info<span class="block text-[11px] font-normal text-white/50">Tournament info &amp;
+                            announcements</span></button>
                     <button type="button" onclick="openSettingsFromGate()"
                         class="rounded-xl border border-white/20 bg-white/[.06] px-4 py-3 text-sm font-semibold text-white/85 text-left">
-                        Settings<span class="block text-[11px] font-normal text-white/50">Setup, sync &amp; sessions</span></button>
+                        Settings<span class="block text-[11px] font-normal text-white/50">Setup, sync &amp;
+                            sessions</span></button>
                     <a id="gate-sheet-link" href="#" target="_blank" rel="noopener noreferrer"
                         class="hidden rounded-xl border border-white/20 bg-white/[.06] px-4 py-3 text-sm font-semibold text-white/85">
-                        Google Sheet<span class="block text-[11px] font-normal text-white/50">Open the tournament spreadsheet</span></a>
+                        Google Sheet<span class="block text-[11px] font-normal text-white/50">Open the tournament
+                            spreadsheet</span></a>
                     <a href="/scoreboard.html" target="_blank" rel="noopener noreferrer"
                         class="rounded-xl border border-white/20 bg-white/[.06] px-4 py-3 text-sm font-semibold text-white/85">
-                        Tournament Leaderboard<span class="block text-[11px] font-normal text-white/50">Full-screen tournament display</span></a>
+                        Tournament Leaderboard<span class="block text-[11px] font-normal text-white/50">Full-screen
+                            tournament display</span></a>
                 </div>
             </div>
         </div>
@@ -1040,7 +1207,8 @@
                     <button id="gate-admin-btn" onclick="showAdminLoginModal()"
                         class="pill-gold px-4 py-3 text-xs font-semibold">Admin login</button>
                 </div>
-                <div id="gate-admin-who" class="hidden text-[11px] leading-[1.35] text-right text-white/60 break-words"></div>
+                <div id="gate-admin-who" class="hidden text-[11px] leading-[1.35] text-right text-white/60 break-words">
+                </div>
             </div>
         </div>
     </div>
@@ -1051,21 +1219,32 @@
     <div id="app-screen" class="hidden">
 
         <!-- App header: logo + title + division chip + round-clock box -->
-        <header class="app-header sticky top-0 z-50 flex items-center gap-3 px-[max(0.875rem,calc((100%-42rem)/2+0.875rem))] pt-3 pb-2.5">
+        <header
+            class="app-header sticky top-0 z-50 flex items-center gap-3 px-[max(0.875rem,calc((100%-42rem)/2+0.875rem))] pt-3 pb-2.5">
             <img id="header-logo" src="/assets/algonquin-hockey.png" alt="Algonquin Hockey"
                 class="w-[38px] h-[38px] flex-none object-contain">
             <!-- Sub-pages (Setup, Game management, Raffle backup) swap the logo for a back chevron; wired in navigation.js -->
             <button id="header-back" type="button" aria-label="Back"
                 class="hidden w-[38px] h-[38px] flex-none items-center justify-center rounded-full border border-white/20 bg-white/[.07] text-white/80">
-                <svg class="w-[18px] h-[18px]" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M15 18l-6-6 6-6"/></svg>
+                <svg class="w-[18px] h-[18px]" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"
+                    stroke-linecap="round" stroke-linejoin="round">
+                    <path d="M15 18l-6-6 6-6" />
+                </svg>
             </button>
 
             <div class="flex-1 min-w-0">
                 <div class="flex items-center gap-1.5 min-w-0">
-                    <h1 id="header-title" class="m-0 text-[17px] font-bold leading-tight tracking-[-.02em] text-gray-50 truncate">Standings</h1>
+                    <h1 id="header-title"
+                        class="m-0 text-[17px] font-bold leading-tight tracking-[-.02em] text-gray-50 truncate">
+                        Standings</h1>
                     <button type="button" onclick="openShareModal()" title="Share this app" aria-label="Share this app"
                         class="flex-none inline-flex items-center justify-center w-6 h-6 rounded-full text-white/50">
-                        <svg class="w-[15px] h-[15px]" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 12v7a1 1 0 0 0 1 1h14a1 1 0 0 0 1-1v-7"/><path d="M16 6l-4-4-4 4"/><path d="M12 2v13"/></svg>
+                        <svg class="w-[15px] h-[15px]" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+                            stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                            <path d="M4 12v7a1 1 0 0 0 1 1h14a1 1 0 0 0 1-1v-7" />
+                            <path d="M16 6l-4-4-4 4" />
+                            <path d="M12 2v13" />
+                        </svg>
                     </button>
                 </div>
                 <div class="mt-1.5 flex items-center gap-2 min-w-0">
@@ -1073,7 +1252,8 @@
                         class="pill-gold flex-none inline-flex items-center gap-1.5 px-2.5 py-1 text-[10px] font-semibold">
                         <span id="header-division-label">—</span><span class="opacity-60 font-semibold">CHANGE</span>
                     </button>
-                    <span id="header-staff-badge" class="hidden min-w-0 items-center gap-1 text-[10px] font-semibold text-white/60"
+                    <span id="header-staff-badge"
+                        class="hidden min-w-0 items-center gap-1 text-[10px] font-semibold text-white/60"
                         title="Signed in"><span class="w-1.5 h-1.5 flex-none rounded-full bg-green-500"></span><span
                             id="header-staff-name" class="truncate"></span></span>
                 </div>
@@ -1123,9 +1303,11 @@
                     </div>
 
                     <!-- Clock ownership (timerControlsUI.js) and "wrong division" warning (timerOverlay.js) -->
-                    <div id="timer-division-warning" class="hidden mt-3 rounded-2xl border border-warn/40 bg-warn/10 px-3 py-2 text-[11px] font-semibold leading-snug text-white/80"
+                    <div id="timer-division-warning"
+                        class="hidden mt-3 rounded-2xl border border-warn/40 bg-warn/10 px-3 py-2 text-[11px] font-semibold leading-snug text-white/80"
                         role="alert"></div>
-                    <div class="mt-3 flex items-center justify-between gap-2 rounded-2xl border border-white/10 bg-white/[.04] px-3 py-2">
+                    <div
+                        class="mt-3 flex items-center justify-between gap-2 rounded-2xl border border-white/10 bg-white/[.04] px-3 py-2">
                         <span id="timer-control-text" class="text-[11px] font-medium leading-snug text-white/65"></span>
                         <button id="timer-control-action" type="button"
                             class="flex-none rounded-full border border-gold/40 bg-gold/10 px-3 py-1.5 text-[11px] font-semibold text-gold-l"></button>
@@ -1365,12 +1547,22 @@
 
                             <!-- Feedback to the organizers (no login) — feedback.js -->
                             <section id="info-feedback" class="card-dark p-4">
-                                <div class="text-[10px] tracking-[.14em] font-semibold text-white/50 uppercase">Feedback</div>
+                                <div class="text-[10px] tracking-[.14em] font-semibold text-white/50 uppercase">Feedback
+                                </div>
                                 <p class="mt-1.5 text-sm text-white/80">How's the day going? Tell the organizers.</p>
                                 <div class="mt-3 grid grid-cols-3 gap-2">
-                                    <button type="button" onclick="openFeedback('compliment')" class="flex flex-col items-center gap-1 rounded-2xl border border-white/15 bg-white/[.06] px-2 py-3 text-[12px] font-semibold text-white"><span class="text-[22px] leading-none" aria-hidden="true">👏</span>Compliment</button>
-                                    <button type="button" onclick="openFeedback('suggestion')" class="flex flex-col items-center gap-1 rounded-2xl border border-white/15 bg-white/[.06] px-2 py-3 text-[12px] font-semibold text-white"><span class="text-[22px] leading-none" aria-hidden="true">💡</span>Suggestion</button>
-                                    <button type="button" onclick="openFeedback('complaint')" class="flex flex-col items-center gap-1 rounded-2xl border border-white/15 bg-white/[.06] px-2 py-3 text-[12px] font-semibold text-white"><span class="text-[22px] leading-none" aria-hidden="true">😟</span>Complaint</button>
+                                    <button type="button" onclick="openFeedback('compliment')"
+                                        class="flex flex-col items-center gap-1 rounded-2xl border border-white/15 bg-white/[.06] px-2 py-3 text-[12px] font-semibold text-white"><span
+                                            class="text-[22px] leading-none"
+                                            aria-hidden="true">👏</span>Compliment</button>
+                                    <button type="button" onclick="openFeedback('suggestion')"
+                                        class="flex flex-col items-center gap-1 rounded-2xl border border-white/15 bg-white/[.06] px-2 py-3 text-[12px] font-semibold text-white"><span
+                                            class="text-[22px] leading-none"
+                                            aria-hidden="true">💡</span>Suggestion</button>
+                                    <button type="button" onclick="openFeedback('complaint')"
+                                        class="flex flex-col items-center gap-1 rounded-2xl border border-white/15 bg-white/[.06] px-2 py-3 text-[12px] font-semibold text-white"><span
+                                            class="text-[22px] leading-none"
+                                            aria-hidden="true">😟</span>Complaint</button>
                                 </div>
                             </section>
 
@@ -1385,12 +1577,14 @@
                                     <div class="flex gap-2.5 p-2.5 rounded-xl bg-[#F5F5F6]"><span
                                             class="flex-none w-5 h-5 rounded-md font-bold text-[10px] flex items-center justify-center"
                                             style="background:rgba(123,29,43,.1);color:var(--mar)">2</span><span
-                                            class="text-sm text-ink"><strong>Refs have final say. No arguing or you will
-                                                be asked to leave.</strong></span></div>
+                                            class="text-sm text-ink"><strong>Refs have final say. If you have an issue,
+                                                please speak with parent or use the complaint form.</strong></span>
+                                    </div>
                                     <div class="flex gap-2.5 p-2.5 rounded-xl bg-[#F5F5F6]"><span
                                             class="flex-none w-5 h-5 rounded-md font-bold text-[10px] flex items-center justify-center"
                                             style="background:rgba(123,29,43,.1);color:var(--mar)">3</span><span
-                                            class="text-sm text-ink">If you're called out, team managers assist getting
+                                            class="text-sm text-ink">If a player called out, team managers assist
+                                            getting
                                             out players off court</span></div>
                                     <div class="flex gap-2.5 p-2.5 rounded-xl bg-[#F5F5F6]"><span
                                             class="flex-none w-5 h-5 rounded-md font-bold text-[10px] flex items-center justify-center"
@@ -1405,8 +1599,8 @@
                                     <div class="flex gap-2.5 p-2.5 rounded-xl bg-[#F5F5F6]"><span
                                             class="flex-none w-5 h-5 rounded-md font-bold text-[10px] flex items-center justify-center"
                                             style="background:rgba(123,29,43,.1);color:var(--mar)">6</span><span
-                                            class="text-sm text-ink">Most players remaining wins if time runs
-                                            out.</span></div>
+                                            class="text-sm text-ink">Please <strong>only water bottles</strong> in the
+                                            gym. No Food or drinks that are not water.</span></div>
                                 </div>
                             </section>
 
@@ -1414,12 +1608,14 @@
                                 <div class="text-[10px] tracking-[.14em] font-semibold text-white/50 uppercase">
                                     Share this app</div>
                                 <div class="mt-3 flex items-center gap-3.5">
-                                    <div id="share-qr-inline" class="flex-none w-[116px] h-[116px] rounded-xl bg-white p-2"></div>
+                                    <div id="share-qr-inline"
+                                        class="flex-none w-[116px] h-[116px] rounded-xl bg-white p-2"></div>
                                     <div class="min-w-0 flex-1 grid gap-2">
                                         <p class="text-xs text-white/60">Scan with a phone camera, or copy the link.</p>
                                         <input type="text" id="share-link-field-inline" readonly onfocus="this.select()"
                                             class="w-full min-w-0 rounded-xl border border-white/20 bg-white/[.06] px-3 py-2 text-xs text-white/80 outline-none">
-                                        <button type="button" id="share-copy-btn-inline" onclick="copyShareLink('-inline')"
+                                        <button type="button" id="share-copy-btn-inline"
+                                            onclick="copyShareLink('-inline')"
                                             class="pill-gold px-4 py-2.5 text-xs font-semibold">Copy link</button>
                                     </div>
                                 </div>
@@ -1454,8 +1650,11 @@
                             </div>
                         </div>
 
-                        <div id="chat-channel-bar" class="hidden mt-2.5 grid grid-cols-2 gap-1 rounded-2xl border border-white/[.13] bg-white/[.05] p-1"></div>
-                        <div id="chat-channel-banner" class="hidden mt-2 rounded-xl px-3 py-1.5 text-[11px] font-medium"></div>
+                        <div id="chat-channel-bar"
+                            class="hidden mt-2.5 grid grid-cols-2 gap-1 rounded-2xl border border-white/[.13] bg-white/[.05] p-1">
+                        </div>
+                        <div id="chat-channel-banner"
+                            class="hidden mt-2 rounded-xl px-3 py-1.5 text-[11px] font-medium"></div>
 
                         <div class="relative flex-1 min-h-0 mt-2.5">
                             <div id="chat-scroll-area" class="h-full overflow-y-auto no-scrollbar">
@@ -1520,7 +1719,9 @@
                         <!-- Games section: a clear break between the live tools above
                              (review, court board / ready bar) and the filtered game list. -->
                         <div class="mt-6 flex items-center gap-2.5 px-1">
-                            <h2 id="admin-games-heading" class="flex-none text-[11px] font-bold uppercase tracking-[.16em] text-white/60">All games</h2>
+                            <h2 id="admin-games-heading"
+                                class="flex-none text-[11px] font-bold uppercase tracking-[.16em] text-white/60">All
+                                games</h2>
                             <span class="h-px flex-1 bg-white/15"></span>
                         </div>
 
@@ -1587,9 +1788,16 @@
                         <div class="mt-3.5 grid grid-cols-1 gap-2.5">
                             <!-- Quick jump between Setup groups -->
                             <nav class="setup-jump" aria-label="Setup sections">
-                                <a href="#setup-live" data-setup-jump>Live now</a><a href="#setup-event" data-setup-jump>Event day</a><a href="#setup-feedback" data-setup-jump>Feedback</a><a href="#setup-sync" data-setup-jump>Sync</a><a href="#setup-config" data-setup-jump>Configuration</a><a href="#setup-data" data-setup-jump>Seasons &amp; data</a>
+                                <a href="#setup-live" data-setup-jump>Live now</a><a href="#setup-event"
+                                    data-setup-jump>Event day</a><a href="#setup-feedback"
+                                    data-setup-jump>Feedback</a><a href="#setup-sync" data-setup-jump>Sync</a><a
+                                    href="#setup-config" data-setup-jump>Configuration</a><a href="#setup-data"
+                                    data-setup-jump>Seasons &amp; data</a>
                             </nav>
-                            <div id="setup-live" class="setup-group-head scroll-mt-20"><h3>Live now</h3><p>Who is using the app right now and how the server is holding up.</p></div>
+                            <div id="setup-live" class="setup-group-head scroll-mt-20">
+                                <h3>Live now</h3>
+                                <p>Who is using the app right now and how the server is holding up.</p>
+                            </div>
                             <!-- Live now: connections by role/division/followed team + server health — usage.js, server/presence.js -->
                             <section class="card-dark p-4 space-y-3">
                                 <div class="flex items-center justify-between gap-3">
@@ -1597,19 +1805,28 @@
                                         <h3 class="text-lg font-bold text-white">📡 Live now</h3>
                                         <span class="tip">
                                             <button type="button" class="tip-btn" aria-label="About live now">ⓘ</button>
-                                            <span class="tip-body">Everyone with the app open right now, counted from their live-update connection: signed-in staff by role, and everyone else (parents, coaches, players) as participants. Shows which divisions they are watching, which teams they follow, and whether the server is keeping up. Kept in server memory only; nothing is stored and no names are sent.</span>
+                                            <span class="tip-body">Everyone with the app open right now, counted from
+                                                their live-update connection: signed-in staff by role, and everyone else
+                                                (parents, coaches, players) as participants. Shows which divisions they
+                                                are watching, which teams they follow, and whether the server is keeping
+                                                up. Kept in server memory only; nothing is stored and no names are
+                                                sent.</span>
                                         </span>
                                     </div>
-                                    <span id="usage-health" class="flex-none rounded-full border border-white/15 px-2.5 py-1 text-[11px] font-bold text-white/50">Checking…</span>
+                                    <span id="usage-health"
+                                        class="flex-none rounded-full border border-white/15 px-2.5 py-1 text-[11px] font-bold text-white/50">Checking…</span>
                                 </div>
-                                <div id="usage-body" class="space-y-3"><p class="text-sm text-white/50">Loading…</p></div>
+                                <div id="usage-body" class="space-y-3">
+                                    <p class="text-sm text-white/50">Loading…</p>
+                                </div>
                             </section>
 
                             <!-- 4. Signed-in users (active by default) -->
                             <section id="signed-in-users-card" class="card-dark p-4 space-y-3 scroll-mt-20">
                                 <div class="flex items-center justify-between gap-2 flex-wrap">
                                     <h3 class="text-lg font-bold text-white">🟢 Signed-in users</h3>
-                                    <button id="inactive-users-toggle" type="button" onclick="toggleInactiveUsers()" class="setup-link hidden text-sm"></button>
+                                    <button id="inactive-users-toggle" type="button" onclick="toggleInactiveUsers()"
+                                        class="setup-link hidden text-sm"></button>
                                 </div>
                                 <p class="text-sm text-gray-400">Active now across Referee, Tournament Admin, and
                                     Parent logins. Refreshes every 15s.</p>
@@ -1617,13 +1834,27 @@
                                     <table class="min-w-full divide-y divide-gray-800 text-sm">
                                         <thead class="bg-gray-800/70">
                                             <tr>
-                                                <th class="px-3 py-2 text-left text-xs font-semibold uppercase tracking-wider text-gray-400"></th>
-                                                <th class="px-3 py-2 text-left text-xs font-semibold uppercase tracking-wider text-gray-400">Name</th>
-                                                <th class="px-3 py-2 text-left text-xs font-semibold uppercase tracking-wider text-gray-400">Role</th>
-                                                <th class="px-3 py-2 text-left text-xs font-semibold uppercase tracking-wider text-gray-400">Court</th>
-                                                <th class="px-3 py-2 text-left text-xs font-semibold uppercase tracking-wider text-gray-400">Device</th>
-                                                <th class="px-3 py-2 text-left text-xs font-semibold uppercase tracking-wider text-gray-400">IP</th>
-                                                <th class="px-3 py-2 text-left text-xs font-semibold uppercase tracking-wider text-gray-400">Last active</th>
+                                                <th
+                                                    class="px-3 py-2 text-left text-xs font-semibold uppercase tracking-wider text-gray-400">
+                                                </th>
+                                                <th
+                                                    class="px-3 py-2 text-left text-xs font-semibold uppercase tracking-wider text-gray-400">
+                                                    Name</th>
+                                                <th
+                                                    class="px-3 py-2 text-left text-xs font-semibold uppercase tracking-wider text-gray-400">
+                                                    Role</th>
+                                                <th
+                                                    class="px-3 py-2 text-left text-xs font-semibold uppercase tracking-wider text-gray-400">
+                                                    Court</th>
+                                                <th
+                                                    class="px-3 py-2 text-left text-xs font-semibold uppercase tracking-wider text-gray-400">
+                                                    Device</th>
+                                                <th
+                                                    class="px-3 py-2 text-left text-xs font-semibold uppercase tracking-wider text-gray-400">
+                                                    IP</th>
+                                                <th
+                                                    class="px-3 py-2 text-left text-xs font-semibold uppercase tracking-wider text-gray-400">
+                                                    Last active</th>
                                             </tr>
                                         </thead>
                                         <tbody id="active-sessions-table-body" class="divide-y divide-gray-800">
@@ -1634,21 +1865,37 @@
                                     </table>
                                 </div>
 
-                                <button type="button" class="setup-link text-sm" data-target="session-history-panel" onclick="toggleSetupPanel(this)">
+                                <button type="button" class="setup-link text-sm" data-target="session-history-panel"
+                                    onclick="toggleSetupPanel(this)">
                                     <span class="chev">▸</span> Sign-in history</button>
                                 <div id="session-history-panel" class="hidden space-y-2">
-                                    <p class="text-sm text-gray-400">Recent logins across all roles, most recent first.</p>
+                                    <p class="text-sm text-gray-400">Recent logins across all roles, most recent first.
+                                    </p>
                                     <div class="overflow-x-auto rounded-lg border border-gray-800">
                                         <table class="min-w-full divide-y divide-gray-800 text-sm">
                                             <thead class="bg-gray-800/70">
                                                 <tr>
-                                                    <th class="px-3 py-2 text-left text-xs font-semibold uppercase tracking-wider text-gray-400">Time</th>
-                                                    <th class="px-3 py-2 text-left text-xs font-semibold uppercase tracking-wider text-gray-400">Name</th>
-                                                    <th class="px-3 py-2 text-left text-xs font-semibold uppercase tracking-wider text-gray-400">Role</th>
-                                                    <th class="px-3 py-2 text-left text-xs font-semibold uppercase tracking-wider text-gray-400">Court</th>
-                                                    <th class="px-3 py-2 text-left text-xs font-semibold uppercase tracking-wider text-gray-400">Device</th>
-                                                    <th class="px-3 py-2 text-left text-xs font-semibold uppercase tracking-wider text-gray-400">IP</th>
-                                                    <th class="px-3 py-2 text-left text-xs font-semibold uppercase tracking-wider text-gray-400">Status</th>
+                                                    <th
+                                                        class="px-3 py-2 text-left text-xs font-semibold uppercase tracking-wider text-gray-400">
+                                                        Time</th>
+                                                    <th
+                                                        class="px-3 py-2 text-left text-xs font-semibold uppercase tracking-wider text-gray-400">
+                                                        Name</th>
+                                                    <th
+                                                        class="px-3 py-2 text-left text-xs font-semibold uppercase tracking-wider text-gray-400">
+                                                        Role</th>
+                                                    <th
+                                                        class="px-3 py-2 text-left text-xs font-semibold uppercase tracking-wider text-gray-400">
+                                                        Court</th>
+                                                    <th
+                                                        class="px-3 py-2 text-left text-xs font-semibold uppercase tracking-wider text-gray-400">
+                                                        Device</th>
+                                                    <th
+                                                        class="px-3 py-2 text-left text-xs font-semibold uppercase tracking-wider text-gray-400">
+                                                        IP</th>
+                                                    <th
+                                                        class="px-3 py-2 text-left text-xs font-semibold uppercase tracking-wider text-gray-400">
+                                                        Status</th>
                                                 </tr>
                                             </thead>
                                             <tbody id="session-history-table-body" class="divide-y divide-gray-800">
@@ -1662,7 +1909,10 @@
                             </section>
 
 
-                            <div id="setup-event" class="setup-group-head scroll-mt-20"><h3>Event day</h3><p>Things you use or switch on while the tournament is running.</p></div>
+                            <div id="setup-event" class="setup-group-head scroll-mt-20">
+                                <h3>Event day</h3>
+                                <p>Things you use or switch on while the tournament is running.</p>
+                            </div>
                             <!-- Parent/coach feedback inbox (superadmin) — feedback.js, server/feedback.js -->
                             <section id="setup-feedback" class="card-dark p-4 space-y-3 scroll-mt-20">
                                 <div class="flex items-center justify-between gap-3">
@@ -1670,19 +1920,32 @@
                                         <h3 class="text-lg font-bold text-white">💬 Feedback</h3>
                                         <span class="tip">
                                             <button type="button" class="tip-btn" aria-label="About feedback">ⓘ</button>
-                                            <span class="tip-body">Compliments, complaints and suggestions sent by parents and coaches from the Info tab (no login). On by default; switch it off to hide the form from the Info tab. A new complaint pops up at the top of your screen and puts a red count on the Admin ⚙; the rest just wait here. Tap one to read it in full, then mark it resolved. Saved with the app's data; only you can see it.</span>
+                                            <span class="tip-body">Compliments, complaints and suggestions sent by
+                                                parents and coaches from the Info tab (no login). On by default; switch
+                                                it off to hide the form from the Info tab. A new complaint pops up at
+                                                the top of your screen and puts a red count on the Admin ⚙; the rest
+                                                just wait here. Tap one to read it in full, then mark it resolved. Saved
+                                                with the app's data; only you can see it.</span>
                                         </span>
                                     </div>
                                     <div class="flex flex-none items-center gap-2">
-                                        <span id="feedback-count-pill" class="rounded-full border border-white/15 px-2.5 py-1 text-[11px] font-bold text-white/60">…</span>
+                                        <span id="feedback-count-pill"
+                                            class="rounded-full border border-white/15 px-2.5 py-1 text-[11px] font-bold text-white/60">…</span>
                                         <label class="switch flex-none" title="Let parents and coaches send feedback">
-                                            <input type="checkbox" id="feedback-toggle" checked onchange="toggleFeedback(this.checked)" aria-label="Feedback form on or off">
+                                            <input type="checkbox" id="feedback-toggle" checked
+                                                onchange="toggleFeedback(this.checked)"
+                                                aria-label="Feedback form on or off">
                                             <span class="slider round"></span>
                                         </label>
                                     </div>
                                 </div>
-                                <p id="feedback-off-note" class="hidden rounded-xl border border-white/10 bg-white/[.04] px-3 py-2 text-[12px] text-white/60">Off — the feedback form is hidden from parents and coaches. Anything already sent stays below.</p>
-                                <div id="feedback-inbox" class="space-y-2.5"><p class="text-sm text-white/50">Loading…</p></div>
+                                <p id="feedback-off-note"
+                                    class="hidden rounded-xl border border-white/10 bg-white/[.04] px-3 py-2 text-[12px] text-white/60">
+                                    Off — the feedback form is hidden from parents and coaches. Anything already sent
+                                    stays below.</p>
+                                <div id="feedback-inbox" class="space-y-2.5">
+                                    <p class="text-sm text-white/50">Loading…</p>
+                                </div>
                             </section>
 
                             <!-- 3. Announcement manager -->
@@ -1708,12 +1971,18 @@
                                     <div class="flex items-center gap-2 min-w-0">
                                         <h3 class="text-lg font-bold text-white">🟢 Court Ready</h3>
                                         <span class="tip">
-                                            <button type="button" class="tip-btn" aria-label="About court ready">ⓘ</button>
-                                            <span class="tip-body">After a referee reports a game they get a "Mark ready" button to tap once both next teams are on the court. The Admin tab shows you a court board with an "All courts ready" alert and a Start round button. Lives only in the app (never the Google Sheet) and is cleared when switched off. Off by default.</span>
+                                            <button type="button" class="tip-btn"
+                                                aria-label="About court ready">ⓘ</button>
+                                            <span class="tip-body">After a referee reports a game they get a "Mark
+                                                ready" button to tap once both next teams are on the court. The Admin
+                                                tab shows you a court board with an "All courts ready" alert and a Start
+                                                round button. Lives only in the app (never the Google Sheet) and is
+                                                cleared when switched off. Off by default.</span>
                                         </span>
                                     </div>
                                     <label class="switch flex-none">
-                                        <input type="checkbox" id="court-ready-toggle" onchange="toggleCourtReady(this.checked)">
+                                        <input type="checkbox" id="court-ready-toggle"
+                                            onchange="toggleCourtReady(this.checked)">
                                         <span class="slider round"></span>
                                     </label>
                                 </div>
@@ -1725,12 +1994,18 @@
                                     <div class="flex items-center gap-2 min-w-0">
                                         <h3 class="text-lg font-bold text-white">🎟️ Team Check-In</h3>
                                         <span class="tip">
-                                            <button type="button" class="tip-btn" aria-label="About team check-in">ⓘ</button>
-                                            <span class="tip-body">Shows the check-in counter, ticks and Check in card in Roster. Off by default so registration work stays uncluttered; switch it on the morning of the event. Nothing is deleted when turned off. This switch is separate from the one in the Registrations sheet's Team Management tool.</span>
+                                            <button type="button" class="tip-btn"
+                                                aria-label="About team check-in">ⓘ</button>
+                                            <span class="tip-body">Shows the check-in counter, ticks and Check in card
+                                                in Roster. Off by default so registration work stays uncluttered; switch
+                                                it on the morning of the event. Nothing is deleted when turned off. This
+                                                switch is separate from the one in the Registrations sheet's Team
+                                                Management tool.</span>
                                         </span>
                                     </div>
                                     <label class="switch flex-none">
-                                        <input type="checkbox" id="checkin-toggle" onchange="toggleCheckin(this.checked)">
+                                        <input type="checkbox" id="checkin-toggle"
+                                            onchange="toggleCheckin(this.checked)">
                                         <span class="slider round"></span>
                                     </label>
                                 </div>
@@ -1741,7 +2016,10 @@
                                 <div class="flex items-center justify-between gap-3">
                                     <div class="min-w-0">
                                         <h3 class="text-lg font-bold text-white">⚠️ Result discrepancy alerts</h3>
-                                        <p class="text-[11px] text-white/50">When a referee's result differs from official. A changed playoff winner is pinned to the top of Admin; other differences sit under the court board. Applies to this device only — set the clock operator's to “Off”.</p>
+                                        <p class="text-[11px] text-white/50">When a referee's result differs from
+                                            official. A changed playoff winner is pinned to the top of Admin; other
+                                            differences sit under the court board. Applies to this device only — set the
+                                            clock operator's to “Off”.</p>
                                     </div>
                                     <select id="discrepancy-pref-select" onchange="setDiscrepancyPref(this.value)"
                                         class="flex-none rounded-lg border border-white/20 bg-white/[.06] px-2 py-2 text-sm text-white">
@@ -1758,8 +2036,10 @@
                                     <div class="flex items-center gap-2 min-w-0">
                                         <h3 class="text-lg font-bold text-white">🎉 Champion Celebration</h3>
                                         <span class="tip">
-                                            <button type="button" class="tip-btn" aria-label="About champion celebration">ⓘ</button>
-                                            <span class="tip-body">Show the tournament champion banner and confetti automatically when a division's playoff final is completed.</span>
+                                            <button type="button" class="tip-btn"
+                                                aria-label="About champion celebration">ⓘ</button>
+                                            <span class="tip-body">Show the tournament champion banner and confetti
+                                                automatically when a division's playoff final is completed.</span>
                                         </span>
                                     </div>
                                     <label class="switch flex-none">
@@ -1770,7 +2050,10 @@
                                 </div>
                             </section>
 
-                            <div id="setup-sync" class="setup-group-head scroll-mt-20"><h3>Sync &amp; results</h3><p>How the Google Sheet and official results flow into the app.</p></div>
+                            <div id="setup-sync" class="setup-group-head scroll-mt-20">
+                                <h3>Sync &amp; results</h3>
+                                <p>How the Google Sheet and official results flow into the app.</p>
+                            </div>
                             <!-- 2. Google Sheet Sync -->
                             <section class="card-dark p-4 space-y-3">
                                 <div class="flex items-center justify-between flex-wrap gap-2">
@@ -1792,9 +2075,11 @@
                                             🔄 Sync Now
                                         </button>
                                         <p class="text-sm text-gray-400">
-                                            Last sync: <span id="sync-last-time" class="text-gray-200 font-medium">Never</span>
+                                            Last sync: <span id="sync-last-time"
+                                                class="text-gray-200 font-medium">Never</span>
                                         </p>
-                                        <span id="auto-sync-chip" class="hidden px-2 py-0.5 rounded text-xs font-semibold bg-green-600 text-white"></span>
+                                        <span id="auto-sync-chip"
+                                            class="hidden px-2 py-0.5 rounded text-xs font-semibold bg-green-600 text-white"></span>
                                     </div>
                                     <div class="flex items-center gap-1.5">
                                         <button id="prune-divisions-button" onclick="pruneDivisions()"
@@ -1802,18 +2087,24 @@
                                             🧹 Remove Stale Divisions
                                         </button>
                                         <span class="tip tip-right">
-                                            <button type="button" class="tip-btn" aria-label="About removing stale divisions">ⓘ</button>
-                                            <span class="tip-body">Deletes any division that isn't a tab in the spreadsheet this app currently points at — use it after changing the Google Sheet ID. Click twice to confirm.</span>
+                                            <button type="button" class="tip-btn"
+                                                aria-label="About removing stale divisions">ⓘ</button>
+                                            <span class="tip-body">Deletes any division that isn't a tab in the
+                                                spreadsheet this app currently points at — use it after changing the
+                                                Google Sheet ID. Click twice to confirm.</span>
                                         </span>
                                     </div>
                                 </div>
 
                                 <div class="flex flex-wrap gap-x-5 gap-y-1 text-sm">
-                                    <button type="button" class="setup-link" data-target="sync-settings-panel" onclick="toggleSetupPanel(this)">
+                                    <button type="button" class="setup-link" data-target="sync-settings-panel"
+                                        onclick="toggleSetupPanel(this)">
                                         <span class="chev">▸</span> Sync settings</button>
-                                    <button type="button" class="setup-link" data-target="sync-config-panel" onclick="toggleSetupPanel(this)">
+                                    <button type="button" class="setup-link" data-target="sync-config-panel"
+                                        onclick="toggleSetupPanel(this)">
                                         <span class="chev">▸</span> Config</button>
-                                    <button type="button" class="setup-link" data-target="sync-history-panel" onclick="toggleSetupPanel(this)">
+                                    <button type="button" class="setup-link" data-target="sync-history-panel"
+                                        onclick="toggleSetupPanel(this)">
                                         <span class="chev">▸</span> Sync history</button>
                                 </div>
 
@@ -1830,7 +2121,9 @@
                                                 class="text-sm font-medium text-gray-300 cursor-pointer">Enable
                                                 Auto-Sync</label>
                                         </div>
-                                        <p id="auto-sync-expiry-note" class="text-xs text-gray-500">Auto-sync turns itself off after a few hours so it doesn't run indefinitely — you'll be notified beforehand.</p>
+                                        <p id="auto-sync-expiry-note" class="text-xs text-gray-500">Auto-sync turns
+                                            itself off after a few hours so it doesn't run indefinitely — you'll be
+                                            notified beforehand.</p>
 
                                         <div id="auto-sync-interval-controls" class="flex flex-wrap items-center gap-2">
                                             <span class="text-sm text-gray-400 mr-1">Sync every:</span>
@@ -1876,16 +2169,21 @@
 
                                 <!-- Config: Google Sheet ID -->
                                 <div id="sync-config-panel" class="hidden space-y-1.5 pt-3 border-t border-gray-800">
-                                    <label for="google-sheet-id-input" class="text-xs font-semibold uppercase tracking-wider text-gray-400">Google Sheet ID</label>
+                                    <label for="google-sheet-id-input"
+                                        class="text-xs font-semibold uppercase tracking-wider text-gray-400">Google
+                                        Sheet ID</label>
                                     <div class="flex flex-col sm:flex-row gap-2">
-                                        <input id="google-sheet-id-input" type="text" placeholder="Paste the ID from the sheet's URL"
+                                        <input id="google-sheet-id-input" type="text"
+                                            placeholder="Paste the ID from the sheet's URL"
                                             class="flex-1 bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-sm text-gray-200 placeholder-gray-500 focus:outline-none focus:border-gold">
                                         <button id="save-sheet-id-button" onclick="saveGoogleSheetId()"
                                             class="btn-gold px-4 py-2 shadow transition-colors disabled:opacity-50 disabled:cursor-not-allowed">
                                             Save
                                         </button>
                                     </div>
-                                    <p class="text-xs text-gray-500">The long id in the sheet's URL, between <code>/d/</code> and <code>/edit</code>. The Google Sheet is the document of record — match data is pulled from it into this app.</p>
+                                    <p class="text-xs text-gray-500">The long id in the sheet's URL, between
+                                        <code>/d/</code> and <code>/edit</code>. The Google Sheet is the document of
+                                        record — match data is pulled from it into this app.</p>
                                 </div>
 
                                 <!-- Sync history (10 at a time) -->
@@ -1894,11 +2192,21 @@
                                         <table class="min-w-full divide-y divide-gray-800 text-sm">
                                             <thead class="bg-gray-800/70">
                                                 <tr>
-                                                    <th class="px-3 py-2 text-left text-xs font-semibold uppercase tracking-wider text-gray-400">Time</th>
-                                                    <th class="px-3 py-2 text-left text-xs font-semibold uppercase tracking-wider text-gray-400">Status</th>
-                                                    <th class="px-3 py-2 text-left text-xs font-semibold uppercase tracking-wider text-gray-400">Duration</th>
-                                                    <th class="px-3 py-2 text-left text-xs font-semibold uppercase tracking-wider text-gray-400">Trigger</th>
-                                                    <th class="px-3 py-2 text-left text-xs font-semibold uppercase tracking-wider text-gray-400">Details</th>
+                                                    <th
+                                                        class="px-3 py-2 text-left text-xs font-semibold uppercase tracking-wider text-gray-400">
+                                                        Time</th>
+                                                    <th
+                                                        class="px-3 py-2 text-left text-xs font-semibold uppercase tracking-wider text-gray-400">
+                                                        Status</th>
+                                                    <th
+                                                        class="px-3 py-2 text-left text-xs font-semibold uppercase tracking-wider text-gray-400">
+                                                        Duration</th>
+                                                    <th
+                                                        class="px-3 py-2 text-left text-xs font-semibold uppercase tracking-wider text-gray-400">
+                                                        Trigger</th>
+                                                    <th
+                                                        class="px-3 py-2 text-left text-xs font-semibold uppercase tracking-wider text-gray-400">
+                                                        Details</th>
                                                 </tr>
                                             </thead>
                                             <tbody id="sync-log-table-body" class="divide-y divide-gray-800">
@@ -1910,7 +2218,8 @@
                                     </div>
                                     <div class="flex items-center justify-between text-xs text-gray-500">
                                         <span id="sync-log-count"></span>
-                                        <button id="sync-log-more" type="button" onclick="loadMoreSyncLog()" class="hidden setup-link">Load 10 more</button>
+                                        <button id="sync-log-more" type="button" onclick="loadMoreSyncLog()"
+                                            class="hidden setup-link">Load 10 more</button>
                                     </div>
                                 </div>
                             </section>
@@ -1921,8 +2230,13 @@
                                     <div class="flex items-center gap-2 min-w-0">
                                         <h3 class="text-lg font-bold text-white">✅ Auto-Update Official Results</h3>
                                         <span class="tip">
-                                            <button type="button" class="tip-btn" aria-label="About auto-update official results">ⓘ</button>
-                                            <span class="tip-body">When a game is reported, also set the official winner/players columns in the Google Sheet — but only for fields that don't already have a value. Existing official results are never overwritten; the unofficial (submitted) columns are always updated regardless.</span>
+                                            <button type="button" class="tip-btn"
+                                                aria-label="About auto-update official results">ⓘ</button>
+                                            <span class="tip-body">When a game is reported, also set the official
+                                                winner/players columns in the Google Sheet — but only for fields that
+                                                don't already have a value. Existing official results are never
+                                                overwritten; the unofficial (submitted) columns are always updated
+                                                regardless.</span>
                                         </span>
                                     </div>
                                     <label class="switch flex-none">
@@ -1933,21 +2247,35 @@
                                 </div>
                             </section>
 
-                            <div id="setup-config" class="setup-group-head scroll-mt-20"><h3>Configuration</h3><p>Set once before the event, then rarely touched.</p></div>
+                            <div id="setup-config" class="setup-group-head scroll-mt-20">
+                                <h3>Configuration</h3>
+                                <p>Set once before the event, then rarely touched.</p>
+                            </div>
                             <!-- Match entry: players-left quick-tap range -->
                             <section class="card-dark p-4">
                                 <div class="flex items-center justify-between gap-3">
                                     <div class="flex items-center gap-2 min-w-0">
                                         <h3 class="text-lg font-bold text-white">🔢 Max players left</h3>
                                         <span class="tip">
-                                            <button type="button" class="tip-btn" aria-label="About max players left">ⓘ</button>
-                                            <span class="tip-body">Referees report the winner's players left by tapping a number from 1 up to this. Match it to the most players a team can have on the court. Applies to every division on the next screen refresh.</span>
+                                            <button type="button" class="tip-btn"
+                                                aria-label="About max players left">ⓘ</button>
+                                            <span class="tip-body">Referees report the winner's players left by tapping
+                                                a number from 1 up to this. Match it to the most players a team can have
+                                                on the court. Applies to every division on the next screen
+                                                refresh.</span>
                                         </span>
                                     </div>
                                     <select id="max-players-left-select" onchange="setMaxPlayersLeft(this.value)"
                                         class="flex-none rounded-lg border border-gray-600 bg-gray-700 px-3 py-2 text-sm font-semibold text-white">
-                                        <option>4</option><option>5</option><option>6</option><option>7</option><option selected>8</option>
-                                        <option>9</option><option>10</option><option>11</option><option>12</option>
+                                        <option>4</option>
+                                        <option>5</option>
+                                        <option>6</option>
+                                        <option>7</option>
+                                        <option selected>8</option>
+                                        <option>9</option>
+                                        <option>10</option>
+                                        <option>11</option>
+                                        <option>12</option>
                                     </select>
                                 </div>
                             </section>
@@ -1958,12 +2286,18 @@
                                     <div class="flex items-center gap-2 min-w-0">
                                         <h3 class="text-lg font-bold text-white">✏️ Roster Editing</h3>
                                         <span class="tip">
-                                            <button type="button" class="tip-btn" aria-label="About roster editing">ⓘ</button>
-                                            <span class="tip-body">On: Roster shows the move, rename, remove and add-player actions plus the Paid and Sub Division edits. Off: Roster is read-only — you can still open a team and tap a Waiver tag to see who submitted it and when. The server also refuses roster edits while this is off.</span>
+                                            <button type="button" class="tip-btn"
+                                                aria-label="About roster editing">ⓘ</button>
+                                            <span class="tip-body">On: Roster shows the move, rename, remove and
+                                                add-player actions plus the Paid and Sub Division edits. Off: Roster is
+                                                read-only — you can still open a team and tap a Waiver tag to see who
+                                                submitted it and when. The server also refuses roster edits while this
+                                                is off.</span>
                                         </span>
                                     </div>
                                     <label class="switch flex-none">
-                                        <input type="checkbox" id="roster-edit-toggle" checked onchange="toggleRosterEdit(this.checked)">
+                                        <input type="checkbox" id="roster-edit-toggle" checked
+                                            onchange="toggleRosterEdit(this.checked)">
                                         <span class="slider round"></span>
                                     </label>
                                 </div>
@@ -1972,22 +2306,30 @@
                             <!-- Role passwords (shown briefly, on request) — settings.js -->
                             <section class="card-dark p-4 space-y-3">
                                 <h3 class="text-lg font-bold text-white">🔑 Role passwords</h3>
-                                <p class="text-[11px] text-white/50">Tap Show to reveal a password for a few seconds, then it hides itself. Passwords are only fetched when you ask and are never stored on this device.</p>
+                                <p class="text-[11px] text-white/50">Tap Show to reveal a password for a few seconds,
+                                    then it hides itself. Passwords are only fetched when you ask and are never stored
+                                    on this device.</p>
                                 <div id="role-passwords-body" class="grid gap-2"></div>
                             </section>
 
-                            <div id="setup-data" class="setup-group-head scroll-mt-20"><h3>Seasons &amp; data</h3><p>Season records, backups and resets.</p></div>
+                            <div id="setup-data" class="setup-group-head scroll-mt-20">
+                                <h3>Seasons &amp; data</h3>
+                                <p>Season records, backups and resets.</p>
+                            </div>
                             <!-- 8. Seasons (concessions + raffle records by year) -->
                             <section class="card-dark p-4">
                                 <h3 class="text-lg font-bold text-white">📅 Seasons</h3>
-                                <p class="text-[11px] text-white/50">Concessions and raffle records are kept by season (year). Start a new one for a new tournament; past seasons stay viewable.</p>
+                                <p class="text-[11px] text-white/50">Concessions and raffle records are kept by season
+                                    (year). Start a new one for a new tournament; past seasons stay viewable.</p>
                                 <div id="seasons-body" class="mt-3"></div>
                             </section>
 
                             <!-- 6b. Division data: view / download / clear stored match logs per division -->
                             <section class="card-dark p-4">
                                 <h3 class="text-lg font-bold text-white">🗂️ Division data</h3>
-                                <p class="text-[11px] text-white/50">Results, history and submission logs the app has stored for each division. Download a copy, or clear a division's test data (for example after replacing a sheet tab with one of the same name).</p>
+                                <p class="text-[11px] text-white/50">Results, history and submission logs the app has
+                                    stored for each division. Download a copy, or clear a division's test data (for
+                                    example after replacing a sheet tab with one of the same name).</p>
                                 <div id="division-data-body" class="mt-3"></div>
                             </section>
 
@@ -1996,15 +2338,18 @@
                                 <div class="flex items-center justify-between gap-3">
                                     <div class="min-w-0">
                                         <h3 class="text-lg font-bold text-white">🎟️ Raffle backup</h3>
-                                        <p class="text-[11px] text-white/50">Raffle sales saved in the database, and a comparison with the raffle sheet if something looks off.</p>
+                                        <p class="text-[11px] text-white/50">Raffle sales saved in the database, and a
+                                            comparison with the raffle sheet if something looks off.</p>
                                     </div>
                                     <button onclick="switchView('raffle-backup')"
-                                        class="flex-none rounded-full border border-white/20 bg-white/[.06] px-3.5 py-2.5 text-[11px] font-semibold leading-none text-white/75">Open →</button>
+                                        class="flex-none rounded-full border border-white/20 bg-white/[.06] px-3.5 py-2.5 text-[11px] font-semibold leading-none text-white/75">Open
+                                        →</button>
                                 </div>
                             </section>
 
                             <!-- 9. Danger zone: test data reset (hidden unless the server enables it) -->
-                            <section id="danger-card" class="hidden rounded-2xl border border-red-500/50 bg-red-950/30 p-4">
+                            <section id="danger-card"
+                                class="hidden rounded-2xl border border-red-500/50 bg-red-950/30 p-4">
                                 <h3 class="text-lg font-bold text-red-200">⚠️ Danger zone</h3>
                                 <div id="danger-body" class="mt-3"></div>
                             </section>
@@ -2040,7 +2385,8 @@
             <span class="tab-icon">🍕</span><span class="tab-label">STAND</span>
         </button>
         <button id="admin-entry-tab" onclick="switchView('admin-entry')" class="tab-button hidden">
-            <span class="tab-icon">🛠️<span id="discrepancy-dot" class="hidden" title="Results need review"></span></span><span class="tab-label">ADMIN</span>
+            <span class="tab-icon">🛠️<span id="discrepancy-dot" class="hidden"
+                    title="Results need review"></span></span><span class="tab-label">ADMIN</span>
         </button>
         <button id="chat-tab" onclick="switchView('chat')" class="tab-button hidden">
             <span class="tab-icon">💬<span id="chat-unread-dot" class="hidden"></span></span><span
@@ -2053,11 +2399,14 @@
         <div class="modal-sheet">
             <div class="modal-head">
                 <div class="kicker !tracking-[.16em] text-gold">Share</div>
-                <div class="mt-2 text-[17px] font-bold leading-[1.3] tracking-[-.02em] text-[#F7F7F8]">Scan or copy the link</div>
+                <div class="mt-2 text-[17px] font-bold leading-[1.3] tracking-[-.02em] text-[#F7F7F8]">Scan or copy the
+                    link</div>
             </div>
             <div class="modal-body">
-                <div id="share-qr" class="mx-auto w-[220px] h-[220px] rounded-2xl bg-white p-3 border" style="border-color:var(--line)"></div>
-                <input type="text" id="share-link-field" readonly class="field-light text-center" onfocus="this.select()">
+                <div id="share-qr" class="mx-auto w-[220px] h-[220px] rounded-2xl bg-white p-3 border"
+                    style="border-color:var(--line)"></div>
+                <input type="text" id="share-link-field" readonly class="field-light text-center"
+                    onfocus="this.select()">
                 <div class="grid grid-cols-[1fr_1.7fr] gap-2">
                     <button onclick="closeShareModal()"
                         class="rounded-[18px] border bg-[#F3F3F4] p-4 text-[13px] font-semibold leading-none text-ink"
@@ -2119,7 +2468,8 @@
                 <div id="match-info-display"
                     class="mt-2 text-[17px] font-bold leading-[1.3] tracking-[-.02em] text-[#F7F7F8]"></div>
                 <!-- Read-only official result, for context while reporting -->
-                <div class="mt-1 text-[12px] text-white/50">Official: <span id="modal-official-display" class="font-semibold text-white/70"></span></div>
+                <div class="mt-1 text-[12px] text-white/50">Official: <span id="modal-official-display"
+                        class="font-semibold text-white/70"></span></div>
             </div>
 
             <div class="modal-body">
@@ -2143,9 +2493,12 @@
                 <!-- Notes and reporter are tucked away: the name comes from login,
                      notes are rare. Either opens when needed. -->
                 <div class="flex flex-wrap items-center justify-between gap-x-3 gap-y-1 text-[12px] text-white/55">
-                    <span id="modal-reporter-line">Reporting as <span id="modal-reporter-name" class="font-semibold text-white/80"></span>
-                        · <button type="button" onclick="showModalReporterField()" class="font-semibold underline" style="color:var(--gold-l)">Change</button></span>
-                    <button type="button" id="modal-notes-toggle" onclick="showModalNotesField()" class="font-semibold underline" style="color:var(--gold-l)">+ Add a note</button>
+                    <span id="modal-reporter-line">Reporting as <span id="modal-reporter-name"
+                            class="font-semibold text-white/80"></span>
+                        · <button type="button" onclick="showModalReporterField()" class="font-semibold underline"
+                            style="color:var(--gold-l)">Change</button></span>
+                    <button type="button" id="modal-notes-toggle" onclick="showModalNotesField()"
+                        class="font-semibold underline" style="color:var(--gold-l)">+ Add a note</button>
                 </div>
 
                 <div id="modal-notes-wrap" class="hidden">
@@ -2156,21 +2509,28 @@
 
                 <div id="modal-reporter-wrap" class="hidden">
                     <div class="kicker text-white/45 mb-2.5">Reported by</div>
-                    <input type="text" id="admin-name-input" placeholder="Your name" autocomplete="name" class="field-dark">
+                    <input type="text" id="admin-name-input" placeholder="Your name" autocomplete="name"
+                        class="field-dark">
                 </div>
 
                 <p id="modal-save-message" class="hidden text-[12px] font-semibold" style="color:var(--warn)"></p>
 
                 <!-- Tournament manager only: shown by showMatchEntryModal() -->
-                <div id="modal-official-toggle-wrap" class="hidden"><label class="flex cursor-pointer items-start gap-2.5 rounded-2xl border p-3"
-                    style="border-color:rgba(224,184,99,.5);background:rgba(224,184,99,.07)">
-                    <input type="checkbox" id="modal-official-toggle" class="mt-0.5 h-4 w-4 flex-none">
-                    <span class="text-[12px] leading-[1.45] text-white/80"><span class="font-semibold" style="color:var(--gold-l)">Also submit as official result</span><br>Overwrites the official result in the sheet with the winner and players above (no winner clears it), then refreshes standings.</span>
-                </label></div>
+                <div id="modal-official-toggle-wrap" class="hidden"><label
+                        class="flex cursor-pointer items-start gap-2.5 rounded-2xl border p-3"
+                        style="border-color:rgba(224,184,99,.5);background:rgba(224,184,99,.07)">
+                        <input type="checkbox" id="modal-official-toggle" class="mt-0.5 h-4 w-4 flex-none">
+                        <span class="text-[12px] leading-[1.45] text-white/80"><span class="font-semibold"
+                                style="color:var(--gold-l)">Also submit as official result</span><br>Overwrites the
+                            official result in the sheet with the winner and players above (no winner clears it), then
+                            refreshes standings.</span>
+                    </label></div>
 
                 <div id="modal-history-wrap" class="hidden">
-                    <button type="button" id="modal-history-toggle" aria-expanded="false" aria-controls="modal-history-list"
-                        class="text-[11.5px] font-medium text-white/55 underline decoration-white/25 underline-offset-2 hover:text-white/80"><span data-caret>▸</span> Edit history</button>
+                    <button type="button" id="modal-history-toggle" aria-expanded="false"
+                        aria-controls="modal-history-list"
+                        class="text-[11.5px] font-medium text-white/55 underline decoration-white/25 underline-offset-2 hover:text-white/80"><span
+                            data-caret>▸</span> Edit history</button>
                     <div id="modal-history-list" class="mt-1.5 hidden max-h-48 overflow-y-auto"></div>
                 </div>
 
@@ -2178,7 +2538,8 @@
                     <button onclick="hideMatchEntryModal()"
                         class="rounded-[18px] border border-white/15 bg-white/[.07] p-4 text-[13px] font-semibold leading-none text-[#F1F1F2]">Cancel</button>
                     <button onclick="saveMatchResultFromModal()" id="modal-save-button"
-                        class="btn-primary !rounded-[18px] p-4 text-[14px] leading-tight disabled:opacity-40">Submit result</button>
+                        class="btn-primary !rounded-[18px] p-4 text-[14px] leading-tight disabled:opacity-40">Submit
+                        result</button>
                 </div>
             </div>
         </div>
