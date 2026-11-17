@@ -144,6 +144,24 @@ export function clearMarks({ division } = {}) {
   return snapshot();
 }
 
+/**
+ * Forgets everything the board knows about one division (or every division):
+ * board record + undo, ready marks and squeeze-ins. The board then re-derives
+ * its round from the schedule (earliest unreported round). Used by the MC's
+ * "Re-sync to schedule" and whenever division data is cleared, so a reset
+ * schedule never leaves the board stuck on a later round.
+ */
+export function resetDivision({ division = null } = {}) {
+  let removed = false;
+  const hit = (d) => !division || d === division;
+  for (const d of [...boards.keys()]) if (hit(d)) { boards.delete(d); removed = true; }
+  for (const d of [...undos.keys()]) if (hit(d)) { undos.delete(d); removed = true; }
+  for (const [key, m] of marks) if (hit(m.division)) { marks.delete(key); removed = true; }
+  for (const [key, e] of earlies) if (hit(e.division)) { earlies.delete(key); removed = true; }
+  if (removed) changed();
+  return snapshot();
+}
+
 export function clearAll() {
   if (marks.size === 0 && boards.size === 0 && earlies.size === 0) return snapshot();
   marks.clear();

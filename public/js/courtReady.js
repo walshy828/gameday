@@ -438,6 +438,36 @@ async function squeezeIn(gameKey, court, on) {
     }
 }
 
+/**
+ * Re-sync to schedule: forget the board record, ready marks and squeeze-ins for
+ * this division so the board re-derives its round from the schedule (earliest
+ * round with a game still unreported). If this tab runs the clock and it isn't
+ * running, the clock's round label follows. Scores are never touched.
+ */
+async function resyncBoard() {
+    if (busy) return;
+    const before = deriveBoard();
+    const target = before.live;
+    const msg = target
+        ? `Re-sync the court board to the schedule?\n\nThe board goes back to the ${target} round (the earliest round with a game not yet reported). Ready marks and squeeze-ins in this division are cleared. Scores are not changed.`
+        : 'Re-sync the court board to the schedule?\n\nEvery game is reported, so the board will show all rounds played. Scores are not changed.';
+    if (!confirm(msg)) return;
+    busy = true;
+    try {
+        await post('resync', {});
+        const after = deriveBoard();
+        const st = clockState();
+        if (after.B && st && !st.running) setClockRoundIfMine(after.B, after);
+        toast(after.B
+            ? `↻ Board re-synced · ${after.B} round up next${st?.running ? ' (clock still running — set its round when it stops)' : ''}`
+            : '↻ Board re-synced · all rounds played');
+    } catch (e) {
+        toast(`Couldn't re-sync the board: ${e.body?.error || e.message}`, true);
+    } finally {
+        busy = false;
+    }
+}
+
 async function roundAction(action) {
     if (busy) return;
     if (action === 'clearMarks' && !confirm('Clear every "ready" mark in this division? The board round and scores are not changed.')) return;
@@ -628,6 +658,20 @@ function lastRoundStrip(board) {
     return '';
 }
 
+/** The stored board round ran ahead of the schedule (e.g. results were cleared): offer a re-sync. */
+function syncStrip(board) {
+    const o = board.outOfSync;
+    if (!o) return '';
+    const on = o.boardRound ? `the ${esc(o.boardRound)} round` : 'all rounds played';
+    return `
+        <div class="mt-2.5 flex items-center justify-between gap-2 rounded-[14px] border px-3 py-2" style="border-color:rgba(217,80,60,.55);background:rgba(217,80,60,.12)">
+            <div class="min-w-0 text-[11px] leading-[1.4] text-white/85">
+                <span class="font-bold" style="color:#FFB4A6">Board out of sync</span> · it's on ${on}, but no scores are in since ${esc(o.scheduleRound)}.
+            </div>
+            <button type="button" data-cr-resync class="flex-none rounded-full px-3 py-2 text-[11px] font-bold" style="background:linear-gradient(135deg,var(--gold) 0%,var(--gold-d) 100%);color:#2A1B08">↻ Re-sync to ${esc(o.scheduleRound)}</button>
+        </div>`;
+}
+
 /** "⚡ Court 3 is free · start Quarterfinals P9 · Ducks vs Owls now?" */
 function squeezeStrip(board) {
     if (!board.squeeze.length) return '';
@@ -676,14 +720,16 @@ function renderBoard(panel, board) {
                 </div>
                 <div class="flex flex-none items-center gap-2">${control}</div>
             </div>
-            ${lastRoundStrip(board)}
+            ${syncStrip(board)}
+            ${board.outOfSync ? '' : lastRoundStrip(board)}
             ${squeezeStrip(board)}
             ${B && rows.length
                 ? `<div class="mt-3 grid grid-cols-2 gap-2 sm:grid-cols-4">${rows.map(r => tileHtml(r, phase, showCaption)).join('')}</div>`
                 : (B ? '<p class="mt-2 text-[12px] text-white/45">No courts in this division\'s schedule.</p>' : '')}
-            ${B && phase === 'staging' ? `<div class="mt-2.5 flex justify-end">
-                <button type="button" data-cr-clear class="text-[11px] font-semibold text-white/40 underline">Reset ready marks</button>
-            </div>` : ''}
+            <div class="mt-2.5 flex flex-wrap justify-end gap-x-4 gap-y-1">
+                ${B && phase === 'staging' ? '<button type="button" data-cr-clear class="text-[11px] font-semibold text-white/40 underline">Reset ready marks</button>' : ''}
+                ${rec ? '<button type="button" data-cr-resync class="text-[11px] font-semibold text-white/40 underline">↻ Re-sync to schedule</button>' : ''}
+            </div>
         </section>`;
 }
 
@@ -814,6 +860,7 @@ export function render() {
             else if ('crEnd' in el.dataset) endRoundFromBoard();
             else if ('crUndo' in el.dataset) roundAction('undo');
             else if ('crClear' in el.dataset) roundAction('clearMarks');
+            else if ('crResync' in el.dataset) resyncBoard();
             else if (el.dataset.crEarly) squeezeIn(el.dataset.crEarly, el.dataset.court, true);
             else if (el.dataset.crUnearly) squeezeIn(el.dataset.crUnearly, '', false);
         });

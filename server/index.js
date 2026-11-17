@@ -774,6 +774,9 @@ app.post('/api/divisionData/clear', async (req, res) => {
       return res.status(404).json({ success: false, error: 'Unknown division.' });
     }
     const deleted = await Store.clearDivisionData(division);
+    // Results are gone, so the court board's round record (in memory) would
+    // otherwise stay on a later round than the schedule now says.
+    CourtStatus.resetDivision({ division });
     console.warn(`DIVISION DATA CLEARED by superadmin (${division || 'ALL divisions'}):`, JSON.stringify(deleted));
     res.json({ success: true, deleted, divisions: await Store.getDivisionDataSummary() });
   } catch (e) {
@@ -1430,6 +1433,7 @@ app.post('/api/courtStatus/round', async (req, res) => {
       return res.json({ success: true, ...CourtStatus.setEarly({ division, gameKey, court, on: action === 'early', by }) });
     }
     if (action === 'clearMarks') return res.json({ success: true, ...CourtStatus.clearMarks({ division }) });
+    if (action === 'resync') return res.json({ success: true, ...CourtStatus.resetDivision({ division }) });
     res.status(400).json({ success: false, error: 'Unknown action.' });
   } catch (e) {
     console.error('courtStatus round error', e);

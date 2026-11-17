@@ -179,6 +179,20 @@ export function deriveBoard({ games, order: rawOrder, division, marks = [], earl
     const timesUp = phase === 'playing' && clockForRound && (!clock.running || !!clock.startAfterRoundRunning);
 
     const canUndo = !!(recValid && rec.canUndo && !advanced && now - (rec.at || 0) < ROUND_UNDO_MS);
+
+    // Out of sync: the stored board round is two or more rounds past the
+    // schedule's earliest unreported round, and not one game in between has a
+    // score — e.g. results were cleared or re-synced after the board moved on.
+    // (Ending a round before its scores come in leaves a gap of one round,
+    // which is normal and shows under "Last round" instead.)
+    let outOfSync = null;
+    if (recValid && live) {
+        const bIdx = B ? idx(B) : order.length;
+        const lIdx = idx(live);
+        if (bIdx - lIdx >= 2 && order.slice(lIdx, bIdx).every(R => !inRound(R).some(isDone))) {
+            outOfSync = { boardRound: B, scheduleRound: live };
+        }
+    }
     return { B, phase, prev, rec: recValid ? rec : null, advanced, rows, summary, missing, prevInfo, timesUp, canUndo,
-        nextAfter, markFor, earlyFor, courtFor, firstRawOf, squeeze, order };
+        nextAfter, markFor, earlyFor, courtFor, firstRawOf, squeeze, order, live, outOfSync };
 }
