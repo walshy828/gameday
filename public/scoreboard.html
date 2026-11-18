@@ -2195,7 +2195,8 @@ function cycleSubDivision() {
   // Don't leave a sub-division before every page of its standings was shown.
   const wait = stPagerMsUntilDone();
   if (wait > 0) { scheduleSubFlip(wait); return; }
-  scheduleSubFlip(SB.subCycleSecs * 1000);
+  // +350ms: the cross-fade below, so the next slot starts when its first page appears.
+  scheduleSubFlip(SB.subCycleSecs * 1000 + 350);
   const div = SB.divisions[SB.activeIndex];
   const names = subDivisionNames(div);
   if (names.length < 2) return;
@@ -2298,7 +2299,23 @@ function renderStandings(data) {
 // ================================================================
 const ST = { key: '', starts: [], page: 0, shownAt: 0, timer: null, n: 0, per: 0 };
 
-function stPageMs() { return Math.max(4, SB.stPageSecs || 10) * 1000; }
+// Time per page. Each sub-division gets ONE slot (the Sub-div setting,
+// default 20s; 20s when Manual) split evenly over its pages — 1 page: 20s,
+// 2 pages: 10s each — so every sub-division is on screen for the same time
+// and each page is shown exactly once. Floor: ~1s per team on the page (and
+// 5s), so a list with many pages slows down rather than flashing past.
+// ?pagesecs=N fixes the time per page instead.
+const ST_SECS_PER_ROW = 1;
+function stSlotMs() { return (SB.subCycleSecs > 0 ? SB.subCycleSecs : 20) * 1000; }
+function stPageMs() {
+  if (SB.stPageSecs) return Math.max(4, SB.stPageSecs) * 1000;
+  const pages = Math.max(1, ST.starts.length);
+  return Math.max(stSlotMs() / pages, (ST.per || 0) * ST_SECS_PER_ROW * 1000, 5000);
+}
+/** Sub-divisions are flipping by themselves, so the last page hands over instead of looping. */
+function stHandsOver() {
+  return SB.subCycleSecs > 0 && subDivisionNames(SB.divisions[SB.activeIndex]).length > 1;
+}
 
 function stPagerSet(state) {
   if (!state) { ST.key = ''; ST.starts = []; ST.page = 0; clearTimeout(ST.timer); return; }
@@ -2341,6 +2358,9 @@ function stPagerArm() {
   ST.timer = setTimeout(() => {
     // Hidden (bracket scene, playoffs) → start over at page 1 next time it shows.
     if (!ST.body?.isConnected || !ST.body.offsetParent) { ST.page = 0; ST.shownAt = Date.now(); stPagerArm(); return; }
+    // Last page with sub-divisions flipping: stay put — the flip takes over
+    // (looping back to page 1 first would show it twice).
+    if (ST.page === ST.starts.length - 1 && stHandsOver()) { ST.timer = null; return; }
     ST.page = (ST.page + 1) % ST.starts.length;
     ST.shownAt = Date.now();
     stPagerShow(true);
@@ -3909,7 +3929,7 @@ document.addEventListener('DOMContentLoaded', async () => {
 
   // Nobody is standing at a wall board, so sub-divisions flip by themselves
   // unless this screen was explicitly set to Manual.
-  SB.subCycleSecs = 15;
+  SB.subCycleSecs = 20;
   try {
     const saved = localStorage.getItem('sb_subcycle');
     if (saved !== null) SB.subCycleSecs = parseInt(saved) || 0;
