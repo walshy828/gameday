@@ -300,69 +300,108 @@
       color: var(--gold-l); text-transform: uppercase; white-space: nowrap;
       overflow: hidden; text-overflow: ellipsis; min-width: 0;
     }
-    #body-courts { padding: 12px; overflow: hidden; }
+    /* One grid for every court: columns = courts, rows = rounds, so a round
+       sits on the same line across all four courts. Row 1 = court names,
+       row 2 = the board's current round (taller, inside a gold band), then
+       as many later rounds as fit whole (trimLaneRows). */
+    #body-courts { padding: 12px 14px; overflow: hidden; position: relative; }
     .lanes {
-      display: grid; gap: 12px; height: 100%;
+      display: grid; position: relative;
       grid-template-columns: repeat(var(--lanes, 4), minmax(0, 1fr));
+      grid-template-rows: auto auto;
+      grid-auto-rows: auto;   /* every later cell has the same parts, so rows come out equal */
+      column-gap: 12px; row-gap: 10px;
+      align-content: start;
     }
-    .lane {
-      display: flex; flex-direction: column; gap: 10px; min-width: 0; min-height: 0;
-      padding: 12px; border-radius: 16px;
-      background: rgba(255,255,255,.03); border: 1px solid rgba(255,255,255,.08);
-      overflow: hidden;
-    }
-    .lane.unused { opacity: .38; border-style: dashed; }
-    .lane-hdr { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 6px 8px; }
-    .lane-court {
-      font-size: clamp(16px, 1.5vw, 34px); font-weight: 900; letter-spacing: .03em;
+    .lane-head {
+      grid-row: 1; text-align: center; padding: 2px 0 4px;
+      font-size: clamp(16px, 1.5vw, 34px); font-weight: 900; letter-spacing: .04em;
       color: #fff; text-transform: uppercase; white-space: nowrap;
     }
+    .lane-head.unused { color: rgba(255,255,255,.3); }
+    .lane-head .lane-head-note { display: block; font-size: clamp(9px, .6vw, 12px); letter-spacing: .14em; color: rgba(255,255,255,.35); }
+
+    /* The current round: a band behind row 2, across every court. */
+    .lane-band {
+      grid-row: 2; grid-column: 1 / -1; margin: -6px -7px;
+      border-radius: 18px; border: 2px solid rgba(224,184,99,.6);
+      background: linear-gradient(180deg, rgba(224,184,99,.10), rgba(224,184,99,.03));
+      box-shadow: 0 0 28px rgba(224,184,99,.14);
+      pointer-events: none;
+    }
+    .lane-band.playing { animation: bandGlow 2.6s ease-in-out infinite; }
+    @keyframes bandGlow { 0%,100% { box-shadow: 0 0 18px rgba(224,184,99,.10); } 50% { box-shadow: 0 0 34px rgba(224,184,99,.30); } }
+
+    .lane-cell {
+      position: relative; z-index: 1; min-width: 0; min-height: 0;
+      display: flex; flex-direction: column; align-items: center; justify-content: center;
+      text-align: center; overflow: hidden;
+      padding: 8px 12px; border-radius: 12px;
+      background: rgba(255,255,255,.045); border: 1px solid rgba(255,255,255,.08);
+    }
+    .lane-cell.active { background: rgba(20,18,16,.72); border-color: rgba(255,255,255,.14); padding: clamp(10px, 1.2vh, 18px) 14px; min-height: clamp(96px, 13vh, 190px); }
+    .lane-cell.active.playing { border-color: rgba(224,184,99,.7); }
+    .lane-cell.active.final   { border-color: rgba(46,158,99,.55); }
+    .lane-cell.active.ready   { border-color: rgba(46,158,99,.75); }
+    .lane-cell.empty  { background: transparent; border-style: dashed; border-color: rgba(255,255,255,.08); }
+    .lane-cell.unused { opacity: .45; }
+
     .lane-pill {
-      flex-shrink: 0; padding: 3px 9px; border-radius: 999px;
+      flex-shrink: 0; padding: 3px 10px; border-radius: 999px; margin-bottom: 6px;
       font-size: clamp(9px, .62vw, 13px); font-weight: 800; letter-spacing: .1em; text-transform: uppercase;
-      background: rgba(255,255,255,.08); color: rgba(255,255,255,.7);
+      background: rgba(255,255,255,.08); color: rgba(255,255,255,.7); white-space: nowrap;
     }
     .lane-pill.playing { background: var(--gold); color: #2A1B08; animation: pillPulse 2s ease-in-out infinite; }
     .lane-pill.final   { background: rgba(46,158,99,.22); color: #8FE0B4; }
     .lane-pill.ready   { background: var(--ok); color: #fff; }
     .lane-pill.waiting { background: rgba(217,80,60,.18); color: #F2A497; }
     @keyframes pillPulse { 0%,100% { opacity: 1; } 50% { opacity: .62; } }
-    @media (prefers-reduced-motion: reduce) { .lane-pill.playing { animation: none; } }
 
-    .lane-slot { border-radius: 12px; padding: 10px 12px; background: rgba(255,255,255,.04); min-width: 0; flex-shrink: 0; }
-    .lane-slot.now { padding: clamp(10px, .9vw, 18px) 12px; }
-    .lane-slot.now { background: rgba(255,255,255,.07); border: 1px solid rgba(255,255,255,.12); }
-    .lane-slot.now.playing { border-color: rgba(224,184,99,.55); background: rgba(224,184,99,.09); }
-    .lane-slot.now.final   { border-color: rgba(46,158,99,.4); }
-    .lane-slot.now.ready   { border-color: rgba(46,158,99,.6); }
-    .lane-label {
-      display: flex; justify-content: space-between; gap: 6px; margin-bottom: 4px;
-      font-size: clamp(9px, .62vw, 13px); font-weight: 800; letter-spacing: .14em;
-      text-transform: uppercase; color: rgba(255,255,255,.45);
+    .lane-when {
+      margin-bottom: 3px; white-space: nowrap; max-width: 100%; overflow: hidden; text-overflow: ellipsis;
+      font-size: clamp(9px, .58vw, 12px); font-weight: 800; letter-spacing: .1em;
+      text-transform: uppercase; color: rgba(255,255,255,.42);
     }
-    .lane-label .lane-when { color: rgba(255,255,255,.6); letter-spacing: .06em; white-space: nowrap; }
+    /* Team names stay on one line; fitLaneText shrinks long ones to fit. */
     .lane-team {
-      font-size: clamp(15px, 1.5vw, 34px); font-weight: 800; line-height: 1.15; color: #F5F5F6;
-      overflow-wrap: anywhere;
-      display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden;
+      width: 100%; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+      font-size: clamp(12px, 1.02vw, 23px); font-weight: 700; line-height: 1.2;
+      color: rgba(255,255,255,.86);
     }
-    .lane-slot:not(.now) .lane-team { font-size: clamp(12px, 1vw, 22px); font-weight: 700; color: rgba(255,255,255,.82); }
-    .lane-team.won  { color: var(--gold-l); }
-    .lane-team.lost { color: rgba(255,255,255,.35); }
-    .lane-team.tbd  { color: rgba(255,255,255,.45); font-style: italic; font-weight: 600; }
+    .lane-cell.active .lane-team { font-size: clamp(15px, 1.45vw, 33px); font-weight: 800; color: #F5F5F6; }
+    .lane-team.won  { color: var(--gold-l) !important; }
+    .lane-team.lost { color: rgba(255,255,255,.35) !important; }
+    .lane-team.tbd  { color: rgba(255,255,255,.45) !important; font-style: italic; font-weight: 600 !important; }
     .lane-vs {
-      margin: 2px 0; font-size: clamp(9px, .6vw, 12px); font-weight: 700;
-      letter-spacing: .12em; color: rgba(255,255,255,.35); text-transform: uppercase;
+      margin: 1px 0; font-size: clamp(8px, .55vw, 11px); font-weight: 700;
+      letter-spacing: .16em; color: rgba(255,255,255,.32); text-transform: uppercase; line-height: 1.2;
     }
-    .lane-note { margin-top: 6px; font-size: clamp(10px, .72vw, 15px); font-weight: 700; color: var(--gold); }
-    .lane-empty { font-size: clamp(12px, .9vw, 18px); font-weight: 600; color: rgba(255,255,255,.4); padding: 6px 2px; }
+    .lane-cell.active .lane-vs { margin: 3px 0; }
+    .lane-note { margin-top: 4px; font-size: clamp(10px, .7vw, 15px); font-weight: 700; color: var(--gold); white-space: nowrap; }
+    .lane-empty { font-size: clamp(11px, .8vw, 17px); font-weight: 600; color: rgba(255,255,255,.32); }
 
-    /* Playoffs: the lanes shrink to a strip under the bracket (Now + Next only). */
-    .phase-playoffs #body-courts { padding: 8px 12px 10px; }
-    .phase-playoffs .lane { padding: 8px 10px; gap: 6px; }
-    .phase-playoffs .lane-slot.then { display: none; }
-    .phase-playoffs .lane-team { -webkit-line-clamp: 1; }
-    .phase-playoffs .lane-court { font-size: clamp(14px, 1.1vw, 24px); }
+    /* Round change: every card rolls up one row into place; the finished
+       round rolls out of the band above it. */
+    .lane-cell.roll-in  { animation: laneRollIn .75s cubic-bezier(.2,.8,.2,1) both; }
+    .lane-cell.roll-out { animation: laneRollOut .6s ease-in both; z-index: 0; }
+    @keyframes laneRollIn  { from { transform: translateY(var(--from, 100px)); } to { transform: none; } }
+    @keyframes laneRollOut {
+      from { transform: none; opacity: 1; }
+      55%  { opacity: 0; }
+      to   { transform: translateY(calc(-.6 * var(--out, 100px))); opacity: 0; }
+    }
+    .lane-head { position: relative; z-index: 2; }
+    @media (prefers-reduced-motion: reduce) {
+      .lane-pill.playing, .lane-band.playing, .lane-cell.roll-in, .lane-cell.roll-out { animation: none; }
+    }
+
+    /* Playoffs: a strip under the bracket — the current round + the next. */
+    .phase-playoffs #body-courts { padding: 8px 12px 12px; }
+    .phase-playoffs .lane-cell.active { min-height: 0; }
+    /* The bracket keeps most of the screen; the strip shows the next round
+       only when it fits whole (trimLaneRows). */
+    .phase-playoffs #module-courts { max-height: 40vh; }
+    .phase-playoffs .lane-head { font-size: clamp(14px, 1.1vw, 24px); }
 
     /* A playoff game being played right now, highlighted in the bracket. */
     .bracket-match.on-court {
@@ -2237,12 +2276,17 @@ function gameWhen(g) {
 }
 
 const LANE_STATUS = {
-  playing: { label: 'Now playing', pill: 'In play' },
-  final:   { label: 'Final',       pill: '✓ Final' },
-  ready:   { label: 'Up now',      pill: '✓ Ready' },
-  waiting: { label: 'Up now',      pill: 'Waiting for teams' },
+  playing: 'In play',
+  final:   '✓ Final',
+  ready:   '✓ Ready',
+  waiting: 'Waiting for teams',
 };
+const LANE_MAX_ROWS = 10;      // later rounds rendered before trimming to what fits
 
+// Columns = venue courts, rows = rounds from the board's current round on, so
+// every round lines up across the courts. Row 2 (the current round) comes from
+// deriveBoard (IN PLAY / FINAL / READY / squeeze-ins); later rows are the
+// unplayed games of each later round on each court.
 function renderCourts(board) {
   const body  = document.getElementById('body-courts');
   const badge = document.getElementById('badge-courts');
@@ -2253,6 +2297,7 @@ function renderCourts(board) {
     body.innerHTML = `<div class="empty-state">${SBC() ? 'No games scheduled.' : 'Loading…'}</div>`;
     badge.textContent = '';
     head.textContent = '';
+    SB.laneKey = '';
     return;
   }
 
@@ -2273,63 +2318,164 @@ function renderCourts(board) {
   }
 
   const schedule = SB.cache[div]?.schedule || [];
-  const idx = R => board.order.indexOf(R);
-  const bIdx = B ? idx(B) : -1;
+  const order = board.order;
+  const bIdx = B ? order.indexOf(B) : -1;
+  // Later rounds that still have something to play on any court.
+  const later = bIdx < 0 ? [] : order.slice(bIdx + 1).filter(R =>
+    schedule.some(g => C.slotOf(g) === R && !C.isDone(g))).slice(0, LANE_MAX_ROWS);
+  const maxRows = SB.phase === 'playoffs' ? 1 : LANE_MAX_ROWS;
+  const laterRounds = later.slice(0, maxRows);
 
-  const lanes = rows.map(r => {
-    const hdr = pill => `
-      <div class="lane-hdr">
-        <div class="lane-court">Court ${esc(r.court)}</div>
-        ${pill || ''}
-      </div>`;
+  const cell = (r, c, cls, inner, attrs = '') =>
+    `<div class="lane-cell ${cls}" style="grid-row:${r};grid-column:${c}" ${attrs}>${inner}</div>`;
 
-    if (r.status === 'unused') {
-      return `<div class="lane unused">${hdr()}<div class="lane-empty">Not used</div></div>`;
-    }
+  const parts = [];
+  rows.forEach((row, i) => {
+    const col = i + 1;
+    const unused = row.status === 'unused';
+    parts.push(`<div class="lane-head${unused ? ' unused' : ''}" style="grid-column:${col}">Court ${esc(row.court)}${unused ? '<span class="lane-head-note">Not used</span>' : ''}</div>`);
 
-    // Still to play on this court, from the board round on (earlier rounds'
-    // missing scores aren't "next" — that's the MC's business).
-    const upcoming = schedule
-      .filter(g => g !== r.game && !C.isDone(g) && board.courtFor(g) === r.court && (bIdx < 0 || idx(C.slotOf(g)) >= bIdx))
-      .sort((a, b) => idx(C.slotOf(a)) - idx(C.slotOf(b)));
-
-    let pill = '', now = '';
-    const st = LANE_STATUS[r.status];
-    if (st && r.game) {
-      const pillCls = r.status === 'waiting' && !readyOn ? '' : r.status;
-      const pillTxt = r.status === 'waiting' && !readyOn ? 'On deck' : st.pill;
-      pill = `<span class="lane-pill ${pillCls}">${esc(pillTxt)}</span>`;
-      let note = '';
-      if (r.status === 'final') {
-        const w = (r.game.winner || '').trim();
-        note = !isReported(r.game) ? 'Result pending'
-             : w.toLowerCase() === 'tie' ? 'Tie game'
-             : '';
+    // Row 2 — the current round.
+    if (unused) {
+      parts.push(cell(2, col, 'active empty unused', ''));
+    } else if (row.game && LANE_STATUS[row.status]) {
+      const pillCls = row.status === 'waiting' && !readyOn ? '' : row.status;
+      const pillTxt = row.status === 'waiting' && !readyOn ? 'On deck' : LANE_STATUS[row.status];
+      let note = row.early ? 'Squeezed in' : '';
+      if (row.status === 'final') {
+        const w = (row.game.winner || '').trim();
+        note = !isReported(row.game) ? 'Result pending' : w.toLowerCase() === 'tie' ? 'Tie game' : '';
       }
-      const label = st.label + (r.early ? ' · squeezed in' : '');
-      now = `
-        <div class="lane-slot now ${r.status}">
-          <div class="lane-label"><span>${esc(label)}</span><span class="lane-when">${esc(gameWhen(r.game))}</span></div>
-          ${matchupHTML(r.game)}
-          ${note ? `<div class="lane-note">${esc(note)}</div>` : ''}
-        </div>`;
-    } else if (r.status === 'bye') {
-      pill = '<span class="lane-pill">Free</span>';
-      now = '<div class="lane-empty">No game this round</div>';
-    } else if (!upcoming.length) {
-      now = '<div class="lane-empty">Done for the day</div>';
+      const when = isPlayoff(row.game) ? gameWhen(row.game) : '';
+      parts.push(cell(2, col, `active ${row.status}`, `
+        <span class="lane-pill ${pillCls}">${esc(pillTxt)}</span>
+        ${when ? `<div class="lane-when">${esc(when)}</div>` : ''}
+        ${matchupHTML(row.game)}
+        ${note ? `<div class="lane-note">${esc(note)}</div>` : ''}`, `data-key="${esc(C.gameKeyOf(row.game))}"`));
+    } else {
+      const msg = row.status === 'bye' ? 'No game this round' : B ? '' : 'Done for the day';
+      parts.push(cell(2, col, 'active empty', msg ? `<div class="lane-empty">${esc(msg)}</div>` : ''));
     }
 
-    const later = upcoming.slice(0, 3).map((g, i) => `
-      <div class="lane-slot ${i === 0 ? 'next' : 'then'}">
-        <div class="lane-label"><span>${['Next', 'Then', 'Later'][i]}</span><span class="lane-when">${esc(gameWhen(g))}</span></div>
-        ${matchupHTML(g)}
-      </div>`).join('');
+    // Later rows — one per round, aligned across every court.
+    laterRounds.forEach((R, k) => {
+      const r = k + 3;
+      if (unused) { parts.push(cell(r, col, 'empty unused', '')); return; }
+      const g = schedule.find(x => C.slotOf(x) === R && board.courtFor(x) === row.court && !C.isDone(x) && x !== row.game);
+      parts.push(g
+        ? cell(r, col, '', `<div class="lane-when">${esc(gameWhen(g))}</div>${matchupHTML(g)}`, `data-key="${esc(C.gameKeyOf(g))}"`)
+        : cell(r, col, 'empty', ''));
+    });
+  });
 
-    return `<div class="lane">${hdr(pill)}${now}${later}</div>`;
-  }).join('');
+  const band = B ? `<div class="lane-band ${phase === 'playing' ? 'playing' : ''}"></div>` : '';
 
-  body.innerHTML = `<div class="lanes" style="--lanes:${rows.length || 1}">${lanes}</div>`;
+  // Remember where each card was, so a round change can roll them up.
+  const prevKey = SB.laneKey;
+  const prevTops = SB.laneTops || new Map();
+  const prevActive = [...body.querySelectorAll('.lane-cell.active')].map(el => el.outerHTML);
+  const laneKey = `${div}|${B || ''}`;
+  // A refresh landing mid-roll (the court-status nudge usually follows the
+  // result that moved the board on) waits for the roll to finish.
+  if (laneKey === prevKey && Date.now() < (SB.rollUntil || 0)) {
+    clearTimeout(SB.rollRerender);
+    SB.rollRerender = setTimeout(() => renderCourts(boardFor(div)), SB.rollUntil - Date.now() + 30);
+    return;
+  }
+  const rolled =!!prevKey && prevKey !== laneKey && prevKey.startsWith(`${div}|`)
+    && bIdx > 0 && order.indexOf(prevKey.slice(div.length + 1)) === bIdx - 1;
+  SB.laneKey = laneKey;
+
+  body.innerHTML = `<div class="lanes" style="--lanes:${rows.length || 1}">${band}${parts.join('')}</div>`;
+  const grid = body.firstElementChild;
+  trimLaneRows(body, grid);
+  fitLaneText(grid);
+
+  // Row tops in this render (for the next roll).
+  const tops = new Map();
+  grid.querySelectorAll('.lane-cell[data-key]').forEach(el => tops.set(el.dataset.key, el.offsetTop));
+  SB.laneTops = tops;
+
+  if (rolled && !window.matchMedia('(prefers-reduced-motion: reduce)').matches) {
+    SB.rollUntil = Date.now() + 850;
+    rollLanes(grid, prevTops, prevActive);
+  }
+}
+
+// Keep only whole rounds: drop any later row that doesn't fit the module.
+// Only meaningful when the module has a fixed height (the wall layouts).
+function trimLaneRows(body, grid) {
+  const wall = window.innerWidth >= 1200 && !document.getElementById('module-courts')?.classList.contains('expanded');
+  const limit = body.clientHeight - parseFloat(getComputedStyle(body).paddingBottom || 0);
+  const rowOf = el => parseInt(el.style.gridRowStart || el.style.gridRow, 10);
+  const cells = [...grid.querySelectorAll('.lane-cell')];
+  // Measure everything first (removing a row would pull the next one up into
+  // the gap), then cut every row after the last one that fits whole.
+  let lastFit = 2;
+  if (wall) {
+    const bottoms = new Map();
+    cells.forEach(el => {
+      const r = rowOf(el);
+      bottoms.set(r, Math.max(bottoms.get(r) || 0, el.offsetTop + el.offsetHeight));
+    });
+    for (const r of [...bottoms.keys()].sort((a, b) => a - b)) {
+      if (r < 3) continue;
+      if (bottoms.get(r) > limit) break;
+      lastFit = r;
+    }
+  } else {
+    lastFit = 6;
+  }
+  cells.forEach(el => { if (rowOf(el) > lastFit) el.remove(); });
+}
+
+// Shrink a team name until it fits on its one line (down to 62% of the
+// design size; past that it ellipsizes).
+function fitLaneText(grid) {
+  grid.querySelectorAll('.lane-team').forEach(el => {
+    el.style.fontSize = '';
+    const base = parseFloat(getComputedStyle(el).fontSize);
+    let size = base;
+    while (el.scrollWidth > el.clientWidth + 1 && size > base * 0.62) {
+      size -= 1;
+      el.style.fontSize = `${size}px`;
+    }
+  });
+}
+
+// The board moved on one round: each card slides up from where it was (its
+// previous row) into its new row, and the finished round slides out of the band.
+function rollLanes(grid, prevTops, prevActive) {
+  const cells = [...grid.querySelectorAll('.lane-cell')];
+  const rowTop = new Map();
+  cells.forEach(el => {
+    const r = parseInt(el.style.gridRowStart || el.style.gridRow, 10);
+    if (!rowTop.has(r)) rowTop.set(r, el.offsetTop);
+  });
+  const rowsSorted = [...rowTop.keys()].sort((a, b) => a - b);
+  const pitch = rowsSorted.length > 2 ? rowTop.get(rowsSorted[2]) - rowTop.get(rowsSorted[1]) : 120;
+  cells.forEach(el => {
+    const r = parseInt(el.style.gridRowStart || el.style.gridRow, 10);
+    // Where it was: its old position if we know it, else one row further down.
+    const known = el.dataset.key && prevTops.has(el.dataset.key) ? prevTops.get(el.dataset.key) : null;
+    const below = rowTop.has(r + 1) ? rowTop.get(r + 1) : el.offsetTop + pitch;
+    const from = Math.max(0, (known ?? below) - el.offsetTop);
+    if (!from) return;
+    el.style.setProperty('--from', `${from}px`);
+    el.classList.add('roll-in');
+    el.addEventListener('animationend', () => el.classList.remove('roll-in'), { once: true });
+  });
+  // The round that just finished, rolling up and out of the band.
+  const tmp = document.createElement('div');
+  tmp.innerHTML = prevActive.join('');
+  [...tmp.children].forEach(old => {
+    old.classList.remove('roll-in');
+    old.classList.add('roll-out');
+    old.style.setProperty('--out', `${pitch}px`);
+    old.removeAttribute('data-key');
+    grid.appendChild(old);
+    old.addEventListener('animationend', () => old.remove(), { once: true });
+  });
 }
 
 // ================================================================
