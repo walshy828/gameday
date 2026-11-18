@@ -961,6 +961,9 @@ function updateGateAdminUI(loggedIn) {
     const showPanel = !!(loggedIn && App.state.isSuperAdmin);
     if (adminPanel) adminPanel.classList.toggle('hidden', !showPanel);
     if (showPanel) loadGateSheetLink();
+    const displayPanel = document.getElementById('gate-display-panel');
+    if (displayPanel) displayPanel.classList.toggle('hidden',
+        !(loggedIn && !App.state.isSuperAdmin && (App.state.isRaffle || App.state.isConcessions)));
     if (who) {
         who.classList.toggle('hidden', !loggedIn);
         who.textContent = loggedIn ? `Signed in as ${name} · ${role}` : '';
