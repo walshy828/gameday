@@ -238,15 +238,138 @@
       align-items: start;
     }
 
+    /* Wall layouts (≥1200px): the board fills the screen exactly — no page
+       scroll on an unmanned TV — and the modules shown depend on the
+       division's phase (class on #module-grid, set by applyPhaseLayout):
+         phase-pool      courts | standings
+         phase-preview   courts | standings ⇄ bracket (alternating)
+         phase-playoffs  bracket over a slim courts strip
+         phase-done      bracket only (with the champion) */
     @media (min-width: 1200px) {
-      .module-grid {
-        grid-template-columns: 360px 360px 1fr;
-        align-items: stretch;
+      .sb-main {
+        height: 100vh;
+        display: flex; flex-direction: column;
+        padding-bottom: 16px;
       }
-      #module-next      { grid-column: 1; grid-row: 1; }
-      #module-standings { grid-column: 2; grid-row: 1; align-self: start; }
-      #module-bracket   { grid-column: 3; grid-row: 1; }
+      .module-grid {
+        flex: 1; min-height: 0;
+        align-items: stretch;
+        grid-template-columns: minmax(0, 1.75fr) minmax(0, 1fr);
+        grid-template-rows: minmax(0, 1fr);
+      }
+      .module-grid > .module-card { display: flex; flex-direction: column; min-height: 0; }
+      .module-grid > .module-card > .module-body { flex: 1; min-height: 0; max-height: none; }
+
+      #module-courts    { grid-column: 1; grid-row: 1; }
+      #module-standings { grid-column: 2; grid-row: 1; }
+      #module-bracket   { grid-column: 2; grid-row: 1; }
+
+      .phase-pool #module-bracket { display: none; }
+      .phase-preview.scene-standings #module-bracket { display: none; }
+      .phase-preview.scene-bracket   #module-standings { display: none; }
+
+      .phase-playoffs, .phase-done {
+        grid-template-columns: minmax(0, 1fr);
+        grid-template-rows: minmax(0, 1fr) auto;
+      }
+      .phase-playoffs #module-standings, .phase-done #module-standings,
+      .phase-done #module-courts { display: none; }
+      .phase-playoffs #module-bracket, .phase-done #module-bracket { grid-column: 1; grid-row: 1; }
+      .phase-playoffs #module-courts  { grid-column: 1; grid-row: 2; }
     }
+    .phase-preview #module-bracket, .phase-preview #module-standings { animation: sceneIn .5s ease-out; }
+    @keyframes sceneIn { from { opacity: 0; } to { opacity: 1; } }
+
+    /* Phase chip in the header */
+    .sb-phase {
+      flex-shrink: 0;
+      padding: 5px 12px; border-radius: 999px;
+      font-size: 11px; font-weight: 800; letter-spacing: .12em; text-transform: uppercase;
+      border: 1px solid rgba(255,255,255,.16); color: rgba(255,255,255,.75);
+      background: rgba(255,255,255,.05);
+    }
+    .sb-phase:empty { display: none; }
+    .sb-phase.preview  { border-color: rgba(224,184,99,.4); color: var(--gold-l); }
+    .sb-phase.playoffs { border-color: transparent; color: #2A1B08;
+      background: linear-gradient(135deg, var(--gold) 0%, var(--gold-d) 100%); }
+    .sb-phase.done     { border-color: rgba(46,158,99,.5); color: #8FE0B4; }
+
+    /* ── Court lanes: one column per venue court, Now / Next / Then ── */
+    .courts-round {
+      font-size: clamp(11px, .8vw, 16px); font-weight: 700; letter-spacing: .06em;
+      color: var(--gold-l); text-transform: uppercase; white-space: nowrap;
+      overflow: hidden; text-overflow: ellipsis; min-width: 0;
+    }
+    #body-courts { padding: 12px; overflow: hidden; }
+    .lanes {
+      display: grid; gap: 12px; height: 100%;
+      grid-template-columns: repeat(var(--lanes, 4), minmax(0, 1fr));
+    }
+    .lane {
+      display: flex; flex-direction: column; gap: 10px; min-width: 0; min-height: 0;
+      padding: 12px; border-radius: 16px;
+      background: rgba(255,255,255,.03); border: 1px solid rgba(255,255,255,.08);
+      overflow: hidden;
+    }
+    .lane.unused { opacity: .38; border-style: dashed; }
+    .lane-hdr { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 6px 8px; }
+    .lane-court {
+      font-size: clamp(16px, 1.5vw, 34px); font-weight: 900; letter-spacing: .03em;
+      color: #fff; text-transform: uppercase; white-space: nowrap;
+    }
+    .lane-pill {
+      flex-shrink: 0; padding: 3px 9px; border-radius: 999px;
+      font-size: clamp(9px, .62vw, 13px); font-weight: 800; letter-spacing: .1em; text-transform: uppercase;
+      background: rgba(255,255,255,.08); color: rgba(255,255,255,.7);
+    }
+    .lane-pill.playing { background: var(--gold); color: #2A1B08; animation: pillPulse 2s ease-in-out infinite; }
+    .lane-pill.final   { background: rgba(46,158,99,.22); color: #8FE0B4; }
+    .lane-pill.ready   { background: var(--ok); color: #fff; }
+    .lane-pill.waiting { background: rgba(217,80,60,.18); color: #F2A497; }
+    @keyframes pillPulse { 0%,100% { opacity: 1; } 50% { opacity: .62; } }
+    @media (prefers-reduced-motion: reduce) { .lane-pill.playing { animation: none; } }
+
+    .lane-slot { border-radius: 12px; padding: 10px 12px; background: rgba(255,255,255,.04); min-width: 0; flex-shrink: 0; }
+    .lane-slot.now { padding: clamp(10px, .9vw, 18px) 12px; }
+    .lane-slot.now { background: rgba(255,255,255,.07); border: 1px solid rgba(255,255,255,.12); }
+    .lane-slot.now.playing { border-color: rgba(224,184,99,.55); background: rgba(224,184,99,.09); }
+    .lane-slot.now.final   { border-color: rgba(46,158,99,.4); }
+    .lane-slot.now.ready   { border-color: rgba(46,158,99,.6); }
+    .lane-label {
+      display: flex; justify-content: space-between; gap: 6px; margin-bottom: 4px;
+      font-size: clamp(9px, .62vw, 13px); font-weight: 800; letter-spacing: .14em;
+      text-transform: uppercase; color: rgba(255,255,255,.45);
+    }
+    .lane-label .lane-when { color: rgba(255,255,255,.6); letter-spacing: .06em; white-space: nowrap; }
+    .lane-team {
+      font-size: clamp(15px, 1.5vw, 34px); font-weight: 800; line-height: 1.15; color: #F5F5F6;
+      overflow-wrap: anywhere;
+      display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden;
+    }
+    .lane-slot:not(.now) .lane-team { font-size: clamp(12px, 1vw, 22px); font-weight: 700; color: rgba(255,255,255,.82); }
+    .lane-team.won  { color: var(--gold-l); }
+    .lane-team.lost { color: rgba(255,255,255,.35); }
+    .lane-team.tbd  { color: rgba(255,255,255,.45); font-style: italic; font-weight: 600; }
+    .lane-vs {
+      margin: 2px 0; font-size: clamp(9px, .6vw, 12px); font-weight: 700;
+      letter-spacing: .12em; color: rgba(255,255,255,.35); text-transform: uppercase;
+    }
+    .lane-note { margin-top: 6px; font-size: clamp(10px, .72vw, 15px); font-weight: 700; color: var(--gold); }
+    .lane-empty { font-size: clamp(12px, .9vw, 18px); font-weight: 600; color: rgba(255,255,255,.4); padding: 6px 2px; }
+
+    /* Playoffs: the lanes shrink to a strip under the bracket (Now + Next only). */
+    .phase-playoffs #body-courts { padding: 8px 12px 10px; }
+    .phase-playoffs .lane { padding: 8px 10px; gap: 6px; }
+    .phase-playoffs .lane-slot.then { display: none; }
+    .phase-playoffs .lane-team { -webkit-line-clamp: 1; }
+    .phase-playoffs .lane-court { font-size: clamp(14px, 1.1vw, 24px); }
+
+    /* A playoff game being played right now, highlighted in the bracket. */
+    .bracket-match.on-court {
+      border-color: var(--gold); background: rgba(224,184,99,.12);
+      box-shadow: 0 0 0 2px rgba(224,184,99,.25), 0 0 18px rgba(224,184,99,.25);
+    }
+    .bracket-match-tag.on-court { background: var(--gold) !important; color: #2A1B08 !important; }
 
     /* Announcement banner (fades through announcements) */
     .ann-banner {
@@ -452,9 +575,15 @@
     #module-standings .module-body {
       max-height: 800px;
     }
-
-    #module-next .module-body {
-      max-height: 800px;
+    /* Wall: standings readable from across the gym. */
+    @media (min-width: 1200px) {
+      #module-standings .module-body { max-height: none; overflow: hidden; }
+      #module-standings .st-header-row { font-size: clamp(9px, .6vw, 13px); }
+      #module-standings .st-row { padding: clamp(7px, .55vw, 12px) 8px; }
+      #module-standings .rank-chip { width: clamp(26px, 1.7vw, 40px); height: clamp(26px, 1.7vw, 40px); font-size: clamp(10px, .8vw, 17px); }
+      #module-standings .st-team { font-size: clamp(13px, 1.15vw, 26px); font-weight: 700; }
+      #module-standings .st-rec  { width: clamp(50px, 4vw, 90px); font-size: clamp(11px, .85vw, 19px); }
+      #module-standings .st-pts  { width: clamp(38px, 3vw, 70px); font-size: clamp(17px, 1.35vw, 30px); }
     }
 
     /* Bracket module stretches nicely */
@@ -1259,6 +1388,9 @@
   <!-- Division switcher — populated by JS -->
   <div class="sb-div-switcher" id="div-switcher"></div>
 
+  <!-- Tournament phase for the division on screen (drives the layout) -->
+  <div class="sb-phase" id="sb-phase"></div>
+
   <div class="sb-spacer"></div>
 
   <!-- Subdivision auto-cycle interval (standings + bracket) -->
@@ -1268,6 +1400,7 @@
       <option value="0">Manual</option>
       <option value="5">5 s</option>
       <option value="10">10 s</option>
+      <option value="15">15 s</option>
       <option value="20">20 s</option>
       <option value="30">30 s</option>
       <option value="45">45 s</option>
@@ -1322,7 +1455,7 @@
     <span class="ann-banner-count" id="ann-banner-count"></span>
   </div>
 
-  <div class="module-grid" id="module-grid">
+  <div class="module-grid phase-pool" id="module-grid">
 
     <!-- STANDINGS -->
     <div class="module-card" id="module-standings">
@@ -1341,18 +1474,19 @@
       </div>
     </div>
 
-    <!-- NEXT UP -->
-    <div class="module-card" id="module-next">
+    <!-- COURTS: one lane per venue court — Now / Next / Then -->
+    <div class="module-card" id="module-courts">
       <div class="module-header">
-        <span class="mod-icon">⏭️</span>
-        <span class="mod-title">Next Up</span>
-        <span class="mod-badge" id="badge-next"
+        <span class="mod-icon">🏟️</span>
+        <span class="mod-title" style="flex:0 0 auto">Courts</span>
+        <span class="courts-round" id="courts-round" style="flex:1"></span>
+        <span class="mod-badge" id="badge-courts"
               style="background:rgba(224,184,99,.15);color:var(--gold)"></span>
         <div class="mod-actions">
-          <button class="mod-btn expand-btn" onclick="toggleExpand('module-next')" title="Expand popup">⛶</button>
+          <button class="mod-btn expand-btn" onclick="toggleExpand('module-courts')" title="Expand popup">⛶</button>
         </div>
       </div>
-      <div class="module-body" id="body-next">
+      <div class="module-body" id="body-courts">
         <div class="empty-state">Loading…</div>
       </div>
     </div>
@@ -1429,19 +1563,28 @@ const SB = {
   },
   serverOffset: 0,
   timerIntervalId:   null,
+  // Court board (shared derivation with the MC board / My team card)
+  courtPub:          null,  // { division, enabled, board, marks, earlies } from /api/courtStatus/public
+  courtPollTimer:    null,
+  playingKeys:       new Map(), // gameKey → court, for games in play right now (bracket highlight)
+  // Phase-driven layout
+  phase:             'pool',
+  forcePhase:        null,  // ?phase=pool|preview|playoffs|done
+  previewRounds:     2,     // ?preview=N — start showing the bracket N pool rounds before playoffs
+  sceneSecs:         20,    // ?scene=N — standings ⇄ bracket swap during the preview phase
+  scene:             'standings',
+  sceneTimer:        null,
+  resumeBound:       false,
 };
 
-const MODULES = ['standings', 'next', 'bracket'];
-const MODULE_LABELS = {
-  standings: '📊 Standings',
-  next:      '⏭️ Next Up',
-  bracket:   '🏆 Playoff Bracket',
-};
-const DEFAULT_MODULE_STATES = {
-  standings: 'visible',
-  next:      'visible',
-  bracket:   'visible',
-};
+// Shared court-board helpers (public/js/courtBoard.js), loaded by the module
+// script at the bottom of the page. Module scripts run before DOMContentLoaded,
+// so they're in place by launch(); every caller still tolerates their absence.
+const SBC = () => window.SBCourt || null;
+window.addEventListener('sbcourt-ready', () => {
+  const div = SB.divisions[SB.activeIndex];
+  if (div) renderAll(div, false);
+});
 
 // ================================================================
 // CLOCK
@@ -1630,6 +1773,20 @@ function switchDiv(index, animate = true) {
   renderAll(SB.divisions[index], animate);
   resetRotateCountdown();
   applyActiveTimer();
+  followActiveDivision();
+}
+
+// The server keeps a socket in ONE division room (joinDivision leaves the
+// others), so a two-division board follows the one on screen and refreshes
+// it on every switch; the other catches up via the 30s resync.
+function followActiveDivision() {
+  const div = SB.divisions[SB.activeIndex];
+  if (!div) return;
+  if (window.__DATA_BACKEND__ === 'local') {
+    SB.socket?.emit('joinDivision', div);
+    fetchAndCache(div).catch(console.error);
+  }
+  fetchCourtStatus(div);
 }
 
 // ================================================================
@@ -1711,26 +1868,105 @@ function isPlayoff(g) {
   return /^P\s*\d/i.test((g.match || '').trim()) || /^P\d/i.test((g.roundTime || '').trim());
 }
 
-function getLiveRound(schedule) {
-  const nonPlayoff = schedule.filter(g => !isPlayoff(g) && g.roundTime);
-  const rts = [...new Set(nonPlayoff.map(g => g.roundTime))];
-  return rts.find(rt => nonPlayoff.some(g => g.roundTime === rt && !isReported(g))) || null;
+// Rounds in chronological order (same rule as the main app's getRoundOrder:
+// the time anywhere in the label, so "Quarterfinals · 12:25 PM" sorts after
+// "11:45 AM"; labels without a time go last).
+function roundOrder(schedule) {
+  const parse = SBC()?.parseRoundTime;
+  const labels = [...new Set(schedule.map(g => g.roundTime || 'TBD'))];
+  if (!parse) return labels.sort((a, b) => (parseRoundMinutes(a) ?? 1e9) - (parseRoundMinutes(b) ?? 1e9));
+  return labels.sort((a, b) => {
+    const A = parse(a), B = parse(b);
+    if (A.isTime === B.isTime) return A.sortValue.localeCompare(B.sortValue);
+    return A.isTime ? -1 : 1;
+  });
 }
 
-// Live round's time label (the schedule's round column) under the match
-// clock; blank once only playoffs (or nothing) remain.
-function renderMatchRound(schedule) {
-  const el = document.getElementById('match-round');
-  if (!el) return;
-  el.textContent = getLiveRound(schedule) || '';
+// The court board for a division — the exact derivation the MC board and the
+// "My team" card use, so the wall never disagrees with them.
+function boardFor(divName) {
+  const C = SBC();
+  const schedule = SB.cache[divName]?.schedule || [];
+  if (!C || !schedule.length) return null;
+  const pub = SB.courtPub && SB.courtPub.division === divName && SB.courtPub.enabled ? SB.courtPub : null;
+  const clock = divName === SB.divisions[SB.activeIndex] ? SB.timerState : null;
+  return C.deriveBoard({
+    games: schedule,
+    order: roundOrder(schedule),
+    division: divName,
+    marks: pub?.marks || [],
+    earlies: pub?.earlies || [],
+    rec: pub?.board || null,
+    clock,
+    venueCourts: C.VENUE_COURTS,
+  });
 }
 
-function getNextRound(schedule, liveRound) {
-  if (!liveRound) return null;
-  const nonPlayoff = schedule.filter(g => !isPlayoff(g) && g.roundTime);
-  const rts = [...new Set(nonPlayoff.map(g => g.roundTime))];
-  const idx = rts.indexOf(liveRound);
-  return idx >= 0 && idx < rts.length - 1 ? rts[idx + 1] : null;
+// "Quarterfinals · 12:25 PM" → "Quarterfinals"; "9:00 AM" → "".
+function roundName(rt) {
+  return cleanRoundLabel(rt).replace(/\s*[·•|\-–—]?\s*\d{1,2}:\d{2}\s*(AM|PM)?\s*/i, ' ').replace(/\s*[·•|\-–—]\s*$/, '').trim();
+}
+// A board round (a start time) as a label: "10:15 AM" or "Quarterfinals · 12:25 PM".
+function boardRoundLabel(board, B) {
+  if (!B) return '';
+  const name = roundName(board.firstRawOf(B));
+  return name && name !== B ? `${name} · ${B}` : B;
+}
+
+// ================================================================
+// PHASE — what the board should focus on for the division on screen
+//   pool      pool play: courts + standings
+//   preview   the last few pool rounds: courts + standings ⇄ bracket
+//   playoffs  bracket full width + courts strip
+//   done      every playoff game official: final bracket + champion
+// ================================================================
+function divisionPhase(schedule) {
+  const done = SBC()?.isDone || isReported;
+  const pool = schedule.filter(g => !isPlayoff(g));
+  const po   = schedule.filter(isPlayoff);
+  const slot = SBC()?.slotKey || (rt => rt);
+  const poolRoundsLeft = new Set(pool.filter(g => !done(g)).map(g => slot(g.roundTime || 'TBD'))).size;
+  let phase;
+  if (!po.length) phase = 'pool';
+  else if (po.every(isReported)) phase = 'done';
+  else if (poolRoundsLeft === 0 || po.some(done)) phase = 'playoffs';
+  else if (poolRoundsLeft <= SB.previewRounds) phase = 'preview';
+  else phase = 'pool';
+  if (SB.forcePhase && (SB.forcePhase !== 'preview' || po.length)) phase = SB.forcePhase;
+  return { phase, poolRoundsLeft, hasPlayoffs: po.length > 0 };
+}
+
+function applyPhaseLayout(info) {
+  const grid = document.getElementById('module-grid');
+  const changed = SB.phase !== info.phase;
+  SB.phase = info.phase;
+  ['pool', 'preview', 'playoffs', 'done'].forEach(p => grid.classList.toggle(`phase-${p}`, p === info.phase));
+  grid.classList.toggle('scene-standings', SB.scene === 'standings');
+  grid.classList.toggle('scene-bracket', SB.scene === 'bracket');
+
+  const chip = document.getElementById('sb-phase');
+  chip.className = `sb-phase ${info.phase}`;
+  const left = info.poolRoundsLeft;
+  chip.textContent =
+      info.phase === 'done'     ? 'Final results'
+    : info.phase === 'playoffs' ? 'Playoffs'
+    : info.phase === 'preview'  ? `Playoffs in ${left} round${left === 1 ? '' : 's'}`
+    : left > 0                  ? `Pool play · ${left} round${left === 1 ? '' : 's'} left`
+    : 'Pool play';
+  if (changed) requestAnimationFrame(fitBracket);
+}
+
+// Preview phase: swap the right-hand column between standings and the bracket.
+function startSceneCycle() {
+  if (SB.sceneTimer) clearInterval(SB.sceneTimer);
+  SB.sceneTimer = setInterval(() => {
+    if (SB.phase !== 'preview') return;
+    SB.scene = SB.scene === 'standings' ? 'bracket' : 'standings';
+    const grid = document.getElementById('module-grid');
+    grid.classList.toggle('scene-standings', SB.scene === 'standings');
+    grid.classList.toggle('scene-bracket', SB.scene === 'bracket');
+    if (SB.scene === 'bracket') requestAnimationFrame(fitBracket);
+  }, Math.max(5, SB.sceneSecs) * 1000);
 }
 
 // ================================================================
@@ -1758,10 +1994,19 @@ function renderAll(divName, animate = false) {
     }, { once: true });
   }
 
-  renderMatchRound(schedule);
+  const board = boardFor(divName);
+  SB.playingKeys = new Map();
+  if (board) board.rows.forEach(r => {
+    if (r.status === 'playing' && r.game) SB.playingKeys.set(SBC().gameKeyOf(r.game), r.court);
+  });
+
+  applyPhaseLayout(divisionPhase(schedule));
+  // Under the match clock: the round the board is on.
+  document.getElementById('match-round').textContent = board ? boardRoundLabel(board, board.B) : '';
+
   renderSubdivBars(divName);
   renderStandings(standings);
-  renderNextUp(schedule);
+  renderCourts(board);
   renderBracket(schedule);
   renderAnnouncements();
 }
@@ -1908,103 +2153,136 @@ function renderStandings(data) {
 }
 
 // ================================================================
-// NEXT UP
+// COURTS — one lane per venue court: what's on it now, then the next two
+// games scheduled there. Built from the shared court board (boardFor), so
+// IN PLAY / FINAL / READY match the MC board exactly, squeeze-ins included.
 // ================================================================
-function renderNextUp(schedule) {
-  const body  = document.getElementById('body-next');
-  const badge = document.getElementById('badge-next');
+function teamText(name) {
+  if (isByeSlot(name)) return { text: 'Bye', tbd: true };
+  const ref = placeholderRef(name);
+  if (ref !== null) return { text: `Winner of P${ref}`, tbd: true };
+  if (isBlankSlot(name)) return { text: 'TBD', tbd: true };
+  if (SBC()?.isPlaceholderTeam(name)) return { text: name.trim(), tbd: true };
+  return { text: teamLabel(name), tbd: false };
+}
+
+const sameTeam = (a, b) => normTeam(teamLabel(a)) === normTeam(teamLabel(b));
+
+function matchupHTML(g) {
+  const official = isReported(g) ? (g.winner || '').trim() : '';
+  const decided = official && official.toLowerCase() !== 'tie';
+  const row = raw => {
+    const t = teamText(raw);
+    let cls = 'lane-team';
+    if (t.tbd) cls += ' tbd';
+    else if (decided) cls += sameTeam(official, raw) ? ' won' : ' lost';
+    return `<div class="${cls}">${esc(t.text)}</div>`;
+  };
+  return `${row(g.team1)}<div class="lane-vs">vs</div>${row(g.team2)}`;
+}
+
+// "Quarterfinals · 12:25 PM" / "10:15 AM", plus the match id for playoff games.
+function gameWhen(g) {
+  const slot = SBC().slotOf(g);
+  const name = roundName(g.roundTime);
+  const num  = isPlayoff(g) ? matchNum(g) : null;
+  return [num !== null ? `P${num}` : '', name, slot].filter(Boolean).join(' · ');
+}
+
+const LANE_STATUS = {
+  playing: { label: 'Now playing', pill: 'In play' },
+  final:   { label: 'Final',       pill: '✓ Final' },
+  ready:   { label: 'Up now',      pill: '✓ Ready' },
+  waiting: { label: 'Up now',      pill: 'Waiting for teams' },
+};
+
+function renderCourts(board) {
+  const body  = document.getElementById('body-courts');
+  const badge = document.getElementById('badge-courts');
+  const head  = document.getElementById('courts-round');
   if (!body) return;
 
-  const remaining = schedule.filter(g => !isReported(g) && !isPlayoff(g));
-
-  if (remaining.length === 0) {
+  if (!board) {
+    body.innerHTML = `<div class="empty-state">${SBC() ? 'No games scheduled.' : 'Loading…'}</div>`;
     badge.textContent = '';
-    body.innerHTML = '<div class="empty-state">No remaining games.</div>';
+    head.textContent = '';
     return;
   }
 
-  badge.textContent = `${remaining.length} REMAINING`;
+  const C = SBC();
+  const div = SB.divisions[SB.activeIndex];
+  const readyOn = !!(SB.courtPub && SB.courtPub.division === div && SB.courtPub.enabled);
+  const { B, phase, rows, summary } = board;
 
-  // Group by roundTime (the "Match")
-  const groups = {};
-  remaining.forEach(g => {
-    const rt = g.roundTime || 'TBD';
-    if (!groups[rt]) groups[rt] = [];
-    groups[rt].push(g);
-  });
+  if (!B) {
+    head.textContent = 'All games complete';
+    badge.textContent = '';
+  } else if (phase === 'playing') {
+    head.textContent = `${boardRoundLabel(board, B)} · in play`;
+    badge.textContent = summary.total ? `${summary.final} / ${summary.total} final` : '';
+  } else {
+    head.textContent = `Up next · ${boardRoundLabel(board, B)}`;
+    badge.textContent = readyOn && summary.total ? `${summary.ready} / ${summary.total} ready` : '';
+  }
 
-  // Sort rounds ascending by time
-  const sortedRounds = Object.keys(groups).sort((a, b) => {
-    const na = parseInt(a.replace(/\D/g, '')) || 0;
-    const nb = parseInt(b.replace(/\D/g, '')) || 0;
-    return na - nb;
-  });
+  const schedule = SB.cache[div]?.schedule || [];
+  const idx = R => board.order.indexOf(R);
+  const bIdx = B ? idx(B) : -1;
 
-  body.innerHTML = sortedRounds.map(rt => {
-    const games = groups[rt].sort((a, b) => (parseInt(a.court) || 0) - (parseInt(b.court) || 0));
-    return `
-      <div class="next-round-group">
-        <div class="next-round-header">ROUND ${esc(rt)}</div>
-        <div class="next-round-games">
-          ${games.map(g => `
-            <div class="next-game-row-new">
-              <div class="ngr-court-badge">Court ${esc(g.court || '?')}</div>
-              <div class="ngr-teams-two-lines">
-                <div class="ngr-line1">${esc(g.team1 || 'TBD')} <span class="ngr-vs-inline">vs.</span></div>
-                <div class="ngr-line2">${esc(g.team2 || 'TBD')}</div>
-              </div>
-            </div>
-          `).join('')}
-        </div>
-      </div>
-    `;
+  const lanes = rows.map(r => {
+    const hdr = pill => `
+      <div class="lane-hdr">
+        <div class="lane-court">Court ${esc(r.court)}</div>
+        ${pill || ''}
+      </div>`;
+
+    if (r.status === 'unused') {
+      return `<div class="lane unused">${hdr()}<div class="lane-empty">Not used</div></div>`;
+    }
+
+    // Still to play on this court, from the board round on (earlier rounds'
+    // missing scores aren't "next" — that's the MC's business).
+    const upcoming = schedule
+      .filter(g => g !== r.game && !C.isDone(g) && board.courtFor(g) === r.court && (bIdx < 0 || idx(C.slotOf(g)) >= bIdx))
+      .sort((a, b) => idx(C.slotOf(a)) - idx(C.slotOf(b)));
+
+    let pill = '', now = '';
+    const st = LANE_STATUS[r.status];
+    if (st && r.game) {
+      const pillCls = r.status === 'waiting' && !readyOn ? '' : r.status;
+      const pillTxt = r.status === 'waiting' && !readyOn ? 'On deck' : st.pill;
+      pill = `<span class="lane-pill ${pillCls}">${esc(pillTxt)}</span>`;
+      let note = '';
+      if (r.status === 'final') {
+        const w = (r.game.winner || '').trim();
+        note = !isReported(r.game) ? 'Result pending'
+             : w.toLowerCase() === 'tie' ? 'Tie game'
+             : '';
+      }
+      const label = st.label + (r.early ? ' · squeezed in' : '');
+      now = `
+        <div class="lane-slot now ${r.status}">
+          <div class="lane-label"><span>${esc(label)}</span><span class="lane-when">${esc(gameWhen(r.game))}</span></div>
+          ${matchupHTML(r.game)}
+          ${note ? `<div class="lane-note">${esc(note)}</div>` : ''}
+        </div>`;
+    } else if (r.status === 'bye') {
+      pill = '<span class="lane-pill">Free</span>';
+      now = '<div class="lane-empty">No game this round</div>';
+    } else if (!upcoming.length) {
+      now = '<div class="lane-empty">Done for the day</div>';
+    }
+
+    const later = upcoming.slice(0, 3).map((g, i) => `
+      <div class="lane-slot ${i === 0 ? 'next' : 'then'}">
+        <div class="lane-label"><span>${['Next', 'Then', 'Later'][i]}</span><span class="lane-when">${esc(gameWhen(g))}</span></div>
+        ${matchupHTML(g)}
+      </div>`).join('');
+
+    return `<div class="lane">${hdr(pill)}${now}${later}</div>`;
   }).join('');
-}
 
-// ================================================================
-// GAME CARD HTML BUILDER
-// ================================================================
-function gameCardHTML(game, ctx) {
-  const reported = isReported(game);
-  const winner   = reported ? (game.winner || '').trim() : null;
-  const tie      = reported && winner === 'tie';
-  const aWon     = reported && winner === game.team1;
-  const bWon     = reported && winner === game.team2;
-
-  const onCourt  = ctx === 'live' && !reported;
-  const cardCls  = `game-card${onCourt ? ' on-court' : ''}`;
-
-  let resultText = '';
-  if (reported) {
-    if (tie) resultText = 'TIE';
-    else if (winner) resultText = `WIN: ${esc(winner)} (${esc(game.playersRemaining ?? 0)} left)`;
-  }
-
-  let t1Style = '';
-  let t2Style = '';
-  if (reported && !tie) {
-    if (aWon) t1Style = 'color: var(--gold-l); font-weight: 700;';
-    else      t1Style = 'color: rgba(255,255,255,0.3);';
-    if (bWon) t2Style = 'color: var(--gold-l); font-weight: 700;';
-    else      t2Style = 'color: rgba(255,255,255,0.3);';
-  }
-
-  return `
-    <div class="${cardCls}" style="padding: 8px 12px; margin-bottom: 6px;">
-      <div style="display: flex; align-items: center; justify-content: space-between; gap: 8px; width: 100%;">
-        <div style="display: flex; flex-direction: column; line-height: 1.3; flex: 1; min-width: 0; font-size: 13px; font-weight: 600; text-align: left;">
-          <div style="overflow: hidden; text-overflow: ellipsis; white-space: nowrap; ${t1Style}">
-            ${esc(game.team1 || 'TBD')} <span style="font-size: 9px; color: rgba(255,255,255,0.3); font-weight: 500; margin-left: 2px; text-transform: uppercase;">vs.</span>
-          </div>
-          <div style="overflow: hidden; text-overflow: ellipsis; white-space: nowrap; ${t2Style}">
-            ${esc(game.team2 || 'TBD')}
-          </div>
-        </div>
-        <span class="gc-court-badge" style="flex-shrink: 0; padding: 2px 8px; font-size: 9px; align-self: center;">CRT ${esc(game.court || '?')}</span>
-      </div>
-      ${resultText ? `<div style="margin-top: 4px; font-size: 9px; font-weight: 700; color: var(--gold);">${resultText}</div>` : ''}
-    </div>
-  `;
+  body.innerHTML = `<div class="lanes" style="--lanes:${rows.length || 1}">${lanes}</div>`;
 }
 
 // ================================================================
@@ -2234,7 +2512,9 @@ function renderBracket(schedule) {
 
   const { nodes, roots, cols, leaves } = tree;
   const realCount = nodes.filter(n => !n.isBye).length;
-  badge.textContent = `${realCount} MATCH${realCount !== 1 ? 'ES' : ''}`;
+  badge.textContent = SB.phase === 'preview'
+    ? 'Coming up'
+    : `${realCount} MATCH${realCount !== 1 ? 'ES' : ''}`;
 
   // Column 0 is the earliest round, column cols-1 the final.
   const colOf   = n => cols - 1 - n.depth;
@@ -2302,14 +2582,17 @@ function renderBracket(schedule) {
     const y = centerY(node) - BRK.BOX_H / 2;
     const ready = !isReported(node.g) && node.slots.every(isRealTeamSlot);
     const gold  = node === finalNode && champion;
-    const tag   = node.isBye ? 'BYE' : `P${node.num}`;
+    // Being played right now (per the court board): highlight it + say where.
+    const court = !node.isBye && SBC() ? SB.playingKeys.get(SBC().gameKeyOf(node.g)) : undefined;
+    const live  = court !== undefined;
+    const tag   = node.isBye ? 'BYE' : live ? `P${node.num} · COURT ${court} · LIVE` : `P${node.num}`;
     return `
-      <div class="bracket-match${gold ? ' champion' : ''}${ready ? ' live' : ''}${node.isBye ? ' is-bye' : ''}"
+      <div class="bracket-match${gold ? ' champion' : ''}${ready ? ' live' : ''}${live ? ' on-court' : ''}${node.isBye ? ' is-bye' : ''}"
            style="left:${x}px;top:${y}px;width:${BRK.COL_W}px;height:${BRK.BOX_H}px">
         ${bracketTeamRowHTML(node, 0)}
         ${bracketTeamRowHTML(node, 1)}
       </div>
-      <span class="bracket-match-tag${gold ? ' champion' : ''}${node.isBye ? ' is-bye' : ''}" style="left:${x + 8}px;top:${y - 7}px">${tag}</span>
+      <span class="bracket-match-tag${gold ? ' champion' : ''}${live ? ' on-court' : ''}${node.isBye ? ' is-bye' : ''}" style="left:${x + 8}px;top:${y - 7}px">${esc(tag)}</span>
     `;
   }).join('');
 
@@ -2397,12 +2680,19 @@ function fitBracket() {
   // the body is content-sized on narrow layouts, so measuring it would
   // feed the scale back into its own input.
   const expanded = card && card.classList.contains('expanded');
-  const availH = window.innerHeight * (expanded ? 0.78 : 0.62);
+  // Wall layouts give the module a fixed height (the grid fills the screen),
+  // so measure it there — and let the bracket grow past 1:1 when it has the
+  // room (playoffs: full width). Narrow layouts are content-sized, so their
+  // budget comes from the viewport instead.
+  const body = document.getElementById('body-bracket');
+  const wall = !expanded && window.innerWidth >= 1200 && body && body.clientHeight > 0;
+  const availH = wall ? body.clientHeight - 34 : window.innerHeight * (expanded ? 0.78 : 0.62);
+  const maxScale = wall ? 2.2 : 1;
 
   // `zoom` rather than `transform: scale()` so the scaled box still
   // drives layout — otherwise the scroll container reserves room for
   // the unscaled canvas and shows phantom scrollbars.
-  const scale = Math.max(BRK.MIN_SCALE, Math.min(1, availW / natW, availH / natH));
+  const scale = Math.max(BRK.MIN_SCALE, Math.min(maxScale, availW / natW, availH / natH));
   if (canvas.dataset.scale === String(scale)) return;
   canvas.dataset.scale = String(scale);
   canvas.style.zoom = String(scale);
@@ -2566,6 +2856,7 @@ function normalizeTimer(p) {
     startTime:              p.startTime || 0,
     startAfterRoundRunning: !!p.startAfterRoundRunning,
     lastSetDuration:        p.lastSetDuration || 300,
+    currentRound:           p.currentRound ?? null,   // deriveBoard: is the clock running this round?
   };
 }
 
@@ -2600,6 +2891,31 @@ async function fetchTimerState(divName) {
   }
 }
 
+// ================================================================
+// COURT STATUS — the MC's board record + ready marks + squeeze-ins
+// (public, name-free route). Without it (Court Ready off, or not yet
+// loaded) deriveBoard falls back to the schedule + the round clock.
+// ================================================================
+async function fetchCourtStatus(divName) {
+  if (!divName) return;
+  try {
+    const r = await fetch(`${API}/api/courtStatus/public?division=${encodeURIComponent(divName)}`, { cache: 'no-store' });
+    if (!r.ok) return;
+    const j = await r.json();
+    SB.courtPub = { division: divName, enabled: !!j.enabled, board: j.board || null, marks: j.marks || [], earlies: j.earlies || [] };
+    if (SB.divisions[SB.activeIndex] === divName) renderAll(divName, false);
+  } catch (e) {
+    console.error('[courtStatus]', e);
+  }
+}
+
+function startCourtPolling() {
+  if (SB.courtPollTimer) clearInterval(SB.courtPollTimer);
+  SB.courtPollTimer = setInterval(() => {
+    if (!document.hidden) fetchCourtStatus(SB.divisions[SB.activeIndex]);
+  }, 20_000);
+}
+
 function startMatchClockTicker() {
   if (SB.timerIntervalId) clearInterval(SB.timerIntervalId);
 
@@ -2609,6 +2925,15 @@ function startMatchClockTicker() {
 
     const state = SB.timerState;
     let remaining = state.duration ?? 300;
+
+    // The court board reads the clock (Start on the clock = round in play;
+    // stop / after-round = time's up), so re-derive when its state changes.
+    const sig = [state.running, state.startAfterRoundRunning, state.currentRound, state.startTime].join('|');
+    if (sig !== SB.clockSig) {
+      SB.clockSig = sig;
+      const div = SB.divisions[SB.activeIndex];
+      if (div) renderAll(div, false);
+    }
 
     if (state.running && state.startTime) {
       const now = Date.now() + SB.serverOffset;
@@ -2890,19 +3215,16 @@ function launch() {
         // Rooms are lost on a dropped connection — rejoin and resync
         // everything, or the board silently goes stale after a blip.
         SB.socket.on('connect', () => {
-          SB.divisions.forEach(div => {
-            SB.socket.emit('joinDivision', div);
-            fetchAndCache(div).catch(console.error);
-          });
+          SB.socket.emit('joinDivision', SB.divisions[SB.activeIndex]);
+          SB.divisions.forEach(div => fetchAndCache(div).catch(console.error));
+          fetchCourtStatus(SB.divisions[SB.activeIndex]);
           fetchTimerState(SB.divisions[SB.activeIndex]).catch(console.error);
           fetchAnnouncements().catch(console.error);
         });
       }
-      SB.divisions.forEach(div => {
-        SB.socket.emit('joinDivision', div);
-        // Load initial state via HTTP REST so it renders instantly
-        fetchAndCache(div).catch(console.error);
-      });
+      SB.socket.emit('joinDivision', SB.divisions[SB.activeIndex]);
+      // Load initial state via HTTP REST so it renders instantly
+      SB.divisions.forEach(div => fetchAndCache(div).catch(console.error));
       // Fetch initial timer state for the active division
       fetchTimerState(SB.divisions[SB.activeIndex]).catch(console.error);
     } else {
@@ -2913,29 +3235,22 @@ function launch() {
 
   if (window.__DATA_BACKEND__ === 'local') syncServerClock().catch(console.error);
 
+  // Court board: the server's data-less courtStatusUpdate nudge (sent in both
+  // backends — the socket exists in firebase mode just for this) + a 20s poll.
+  if (typeof io !== 'undefined') {
+    if (!SB.socket) SB.socket = io();
+    if (!SB.socket.__sbCourtNudge) {
+      SB.socket.__sbCourtNudge = true;
+      SB.socket.on('courtStatusUpdate', () => fetchCourtStatus(SB.divisions[SB.activeIndex]));
+    }
+  }
+  fetchCourtStatus(SB.divisions[SB.activeIndex]);
+  startCourtPolling();
+  startSceneCycle();
+
   // Resume after the device slept / the tab was backgrounded: transports may
   // be dead without having noticed, so resync immediately.
-  let sbHiddenAt = 0;
-  const sbResume = () => {
-    if (window.__DATA_BACKEND__ === 'local') {
-      if (SB.socket && !SB.socket.connected) SB.socket.connect();
-      else SB.socket?.timeout(4000).emit('joinDivision', SB.divisions[SB.activeIndex], (err) => {
-        if (err) SB.socket.disconnect().connect();
-      });
-      syncServerClock(3).catch(console.error);
-      fetchTimerState(SB.divisions[SB.activeIndex]).catch(console.error);
-      SB.divisions.forEach(d => fetchAndCache(d).catch(console.error));
-    } else if (typeof firebase !== 'undefined' && firebase.apps.length) {
-      const db = firebase.database(); db.goOffline(); db.goOnline();
-    }
-  };
-  document.addEventListener('visibilitychange', () => {
-    if (document.hidden) { sbHiddenAt = Date.now(); return; }
-    if (sbHiddenAt && Date.now() - sbHiddenAt >= 5000) sbResume();
-    sbHiddenAt = 0;
-  });
-  window.addEventListener('pageshow', (e) => { if (e.persisted) sbResume(); });
-  window.addEventListener('online', sbResume);
+  if (!SB.resumeBound) bindResumeHandlers();
 
   // Safety-net resync: sockets/listeners can silently die on a long-running
   // display, so re-pull the timer, announcements and divisions regularly.
@@ -2957,6 +3272,36 @@ function launch() {
 
   // Start match clock ticker (runs continuously, updates from timerState)
   startMatchClockTicker();
+}
+
+// Resume after the device slept / the tab was backgrounded: transports may
+// be dead without having noticed, so resync immediately. Bound once — launch()
+// runs again on every setup change and division-list change.
+function bindResumeHandlers() {
+  SB.resumeBound = true;
+  let sbHiddenAt = 0;
+  const sbResume = () => {
+    if (window.__DATA_BACKEND__ === 'local') {
+      if (SB.socket && !SB.socket.connected) SB.socket.connect();
+      else SB.socket?.timeout(4000).emit('joinDivision', SB.divisions[SB.activeIndex], (err) => {
+        if (err) SB.socket.disconnect().connect();
+      });
+      syncServerClock(3).catch(console.error);
+      fetchTimerState(SB.divisions[SB.activeIndex]).catch(console.error);
+      SB.divisions.forEach(d => fetchAndCache(d).catch(console.error));
+    } else if (typeof firebase !== 'undefined' && firebase.apps.length) {
+      const db = firebase.database(); db.goOffline(); db.goOnline();
+      if (SB.socket && !SB.socket.connected) SB.socket.connect();
+    }
+    fetchCourtStatus(SB.divisions[SB.activeIndex]);
+  };
+  document.addEventListener('visibilitychange', () => {
+    if (document.hidden) { sbHiddenAt = Date.now(); return; }
+    if (sbHiddenAt && Date.now() - sbHiddenAt >= 5000) sbResume();
+    sbHiddenAt = 0;
+  });
+  window.addEventListener('pageshow', (e) => { if (e.persisted) sbResume(); });
+  window.addEventListener('online', sbResume);
 }
 
 // ================================================================
@@ -2993,6 +3338,20 @@ async function refreshDivisionList() {
 // ================================================================
 // URL PARAMS
 // ================================================================
+// Phase tuning (also works with a saved config):
+//   ?phase=pool|preview|playoffs|done  pin the layout instead of following the schedule
+//   ?preview=N   show the bracket from N pool rounds before playoffs (default 2, 0 = off)
+//   ?scene=N     seconds between standings ⇄ bracket in that phase (default 20)
+function parsePhaseParams() {
+  const p = new URLSearchParams(window.location.search);
+  const ph = (p.get('phase') || '').toLowerCase();
+  if (['pool', 'preview', 'playoffs', 'done'].includes(ph)) SB.forcePhase = ph;
+  const pr = parseInt(p.get('preview'));
+  if (Number.isFinite(pr) && pr >= 0) SB.previewRounds = pr;
+  const sc = parseInt(p.get('scene'));
+  if (Number.isFinite(sc) && sc >= 5) SB.sceneSecs = sc;
+}
+
 function parseURLConfig() {
   const p = new URLSearchParams(window.location.search);
   const d1 = p.get('d1');
@@ -3040,8 +3399,14 @@ document.addEventListener('visibilitychange', () => {
 document.addEventListener('DOMContentLoaded', async () => {
   startClock();
 
+  parsePhaseParams();
+
+  // Nobody is standing at a wall board, so sub-divisions flip by themselves
+  // unless this screen was explicitly set to Manual.
+  SB.subCycleSecs = 15;
   try {
-    SB.subCycleSecs = parseInt(localStorage.getItem('sb_subcycle')) || 0;
+    const saved = localStorage.getItem('sb_subcycle');
+    if (saved !== null) SB.subCycleSecs = parseInt(saved) || 0;
   } catch (e) {}
   document.getElementById('subdiv-cycle-select').value = String(SB.subCycleSecs);
 
@@ -3075,6 +3440,15 @@ document.addEventListener('DOMContentLoaded', async () => {
   // 3. Show setup overlay
   await initSetupOverlay();
 });
+</script>
+<script type="module">
+// Shared, DOM-free court-board logic (same code as the MC board and the
+// "My team" card) + the main app's round-time parser, for the classic
+// script above (see SBC()).
+import { deriveBoard, VENUE_COURTS, gameKeyOf, slotKey, slotOf, isDone, isPlaceholderTeam } from '/js/courtBoard.js';
+import { parseRoundTime } from '/js/schedule.js';
+window.SBCourt = { deriveBoard, VENUE_COURTS, gameKeyOf, slotKey, slotOf, isDone, isPlaceholderTeam, parseRoundTime };
+window.dispatchEvent(new Event('sbcourt-ready'));
 </script>
 </body>
 </html>
