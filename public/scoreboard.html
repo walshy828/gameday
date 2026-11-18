@@ -614,6 +614,26 @@
     #module-standings .module-body {
       max-height: 800px;
     }
+    /* Standings pager (stPagerLayout): header pinned, rows page inside a viewport. */
+    .st-wrap { display: flex; flex-direction: column; height: 100%; min-height: 0; }
+    .st-viewport { flex: 1; min-height: 0; overflow: hidden; position: relative; }
+    .st-track { transition: transform .9s cubic-bezier(.45,0,.2,1); will-change: transform; }
+    .st-scroll .st-viewport { overflow: visible; }
+    .st-pager { flex-shrink: 0; padding-top: 8px; border-top: 1px solid rgba(255,255,255,.08); margin-top: 4px; }
+    .st-pager.hidden { display: none; }
+    .st-pager-line { display: flex; align-items: center; gap: 12px; }   /* left: the corner ⚙ sits bottom-right */
+    .st-pager-range {
+      font-size: clamp(10px, .75vw, 16px); font-weight: 800; letter-spacing: .08em;
+      text-transform: uppercase; color: var(--gold-l); font-variant-numeric: tabular-nums;
+    }
+    .st-pager-dots { display: flex; gap: 6px; }
+    .st-pager-dots i { width: clamp(7px, .5vw, 11px); height: clamp(7px, .5vw, 11px); border-radius: 50%; background: rgba(255,255,255,.2); }
+    .st-pager-dots i.on { background: var(--gold); }
+    .st-pager-bar { margin-top: 6px; height: 3px; border-radius: 2px; background: rgba(255,255,255,.08); overflow: hidden; }
+    .st-pager-fill { height: 100%; width: 0; background: rgba(224,184,99,.7); }
+    @keyframes stPageFill { from { width: 0; } to { width: 100%; } }
+    @media (prefers-reduced-motion: reduce) { .st-track { transition: none; } }
+
     /* Wall: standings readable from across the gym. */
     @media (min-width: 1200px) {
       #module-standings .module-body { max-height: none; overflow: hidden; }
@@ -2051,8 +2071,21 @@ function startSceneCycle() {
     grid.classList.toggle('scene-standings', SB.scene === 'standings');
     grid.classList.toggle('scene-bracket', SB.scene === 'bracket');
     if (SB.scene === 'bracket') requestAnimationFrame(fitBracket);
+    // Standings just came back on screen: lay its pages out again (it was
+    // measured while hidden) so it starts from page 1.
+    else { const div = SB.divisions[SB.activeIndex]; if (div) renderAll(div, false); }
   }, Math.max(5, SB.sceneSecs) * 1000);
 }
+
+// A different window size means a different number of rows/rounds per screen.
+let sbResizeTimer = null;
+window.addEventListener('resize', () => {
+  clearTimeout(sbResizeTimer);
+  sbResizeTimer = setTimeout(() => {
+    const div = SB.divisions[SB.activeIndex];
+    if (div) renderAll(div, false);
+  }, 250);
+});
 
 // ================================================================
 // RENDER ALL
@@ -2152,8 +2185,17 @@ function updateSubCountdown() {
   });
 }
 
+function scheduleSubFlip(ms) {
+  clearTimeout(SB.subTimer);
+  SB.subNextAt = Date.now() + ms;
+  SB.subTimer = setTimeout(cycleSubDivision, ms);
+}
+
 function cycleSubDivision() {
-  SB.subNextAt = Date.now() + SB.subCycleSecs * 1000;
+  // Don't leave a sub-division before every page of its standings was shown.
+  const wait = stPagerMsUntilDone();
+  if (wait > 0) { scheduleSubFlip(wait); return; }
+  scheduleSubFlip(SB.subCycleSecs * 1000);
   const div = SB.divisions[SB.activeIndex];
   const names = subDivisionNames(div);
   if (names.length < 2) return;
@@ -2172,12 +2214,11 @@ function cycleSubDivision() {
 }
 
 function startSubCycle() {
-  if (SB.subTimer) { clearInterval(SB.subTimer); SB.subTimer = null; }
+  clearTimeout(SB.subTimer); SB.subTimer = null;
   if (SB.subCdTimer) { clearInterval(SB.subCdTimer); SB.subCdTimer = null; }
   SB.subNextAt = 0;
   if (SB.subCycleSecs > 0) {
-    SB.subNextAt = Date.now() + SB.subCycleSecs * 1000;
-    SB.subTimer = setInterval(cycleSubDivision, SB.subCycleSecs * 1000);
+    scheduleSubFlip(SB.subCycleSecs * 1000);
     SB.subCdTimer = setInterval(updateSubCountdown, 250);
   }
 }
@@ -2210,6 +2251,7 @@ function renderStandings(data) {
   if (rows.length === 0) {
     body.innerHTML = '<div class="empty-state">No standings data available.</div>';
     badge.textContent = '';
+    stPagerSet(null);
     return;
   }
 
@@ -2224,18 +2266,117 @@ function renderStandings(data) {
     </div>
   `;
 
-  const html = rows.map((item, i) => {
-    return `
+  const html = rows.map((item, i) => `
       <div class="st-row">
         <div class="rank-chip plain">${esc(item.rank || i + 1)}</div>
         <div class="st-team">${esc(item.team)}</div>
         <div class="st-rec">${esc(item.record || '0-0')}</div>
         <div class="st-pts">${esc(item.points ?? 0)}</div>
-      </div>
-    `;
-  }).join('');
+      </div>`).join('');
 
-  body.innerHTML = hdr + html;
+  body.innerHTML = `
+    <div class="st-wrap">
+      ${hdr}
+      <div class="st-viewport"><div class="st-track">${html}</div></div>
+      <div class="st-pager hidden">
+        <div class="st-pager-line"><span class="st-pager-range"></span><span class="st-pager-dots"></span></div>
+        <div class="st-pager-bar"><div class="st-pager-fill"></div></div>
+      </div>
+    </div>`;
+  stPagerLayout(body, `${SB.divisions[SB.activeIndex]}|${sel}`, rows.length);
+}
+
+// ================================================================
+// STANDINGS PAGER — when a sub-division has more teams than fit on this
+// screen, the list pages instead of scrolling: every page is full (the last
+// one ends on the last team, so 14 teams with room for 11 read 1–11, 4–14),
+// slides smoothly, and says where it is ("Teams 1–11 of 14", dots, and a
+// thin bar filling until the next page) so someone walking up mid-sequence
+// knows there's more and when it's coming. The sub-division flip waits until
+// every page has been on screen (stPagerMsUntilDone). Wall layouts only; on
+// narrow screens the list just scrolls. ?pagesecs=N sets the dwell (default 10).
+// ================================================================
+const ST = { key: '', starts: [], page: 0, shownAt: 0, timer: null, n: 0, per: 0 };
+
+function stPageMs() { return Math.max(4, SB.stPageSecs || 10) * 1000; }
+
+function stPagerSet(state) {
+  if (!state) { ST.key = ''; ST.starts = []; ST.page = 0; clearTimeout(ST.timer); return; }
+}
+
+function stPagerLayout(body, key, n) {
+  const viewport = body.querySelector('.st-viewport');
+  const track = body.querySelector('.st-track');
+  const pager = body.querySelector('.st-pager');
+  const wall = window.innerWidth >= 1200 && !document.getElementById('module-standings')?.classList.contains('expanded');
+  const fits = () => track.scrollHeight <= viewport.clientHeight + 1;
+
+  if (!wall || !viewport.clientHeight || fits()) {
+    body.classList.toggle('st-scroll', !wall);
+    if (ST.key !== key || ST.starts.length > 1) { ST.key = key; ST.starts = [0]; ST.page = 0; clearTimeout(ST.timer); }
+    return;
+  }
+  body.classList.remove('st-scroll');
+  pager.classList.remove('hidden');               // its height comes out of the viewport
+
+  const rowEls = [...track.children];
+  const pitch = rowEls.length > 1 ? rowEls[1].offsetTop - rowEls[0].offsetTop : rowEls[0].offsetHeight;
+  const per = Math.max(1, Math.floor((viewport.clientHeight + 3) / pitch));
+  const starts = [];
+  for (let s = 0; s < n; s += per) starts.push(Math.min(s, Math.max(0, n - per)));
+  const uniq = [...new Set(starts)];
+
+  // Same list, same screen: keep the page (and its timer) across re-renders.
+  const same = ST.key === key && ST.n === n && ST.per === per && ST.starts.length === uniq.length;
+  ST.key = key; ST.n = n; ST.per = per; ST.starts = uniq; ST.rowEls = rowEls; ST.body = body;
+  if (!same) { ST.page = 0; ST.shownAt = Date.now(); }
+  if (ST.page >= uniq.length) ST.page = 0;
+  stPagerShow(false);
+  if (!same || !ST.timer) stPagerArm();
+}
+
+function stPagerArm() {
+  clearTimeout(ST.timer);
+  const left = Math.max(300, stPageMs() - (Date.now() - ST.shownAt));
+  ST.timer = setTimeout(() => {
+    // Hidden (bracket scene, playoffs) → start over at page 1 next time it shows.
+    if (!ST.body?.isConnected || !ST.body.offsetParent) { ST.page = 0; ST.shownAt = Date.now(); stPagerArm(); return; }
+    ST.page = (ST.page + 1) % ST.starts.length;
+    ST.shownAt = Date.now();
+    stPagerShow(true);
+    stPagerArm();
+  }, left);
+}
+
+function stPagerShow(animate) {
+  const body = ST.body;
+  if (!body?.isConnected || ST.starts.length < 2) return;
+  const track = body.querySelector('.st-track');
+  const start = ST.starts[ST.page];
+  const y = ST.rowEls[start]?.offsetTop || 0;
+  if (!animate) {
+    track.style.transition = 'none';
+    track.style.transform = `translateY(${-y}px)`;
+    void track.offsetHeight;
+    track.style.transition = '';
+  } else {
+    track.style.transform = `translateY(${-y}px)`;
+  }
+  const last = Math.min(ST.n, start + ST.per);
+  body.querySelector('.st-pager-range').textContent = `Teams ${start + 1}–${last} of ${ST.n}`;
+  body.querySelector('.st-pager-dots').innerHTML = ST.starts.map((_, i) => `<i class="${i === ST.page ? 'on' : ''}"></i>`).join('');
+  // The bar fills over the page's dwell; a re-render mid-page resumes it.
+  const fill = body.querySelector('.st-pager-fill');
+  fill.style.animation = 'none';
+  void fill.offsetWidth;
+  fill.style.animation = `stPageFill ${stPageMs()}ms linear ${-(Date.now() - ST.shownAt)}ms forwards`;
+}
+
+/** ms until every standings page has been shown once (0 = nothing to wait for). */
+function stPagerMsUntilDone() {
+  if (ST.starts.length < 2 || !ST.body?.isConnected || !ST.body.offsetParent) return 0;
+  const lastLeft = (ST.starts.length - 1 - ST.page) * stPageMs();
+  return Math.max(0, lastLeft + stPageMs() - (Date.now() - ST.shownAt));
 }
 
 // ================================================================
@@ -3711,6 +3852,8 @@ function parsePhaseParams() {
   if (['pool', 'preview', 'playoffs', 'done'].includes(ph)) SB.forcePhase = ph;
   const pr = parseInt(p.get('preview'));
   if (Number.isFinite(pr) && pr >= 0) SB.previewRounds = pr;
+  const ps = parseInt(p.get('pagesecs'));
+  if (Number.isFinite(ps) && ps >= 4) SB.stPageSecs = ps;
   const sc = parseInt(p.get('scene'));
   if (Number.isFinite(sc) && sc >= 5) SB.sceneSecs = sc;
 }
