@@ -264,6 +264,13 @@ export const schemaReady = (async function ensureFeatureTables() {
       )
     `);
     await pool.query(`
+      CREATE TABLE IF NOT EXISTS display_config (
+        id INT PRIMARY KEY,
+        config_json MEDIUMTEXT NOT NULL,
+        updated_at BIGINT NOT NULL
+      )
+    `);
+    await pool.query(`
       CREATE TABLE IF NOT EXISTS feedback (
         id INT AUTO_INCREMENT PRIMARY KEY,
         kind VARCHAR(16) NOT NULL,
@@ -865,6 +872,21 @@ export async function getLoginHistory(limit = 200) {
 // Superadmin dismissals of result discrepancies, shared by every superadmin.
 // `key` is "<division>|<firebaseIndex>"; `sig` fingerprints the disputed
 // values (see public/js/discrepancy.js) so a changed result re-opens it.
+// Wall boards' central config (server/displays.js): one JSON row.
+export async function getDisplayConfig() {
+  const [rows] = await pool.query('SELECT config_json FROM display_config WHERE id = 1');
+  if (!rows[0]) return null;
+  try { return JSON.parse(rows[0].config_json); } catch (e) { return null; }
+}
+
+export async function setDisplayConfig(config) {
+  await pool.query(
+    `INSERT INTO display_config (id, config_json, updated_at) VALUES (1, ?, ?)
+     ON DUPLICATE KEY UPDATE config_json = VALUES(config_json), updated_at = VALUES(updated_at)`,
+    [JSON.stringify(config || {}), Date.now()]
+  );
+}
+
 export async function getDiscrepancyDismissals() {
   const [rows] = await pool.query('SELECT dismiss_key, sig, dismissed_by, dismissed_at FROM discrepancy_dismissals');
   const out = {};

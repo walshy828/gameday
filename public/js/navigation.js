@@ -10,6 +10,7 @@ import { renderRaffleBackup } from './raffleBackup.js';
 import { renderConcessions } from './concessions.js';
 import { renderSeasons } from './seasons.js';
 import { refreshUsage } from './usage.js';
+import { refreshWallboards } from './wallboards.js';
 import { ensureFeedbackWatch } from './feedback.js';
 import { renderDivisionData } from './divisionData.js';
 import { renderDanger } from './danger.js';
@@ -733,7 +734,7 @@ function switchView(view) {
             // Trigger specific view update
             if (v === 'schedule') updateScheduleView();
             if (v === 'admin-entry') updateAdminMatchEntryView();
-            if (v === 'settings') { initSettingsView(); refreshUsage(); ensureFeedbackWatch(); renderSeasons(); renderDivisionData(); renderDanger(); }
+            if (v === 'settings') { initSettingsView(); refreshUsage(); refreshWallboards(); ensureFeedbackWatch(); renderSeasons(); renderDivisionData(); renderDanger(); }
             if (v === 'game-manager') renderGameManager();
             if (v === 'roster') renderRoster();
             if (v === 'raffle') renderRaffle();

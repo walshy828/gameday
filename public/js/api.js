@@ -113,6 +113,15 @@ export async function getLoginHistory(authToken) {
   return await apiGet(`/session/history`, authToken);
 }
 
+// Wall boards (scoreboard.html) — superadmin; see server/displays.js.
+export async function getDisplays(authToken) {
+  return await apiGet(`/displays`, authToken);
+}
+/** action: nowRunning | board | command | forget */
+export async function postDisplays(action, body, authToken) {
+  return await apiPost(`/displays/${action}`, { ...body, authToken });
+}
+
 export async function getUsage(authToken) {
   return await apiGet(`/usage`, authToken);
 }

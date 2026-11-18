@@ -22,6 +22,7 @@ import { controlTimer, initTimerControl, TimerError, TIMER_ACTION_NAMES } from '
 import * as CourtStatus from './courtStatus.js';
 import * as CourtIssues from './courtIssues.js';
 import * as Feedback from './feedback.js';
+import * as Displays from './displays.js';
 import crypto from 'crypto';
 import compression from 'compression';
 import helmet from 'helmet';
@@ -1509,6 +1510,61 @@ app.post('/api/feedback', feedbackLimiter, async (req, res) => {
   } catch (e) {
     console.error('feedback submit error', e);
     res.status(500).json({ success: false, error: 'Could not save your feedback. Please try again.' });
+  }
+});
+
+// --- Wall boards (scoreboard.html), controlled centrally — server/displays.js ---
+// Config persists through the Store; the live list of connected boards is in memory.
+Displays.setPersistence({ load: () => Store.getDisplayConfig(), save: (c) => Store.setDisplayConfig(c) });
+
+app.get('/api/displays', async (req, res) => {
+  if (!requireSuperAdmin(req, res)) return;
+  res.set('Cache-Control', 'no-store');
+  try {
+    res.json({ success: true, ...(await Displays.listBoards()) });
+  } catch (e) {
+    console.error('displays list error', e);
+    res.status(500).json({ success: false, error: e.toString() });
+  }
+});
+
+// { nowRunning?: [division…], rotateSecs? }
+app.post('/api/displays/nowRunning', async (req, res) => {
+  if (!requireSuperAdmin(req, res)) return;
+  try {
+    res.json({ success: true, ...(await Displays.setNowRunning({ nowRunning: req.body?.nowRunning, rotateSecs: req.body?.rotateSecs })) });
+  } catch (e) {
+    res.status(400).json({ success: false, error: e.message });
+  }
+});
+
+// { boardId, name?, mode?, divisions?, rotateSecs?, view? }
+app.post('/api/displays/board', async (req, res) => {
+  if (!requireSuperAdmin(req, res)) return;
+  try {
+    const { boardId, name, mode, divisions, rotateSecs, view } = req.body || {};
+    res.json({ success: true, ...(await Displays.updateBoard(boardId, { name, mode, divisions, rotateSecs, view })) });
+  } catch (e) {
+    res.status(400).json({ success: false, error: e.message });
+  }
+});
+
+// { boardId | '*', type: 'identify' | 'reload' }
+app.post('/api/displays/command', (req, res) => {
+  if (!requireSuperAdmin(req, res)) return;
+  try {
+    res.json({ success: true, screens: Displays.command(req.body?.boardId, req.body?.type) });
+  } catch (e) {
+    res.status(400).json({ success: false, error: e.message });
+  }
+});
+
+app.post('/api/displays/forget', async (req, res) => {
+  if (!requireSuperAdmin(req, res)) return;
+  try {
+    res.json({ success: true, ...(await Displays.forgetBoard(req.body?.boardId)) });
+  } catch (e) {
+    res.status(400).json({ success: false, error: e.message });
   }
 });
 

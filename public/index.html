@@ -1789,7 +1789,8 @@
                             <!-- Quick jump between Setup groups -->
                             <nav class="setup-jump" aria-label="Setup sections">
                                 <a href="#setup-live" data-setup-jump>Live now</a><a href="#setup-event"
-                                    data-setup-jump>Event day</a><a href="#setup-feedback"
+                                    data-setup-jump>Event day</a><a href="#setup-wallboards"
+                                    data-setup-jump>Wall boards</a><a href="#setup-feedback"
                                     data-setup-jump>Feedback</a><a href="#setup-sync" data-setup-jump>Sync</a><a
                                     href="#setup-config" data-setup-jump>Configuration</a><a href="#setup-data"
                                     data-setup-jump>Seasons &amp; data</a>
@@ -1913,6 +1914,35 @@
                                 <h3>Event day</h3>
                                 <p>Things you use or switch on while the tournament is running.</p>
                             </div>
+                            <!-- Wall boards (superadmin) — wallboards.js, server/displays.js -->
+                            <section id="setup-wallboards" class="card-dark p-4 space-y-3 scroll-mt-20">
+                                <div class="flex items-center justify-between gap-3">
+                                    <div class="flex items-center gap-2 min-w-0">
+                                        <h3 class="text-lg font-bold text-white">📺 Wall boards</h3>
+                                        <span class="tip">
+                                            <button type="button" class="tip-btn" aria-label="About wall boards">ⓘ</button>
+                                            <span class="tip-body">Every TV showing the scoreboard page appears here.
+                                                Pick what's on court under Now running and every board on Follow
+                                                switches to it. Pinned shows the divisions you pick for that board;
+                                                Local leaves it on the screen's own setup. View overrides the
+                                                automatic layout (courts and standings in pool play, the bracket
+                                                as playoffs approach). Identify flashes a board's name on its
+                                                screen so you know which TV is which.</span>
+                                        </span>
+                                    </div>
+                                    <div class="flex flex-none items-center gap-2">
+                                        <span id="wallboards-count-pill"
+                                            class="rounded-full border border-white/15 px-2.5 py-1 text-[11px] font-bold text-white/60">…</span>
+                                        <a href="/scoreboard.html" target="_blank" rel="noopener noreferrer"
+                                            class="pill-gold inline-flex items-center px-2.5 py-1 text-[11px] font-semibold">Open a board ↗</a>
+                                    </div>
+                                </div>
+                                <div id="wallboards-now" class="space-y-2 rounded-xl border border-white/10 bg-black/20 p-3"></div>
+                                <div id="wallboards-list" class="space-y-2">
+                                    <p class="text-sm text-white/50">Loading…</p>
+                                </div>
+                            </section>
+
                             <!-- Parent/coach feedback inbox (superadmin) — feedback.js, server/feedback.js -->
                             <section id="setup-feedback" class="card-dark p-4 space-y-3 scroll-mt-20">
                                 <div class="flex items-center justify-between gap-3">

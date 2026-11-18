@@ -4,6 +4,7 @@
 // trigger broadcasts after a write without a circular import.
 import { Server } from 'socket.io';
 import { trackSocket } from './presence.js';
+import { initDisplays, attachDisplaySocket } from './displays.js';
 import { getMode, getModeInfo, pushDelay, invalidate } from './loadShield.js';
 
 let io = null;
@@ -12,10 +13,13 @@ export function initSocket(httpServer) {
   io = new Server(httpServer, {
     cors: { origin: true }
   });
+  initDisplays(io);
 
   io.on('connection', (socket) => {
     // Live usage (Setup → Live now): in-memory only, see server/presence.js.
     trackSocket(socket);
+    // Wall boards (scoreboard.html) register here; see server/displays.js.
+    attachDisplaySocket(socket);
     // Tell the tab the current traffic level so public clients can slow their polling.
     socket.emit('trafficMode', trafficPayload());
     // A tab watches one division at a time: joining one leaves the others, and

@@ -197,6 +197,13 @@ CREATE TABLE IF NOT EXISTS discrepancy_dismissals (
 
 -- Public feedback from parents/coaches (no login), read by the superadmin in
 -- Setup. kind: compliment | complaint | suggestion; status: new | read | resolved.
+-- Wall boards' central config (server/displays.js): one JSON row (id = 1).
+CREATE TABLE IF NOT EXISTS display_config (
+  id INT PRIMARY KEY,
+  config_json MEDIUMTEXT NOT NULL,
+  updated_at BIGINT NOT NULL
+);
+
 CREATE TABLE IF NOT EXISTS feedback (
   id INT AUTO_INCREMENT PRIMARY KEY,
   kind VARCHAR(16) NOT NULL,

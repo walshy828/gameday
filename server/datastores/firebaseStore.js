@@ -14,6 +14,7 @@ const MAX_SYNC_LOG_ENTRIES = 100;
 const DISCREPANCY_PATH = 'dodgeball-tournament/discrepancyDismissals';
 const FEATURE_SETTINGS_PATH = 'dodgeball-tournament/settings/features';
 const FEEDBACK_PATH = 'dodgeball-tournament/feedback';
+const DISPLAY_CONFIG_PATH = 'dodgeball-tournament/settings/displays';
 
 export async function getDivisionNames() {
   return Sheets.getDivisionNames();
@@ -316,6 +317,19 @@ export async function getLoginHistory(limit = 200) {
 // Superadmin dismissals of result discrepancies. RTDB keys can't contain
 // `. # $ [ ] /`, so the "<division>|<index>" key is encoded before use.
 const fbKey = key => encodeURIComponent(key).replace(/\./g, '%2E');
+
+// Wall boards' central config (server/displays.js), stored as one JSON string
+// so board ids / division names never have to be valid RTDB keys.
+export async function getDisplayConfig() {
+  const snap = await admin.database().ref(DISPLAY_CONFIG_PATH).once('value');
+  const v = snap.val();
+  if (!v || typeof v.json !== 'string') return null;
+  try { return JSON.parse(v.json); } catch (e) { return null; }
+}
+
+export async function setDisplayConfig(config) {
+  await admin.database().ref(DISPLAY_CONFIG_PATH).set({ json: JSON.stringify(config || {}), at: Date.now() });
+}
 
 export async function getDiscrepancyDismissals() {
   const snap = await admin.database().ref(DISCREPANCY_PATH).once('value');

@@ -84,6 +84,7 @@ import { renderMyTeam } from './myTeam.js';
 import { isFollowed } from './follow.js';
 import { initPresence } from './presence.js';
 import { initUsage } from './usage.js';
+import { initWallboards } from './wallboards.js';
 import { setGameManagerAllowance } from './gameManagerUI.js';
 
 const IS_LOCAL_BACKEND = window.__DATA_BACKEND__ === 'local';
@@ -564,6 +565,7 @@ document.addEventListener('DOMContentLoaded', () => {
   updateAdminUI();
   initPresence(); // Setup → Live now counts (sends only on change)
   initUsage();
+  initWallboards(); // Setup → Wall boards (polls only while Setup is on screen)
   initFeedbackSetting(); // hide/show the Info tab's feedback card live
 
   // Initialize timer overlay for superadmin if applicable
