@@ -15,6 +15,8 @@ import { isReported as isReportedOfficial } from './schedule.js';
 
 export const CLOCK_START_SLACK_MS = 5000;
 export const ROUND_UNDO_MS = 2 * 60000;
+/** The venue's physical courts. A division that only uses some of them still shows the rest, greyed out. */
+export const VENUE_COURTS = ['1', '2', '3', '4'];
 
 export const courtKey = (c) => String(c || '').trim();
 export const roundOf = (g) => g.roundTime || 'TBD';
@@ -64,8 +66,10 @@ export function clockPlaying(clock, B, rec) {
  * @param {Array} p.earlies    [{ division, gameKey, court, at }] games squeezed in early on a free court
  * @param {object|null} p.rec  the division's board record { round, phase, prevRound, at, canUndo }
  * @param {object|null} p.clock the round clock's state for the division
+ * @param {Array} [p.venueCourts] every physical court; ones this division never
+ *                 plays on get status 'unused' (shown greyed out, never counted)
  */
-export function deriveBoard({ games, order: rawOrder, division, marks = [], earlies = [], rec = null, clock = null, now = Date.now() }) {
+export function deriveBoard({ games, order: rawOrder, division, marks = [], earlies = [], rec = null, clock = null, venueCourts = [], now = Date.now() }) {
     // Board rounds = distinct start times, in order.
     const order = [...new Set(rawOrder.map(slotKey))];
     const idx = (r) => order.indexOf(r);
@@ -109,7 +113,10 @@ export function deriveBoard({ games, order: rawOrder, division, marks = [], earl
         advanced = true;
     }
 
-    const courts = [...new Set(games.map(g => courtKey(g.court)).concat(earlies.filter(e => e.division === division).map(e => courtKey(e.court))).filter(Boolean))]
+    const usedCourts = new Set(games.map(g => courtKey(g.court)).concat(earlies.filter(e => e.division === division).map(e => courtKey(e.court))).filter(Boolean));
+    // Physical courts this division never plays on still get a (greyed) tile
+    // when the schedule has games, so the MC sees the whole venue at a glance.
+    const courts = [...new Set([...usedCourts, ...(games.length ? venueCourts.map(courtKey).filter(Boolean) : [])])]
         .sort((a, b) => a.localeCompare(b, undefined, { numeric: true }));
     // Unreported games on a court from rounds before B (e.g. the MC ended the
     // round, or time ran out, before the referee entered the score).
@@ -124,6 +131,7 @@ export function deriveBoard({ games, order: rawOrder, division, marks = [], earl
         return { ...courtRow(court), owed };
     });
     function courtRow(court) {
+        if (!usedCourts.has(court)) return { court, status: 'unused', game: null, inR: false };
         if (!B) return { court, status: 'none', game: null, inR: false };
         const inB = games.filter(x => slotOf(x) === B && courtFor(x) === court);
         const g = inB.find(x => !isDone(x)) || inB[0] || null;
@@ -153,6 +161,9 @@ export function deriveBoard({ games, order: rawOrder, division, marks = [], earl
             const ready = open.filter(r => r.status === 'ready' && !r.owed.length).length;
             return { ready, total: open.length, allReady: open.length > 0 && ready === open.length };
         })();
+    // Courts with a game in the board round (only these need to be ready) vs the whole venue.
+    summary.inUse = withGame.length;
+    summary.courts = rows.length;
 
     // Squeeze-in: a court that's free now (its game is final, or it has no game
     // this round) can start a game from a short later round (≤ 2 games) whose

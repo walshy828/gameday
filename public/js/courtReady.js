@@ -22,7 +22,7 @@
 import { getCourtStatus, setCourtMark, courtRoundAction } from './api.js';
 import { isUrgentDiscrepancy } from './discrepancy.js';
 import { getRoundOrder } from './schedule.js';
-import { deriveBoard as deriveBoardPure, gameKeyOf, courtKey, roundOf, slotOf, slotKey, hasValue, clockPlaying } from './courtBoard.js';
+import { deriveBoard as deriveBoardPure, VENUE_COURTS, gameKeyOf, courtKey, roundOf, slotOf, slotKey, hasValue, clockPlaying } from './courtBoard.js';
 import { getSocket } from './socketClient.js';
 import { getTimerSnapshot } from './timerSnapshot.js';
 import { isController } from './timerControlsUI.js';
@@ -116,7 +116,8 @@ function deriveBoard() {
         marks,
         earlies,
         rec: boards[division()] || null,
-        clock: clockState()
+        clock: clockState(),
+        venueCourts: VENUE_COURTS
     });
 }
 
@@ -538,10 +539,14 @@ function alertOnChanges(board) {
             buzz([80, 60, 80]);
             notify('Time\'s up', `End the ${board.B} round to call the next teams.`);
         } else if (allReady && !last.allReady) {
-            toast('🟢 All courts ready');
+            const { inUse, courts } = board.summary;
+            const partial = inUse < courts;
+            toast(partial ? `🟢 All ${inUse} courts in use ready` : '🟢 All courts ready');
             beep();
             buzz([80, 60, 80]);
-            notify('All courts ready', 'Every court has both teams on it.');
+            notify('All courts ready', partial
+                ? `All ${inUse} courts with a game this round have both teams on.`
+                : 'Every court has both teams on it.');
         } else if (missing === 0 && last.missing > 0 && last.missingRound) {
             toast(`✓ All ${last.missingRound} scores in`);
         } else if (staging && !allReady) {
@@ -572,7 +577,8 @@ const STATUS_STYLE = {
     waiting: { label: 'WAITING FOR TEAMS', dot: 'var(--gold)', bg: 'rgba(224,184,99,.12)', border: 'rgba(224,184,99,.5)', text: 'var(--gold-l)' },
     playing: { label: 'IN PLAY', dot: 'var(--warn)', bg: 'rgba(255,255,255,.05)', border: 'rgba(255,255,255,.12)', text: 'rgba(255,255,255,.8)' },
     final: { label: '✓ FINAL', dot: 'var(--ok)', bg: 'rgba(255,255,255,.04)', border: 'rgba(46,158,99,.35)', text: '#B9F0D0' },
-    bye: { label: 'NO GAME THIS ROUND', dot: 'rgba(255,255,255,.3)', bg: 'rgba(255,255,255,.03)', border: 'rgba(255,255,255,.08)', text: 'rgba(255,255,255,.45)' },
+    bye: { label: 'NOT USED THIS ROUND', dot: 'rgba(255,255,255,.25)', bg: 'rgba(255,255,255,.02)', border: 'rgba(255,255,255,.14)', text: 'rgba(255,255,255,.45)', idle: true },
+    unused: { label: 'NOT USED', dot: 'rgba(255,255,255,.2)', bg: 'rgba(255,255,255,.015)', border: 'rgba(255,255,255,.12)', text: 'rgba(255,255,255,.4)', idle: true },
     none: { label: '—', dot: 'rgba(255,255,255,.25)', bg: 'rgba(255,255,255,.03)', border: 'rgba(255,255,255,.08)', text: 'rgba(255,255,255,.4)' }
 };
 
@@ -599,8 +605,10 @@ function tileHtml(r, phase, showCaption) {
                 ${r.mark ? `<div class="mt-1 text-[10px] text-white/45">${esc(r.mark.by)} · ${ago(r.mark.at)}</div>` : ''}`;
     } else if (g) {
         body = `<div class="mt-1.5 text-[11px] leading-[1.35] text-white/75">${esc(g.team1)} <span class="text-white/40">vs</span> ${esc(g.team2)}</div>`;
-    } else if (r.later) {
-        body = `<div class="mt-1.5 text-[10px] text-white/40">Next: ${esc(roundOf(r.later))}</div>`;
+    } else if (r.status === 'unused') {
+        body = '<div class="mt-1.5 text-[10px] leading-[1.35] text-white/40">No games for this division · doesn\'t need to be ready</div>';
+    } else if (r.status === 'bye') {
+        body = `<div class="mt-1.5 text-[10px] leading-[1.35] text-white/40">Doesn't need to be ready${r.later ? ` · next game ${esc(timeOnly(roundOf(r.later)))}` : ''}</div>`;
     }
     const action = r.status === 'playing'
         ? `<div class="mt-2 flex">${reportBtn(g, 'Report', true).replace('flex-none', 'w-full')}</div>`
@@ -619,12 +627,15 @@ function tileHtml(r, phase, showCaption) {
     const flag = issue
         ? `<div class="mt-2 rounded-[12px] px-2 py-1.5 text-[10px] font-bold leading-[1.3]" style="background:rgba(217,80,60,.28);color:#FFD2C8">✋ Flag up · ${esc((ISSUE_REASONS.find(x => x.key === issue.reason) || {}).label || 'Other')}${issue.ackAt ? ` · ${esc(issue.ackBy || 'MC')} on the way` : ''}</div>`
         : '';
+    // A court with nothing to do (no game this round / not in this division)
+    // sits back: dashed and faded, unless something on it needs attention.
+    const faded = st.idle && !issue && !r.owed?.length;
     const owed = r.owed?.length
         ? `<div class="mt-2 rounded-[12px] px-2 py-1.5 text-[10px] font-bold leading-[1.3]" style="background:rgba(217,80,60,.18);color:#FFB4A6">⚠ ${esc(roundOf(r.owed[0]))} score missing${r.owed.length > 1 ? ` (+${r.owed.length - 1})` : ''}</div>
            <div class="mt-1.5 flex">${reportBtn(r.owed[0], `Report ${esc(timeOnly(roundOf(r.owed[0])))}`, true).replace('flex-none', 'w-full')}</div>`
         : '';
     return `
-        <div class="rounded-[20px] border p-3" style="background:${st.bg};border-color:${issue ? 'rgba(255,120,100,.95)' : r.owed?.length ? 'rgba(217,80,60,.65)' : st.border}${issue ? ';box-shadow:0 0 0 2px rgba(217,80,60,.35)' : ''}">
+        <div class="rounded-[20px] border p-3" style="background:${st.bg};border-color:${issue ? 'rgba(255,120,100,.95)' : r.owed?.length ? 'rgba(217,80,60,.65)' : st.border}${issue ? ';box-shadow:0 0 0 2px rgba(217,80,60,.35)' : ''}${faded ? ';border-style:dashed;opacity:.55' : ''}">
             <div class="flex items-center justify-between gap-2">
                 <div class="text-[15px] font-extrabold text-white">Court ${esc(r.court)}</div>
                 <span class="inline-block h-2.5 w-2.5 rounded-full" style="background:${st.dot}"></span>
@@ -691,10 +702,16 @@ function renderBoard(panel, board) {
     const inB = rows.filter(r => r.game && r.inR).map(r => r.game);
     const showCaption = new Set(inB.map(g => `${g.subDivision || ''}|${roundOf(g)}`)).size > 1;
 
+    // Fewer courts than the venue has this round (small division, short
+    // round): say so, so "2 of 2 ready" reads as complete, not as missing courts.
+    const partial = B && summary.inUse > 0 && summary.inUse < summary.courts;
+    const inUseNote = partial
+        ? `<div class="mt-0.5 text-[11px] font-semibold text-white/50">${summary.inUse} of ${summary.courts} courts in use this round</div>`
+        : '';
     let headline;
     if (!B) headline = '<span class="text-white">All rounds played</span>';
     else if (phase === 'playing') headline = `<span class="text-white">In play · ${summary.final} of ${summary.total} final</span>`;
-    else if (summary.allReady) headline = '<span style="color:#B9F0D0">🟢 All courts ready</span>';
+    else if (summary.allReady) headline = `<span style="color:#B9F0D0">🟢 All ${partial ? `${summary.inUse} courts in use` : 'courts'} ready</span>`;
     else headline = `<span class="text-white">Teams up · ${summary.ready} of ${summary.total} ready</span>`;
 
     const sinceTs = rec && rec.phase === 'playing' && rec.round === B ? rec.at : 0;
@@ -717,6 +734,7 @@ function renderBoard(panel, board) {
                 <div class="min-w-0">
                     <div class="text-[10px] tracking-[.16em] font-semibold text-white/50 uppercase">${kicker}</div>
                     <div class="mt-0.5 text-[15px] font-extrabold">${headline}</div>
+                    ${inUseNote}
                 </div>
                 <div class="flex flex-none items-center gap-2">${control}</div>
             </div>
@@ -750,6 +768,10 @@ function renderRefBar(panel, board) {
     const court = focusCourt || courtKey(App.state.selectedCourt);
     const r = board.rows.find(x => x.court === court);
     if (!r) { panel.innerHTML = ''; return false; }
+    if (r.status === 'unused') {
+        panel.innerHTML = compactBar('rgba(255,255,255,.25)', `<span class="font-bold text-white">Court ${esc(court)} · not used by this division</span> · nothing to mark ready`);
+        return true;
+    }
     if (r.status === 'none') {
         panel.innerHTML = compactBar('rgba(255,255,255,.3)', `<span class="font-bold text-white">Court ${esc(court)}</span> · all rounds played`);
         return true;
@@ -776,7 +798,7 @@ function renderRefBar(panel, board) {
     }
 
     if (r.status === 'bye') {
-        panel.innerHTML = compactBar('rgba(255,255,255,.35)', `<span class="font-bold text-white">Court ${esc(court)} · no game this round</span>${r.later ? ` · next at ${esc(roundOf(r.later))}` : ''}`);
+        panel.innerHTML = compactBar('rgba(255,255,255,.35)', `<span class="font-bold text-white">Court ${esc(court)} · no game this round</span> · nothing to mark ready${r.later ? ` · next at ${esc(roundOf(r.later))}` : ''}`);
         return true;
     }
     if (r.status === 'playing') {
