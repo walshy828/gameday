@@ -10,11 +10,13 @@
 //   ?board= share one config — a deliberate way to group screens.
 // - config, persisted through the Store (injected by server/index.js to avoid
 //   an import cycle with socket.js → datastores → socket.js):
-//     { nowRunning: [division…], rotateSecs, boards: { [boardId]: { name, mode, divisions, rotateSecs, view } } }
+//     { nowRunning: [division…], rotateSecs, boards: { [boardId]: { name, mode, divisions, rotateSecs, view, countdown } } }
 //   mode: 'follow'  show nowRunning (the board's own local setup when that's empty)
 //         'pinned'  show `divisions` (local setup when empty)
 //         'local'   ignore the server; the screen's own setup (today's behaviour)
 //   view: 'auto' (phase-driven) | 'courts' | 'playoffs' | 'bracket' — see scoreboard.html
+//   countdown: seconds of the big final-seconds overlay (0 = off, null = the
+//     screen's own ?countdown= / default 10); applies in every mode, Local too
 //
 // Boards need no login and only ever RECEIVE config; the one thing a board may
 // change is its own mode → 'local' (someone at the screen chose "Use local
@@ -52,13 +54,20 @@ const cleanSecs = (v, dflt) => {
   return Number.isFinite(n) ? Math.max(0, Math.min(600, n)) : dflt;
 };
 
+const cleanCountdown = (v) => {
+  if (v == null || v === '') return null;
+  const n = parseInt(v, 10);
+  return Number.isFinite(n) ? Math.max(0, Math.min(60, n)) : null;
+};
+
 function normalizeBoard(b = {}, fallbackName = '') {
   return {
     name: clip(b.name, 40) || fallbackName,
     mode: MODES.includes(b.mode) ? b.mode : 'follow',
     divisions: cleanDivisions(b.divisions),
     rotateSecs: b.rotateSecs == null ? null : cleanSecs(b.rotateSecs, null),
-    view: VIEWS.includes(b.view) ? b.view : 'auto'
+    view: VIEWS.includes(b.view) ? b.view : 'auto',
+    countdown: cleanCountdown(b.countdown)
   };
 }
 
@@ -223,6 +232,7 @@ export async function updateBoard(boardId, patch = {}) {
   if (patch.divisions !== undefined) next.divisions = patch.divisions;
   if (patch.rotateSecs !== undefined) next.rotateSecs = patch.rotateSecs;
   if (patch.view !== undefined) next.view = patch.view;
+  if (patch.countdown !== undefined) next.countdown = patch.countdown;
   config.boards[id] = normalizeBoard(next, id);
   scheduleSave();
   pushTo(id);

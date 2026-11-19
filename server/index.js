@@ -1538,12 +1538,12 @@ app.post('/api/displays/nowRunning', async (req, res) => {
   }
 });
 
-// { boardId, name?, mode?, divisions?, rotateSecs?, view? }
+// { boardId, name?, mode?, divisions?, rotateSecs?, view?, countdown? }
 app.post('/api/displays/board', async (req, res) => {
   if (!requireSuperAdmin(req, res)) return;
   try {
-    const { boardId, name, mode, divisions, rotateSecs, view } = req.body || {};
-    res.json({ success: true, ...(await Displays.updateBoard(boardId, { name, mode, divisions, rotateSecs, view })) });
+    const { boardId, name, mode, divisions, rotateSecs, view, countdown } = req.body || {};
+    res.json({ success: true, ...(await Displays.updateBoard(boardId, { name, mode, divisions, rotateSecs, view, countdown })) });
   } catch (e) {
     res.status(400).json({ success: false, error: e.message });
   }

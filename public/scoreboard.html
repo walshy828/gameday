@@ -28,6 +28,9 @@
       --mute:   #6C6C70;
       --ok:     #2E9E63;
       --warn:   #D9503C;
+      /* Header height grows with the screen like the board text (vw clamps), so
+         the division / round / clock stay in proportion on big TVs. */
+      --hdr-h: clamp(72px, 4.6vw, 124px);
       --page-wash:
         radial-gradient(760px 440px at 14% -8%, #55192A 0%, rgba(64,25,33,.62) 34%, transparent 70%),
         radial-gradient(680px 460px at 100% 10%, #24211F 0%, transparent 62%),
@@ -54,11 +57,11 @@
       position: fixed;
       top: 0; left: 0; right: 0;
       z-index: 100;
-      height: 72px;
+      height: var(--hdr-h);
       display: flex;
       align-items: center;
-      gap: 14px;
-      padding: 0 22px;
+      gap: clamp(14px, .9vw, 26px);
+      padding: 0 clamp(22px, 1.2vw, 36px);
       background: var(--page-wash);
       background-attachment: fixed;
       background-repeat: no-repeat;
@@ -66,7 +69,7 @@
     }
 
     .sb-logo {
-      width: 42px; height: 42px;
+      width: clamp(42px, 2.7vw, 76px); height: clamp(42px, 2.7vw, 76px);
       object-fit: contain;
       flex-shrink: 0;
     }
@@ -74,33 +77,34 @@
     .sb-title-block { flex-shrink: 0; }
 
     .sb-title-super {
-      font-size: 9px; font-weight: 600;
+      font-size: clamp(9px, .55vw, 15px); font-weight: 600;
       letter-spacing: .18em; text-transform: uppercase;
       color: var(--gold);
     }
 
     .sb-title-main {
-      font-size: 19px; font-weight: 700;
+      font-size: clamp(19px, 1.2vw, 32px); font-weight: 700;
       letter-spacing: -.025em; color: #F5F5F6;
       line-height: 1.1; margin-top: 2px;
     }
 
     .sb-vr {
-      width: 1px; height: 34px;
+      width: 1px; height: 47%;
       background: rgba(255,255,255,.12);
       flex-shrink: 0;
     }
 
     /* Division tabs */
     .sb-div-switcher {
-      display: flex; align-items: center; gap: 6px;
+      display: flex; align-items: center; gap: clamp(6px, .4vw, 12px);
     }
 
+    /* Division pill(s) and phase chip: sized like the board's team names. */
     .div-tab {
       display: inline-flex; align-items: center;
-      padding: 7px 16px;
+      padding: .58em 1.33em;
       border-radius: 999px;
-      font-size: 12px; font-weight: 700;
+      font-size: clamp(12px, .95vw, 26px); font-weight: 700;
       letter-spacing: .05em; text-transform: uppercase;
       cursor: pointer; border: 1.5px solid transparent;
       transition: all .2s; user-select: none;
@@ -127,11 +131,11 @@
     /* Single-division badge */
     .div-single-badge {
       display: inline-flex; align-items: center; gap: 8px;
-      padding: 5px 14px;
+      padding: .42em 1.17em;
       border-radius: 999px;
       background: rgba(224,184,99,.12);
       border: 1.5px solid rgba(224,184,99,.35);
-      font-size: 12px; font-weight: 700;
+      font-size: clamp(12px, .95vw, 26px); font-weight: 700;
       letter-spacing: .05em; text-transform: uppercase;
       color: var(--gold-l);
     }
@@ -200,12 +204,66 @@
       margin-top: 3px;
     }
 
+    /* Header clocks — scale with the screen like the rest of the board. */
+    .sb-clocks { display: flex; align-items: center; gap: clamp(20px, 1.2vw, 36px); text-align: right; flex-shrink: 0; }
+    .sb-clock-col { display: flex; flex-direction: column; align-items: flex-end; }
+    .sb-clock-lbl {
+      font-size: clamp(8px, .55vw, 14px); font-weight: 700; color: rgba(255,255,255,.42);
+      letter-spacing: .1em; text-transform: uppercase; margin-bottom: 2px;
+    }
+    .sb-match-clock {
+      font-size: clamp(34px, 2.6vw, 72px); font-weight: 900; color: var(--gold-l);
+      font-variant-numeric: tabular-nums; line-height: 1; letter-spacing: -.02em;
+    }
+    .sb-match-round {
+      font-size: clamp(9px, .72vw, 19px); font-weight: 700; color: rgba(255,255,255,.6);
+      letter-spacing: .08em; text-transform: uppercase; line-height: 1; margin-top: 3px; white-space: nowrap;
+    }
+    .sb-match-round:empty { display: none; }
+    .sb-clock-sep { width: 1px; height: 50%; align-self: center; background: rgba(255,255,255,.12); }
+    .sb-wall-time {
+      font-size: clamp(22px, 1.55vw, 42px); font-weight: 700; color: rgba(255,255,255,.88);
+      font-variant-numeric: tabular-nums; line-height: 1;
+    }
+
+    /* Final-seconds countdown: a huge number over the board (pointer-events
+       off, translucent) so the gym can count down while courts/standings
+       stay visible behind it. ?countdown=N (default 10, 0 = off). */
+    .sb-countdown {
+      position: fixed; inset: 0; z-index: 950; pointer-events: none;
+      display: flex; flex-direction: column; align-items: center; justify-content: center;
+      background: radial-gradient(ellipse at center, rgba(8,8,10,.55) 0%, rgba(8,8,10,.22) 45%, transparent 75%);
+      opacity: 0; transition: opacity .3s ease;
+    }
+    .sb-countdown.show { opacity: 1; }
+    .sb-countdown-num {
+      font-size: min(46vh, 34vw); font-weight: 900; line-height: .9;
+      font-variant-numeric: tabular-nums; letter-spacing: -.04em;
+      color: rgba(243,220,169,.82);
+      text-shadow: 0 0 .08em rgba(224,184,99,.55), 0 .03em .12em rgba(0,0,0,.6);
+      -webkit-text-stroke: .012em rgba(42,27,8,.5);
+    }
+    .sb-countdown.final .sb-countdown-num { color: rgba(255,120,100,.88); text-shadow: 0 0 .1em rgba(217,80,60,.6), 0 .03em .12em rgba(0,0,0,.6); }
+    .sb-countdown.timeup .sb-countdown-num { font-size: min(30vh, 22vw); color: rgba(255,120,100,.92); letter-spacing: .02em; }
+    .sb-countdown-cap {
+      margin-top: 1.2vh; font-size: clamp(14px, 1.4vw, 38px); font-weight: 800;
+      letter-spacing: .3em; text-transform: uppercase; color: rgba(255,255,255,.75);
+      text-shadow: 0 2px 10px rgba(0,0,0,.8);
+    }
+    .sb-countdown-num.pop { animation: cdPop .9s ease-out; }
+    @keyframes cdPop {
+      0%   { transform: scale(1.18); opacity: .4; }
+      18%  { transform: scale(1);    opacity: 1; }
+      100% { transform: scale(.94);  opacity: .85; }
+    }
+    @media (prefers-reduced-motion: reduce) { .sb-countdown-num.pop { animation: none; } }
+
     /* ==========================================================
        ROTATE PROGRESS BAR
     ========================================================== */
     .rotate-bar-track {
       position: fixed;
-      top: 72px; left: 0; right: 0;
+      top: var(--hdr-h); left: 0; right: 0;
       height: 3px;
       background: rgba(255,255,255,.06);
       z-index: 99;
@@ -223,7 +281,7 @@
        MAIN CONTENT
     ========================================================== */
     .sb-main {
-      padding-top: calc(72px + 3px + 18px);
+      padding-top: calc(var(--hdr-h) + 3px + 18px);
       padding-bottom: 28px;
       padding-left: 18px;
       padding-right: 18px;
@@ -283,8 +341,8 @@
     /* Phase chip in the header */
     .sb-phase {
       flex-shrink: 0;
-      padding: 5px 12px; border-radius: 999px;
-      font-size: 11px; font-weight: 800; letter-spacing: .12em; text-transform: uppercase;
+      padding: .45em 1.1em; border-radius: 999px;
+      font-size: clamp(11px, .8vw, 21px); font-weight: 800; letter-spacing: .12em; text-transform: uppercase;
       border: 1px solid rgba(255,255,255,.16); color: rgba(255,255,255,.75);
       background: rgba(255,255,255,.05);
     }
@@ -447,14 +505,15 @@
 
     /* Subdivision chips (standings + bracket) */
     .subdiv-bar {
-      display: flex; flex-wrap: wrap; gap: 6px; align-items: center;
-      padding: 8px 14px;
+      display: flex; flex-wrap: wrap; gap: clamp(6px, .4vw, 12px); align-items: center;
+      padding: clamp(8px, .5vw, 14px) clamp(14px, .8vw, 22px);
       border-bottom: 1px solid rgba(255,255,255,.08);
     }
     .subdiv-bar.hidden { display: none !important; }
     .subdiv-chip {
-      padding: 4px 12px; border-radius: 999px;
-      font-size: 11px; font-weight: 700; letter-spacing: .04em;
+      /* about the size of a standings team name, so it reads from the floor */
+      padding: .36em 1.1em; border-radius: 999px;
+      font-size: clamp(11px, 1.05vw, 26px); font-weight: 800; letter-spacing: .04em;
       border: 1.5px solid rgba(255,255,255,.14);
       background: rgba(255,255,255,.05);
       color: rgba(255,255,255,.6);
@@ -468,7 +527,7 @@
     }
     .subdiv-cd { font-variant-numeric: tabular-nums; }
     .subdiv-auto {
-      margin-left: auto; font-size: 9px; font-weight: 700;
+      margin-left: auto; font-size: clamp(9px, .6vw, 14px); font-weight: 700;
       letter-spacing: .1em; text-transform: uppercase;
       color: rgba(255,255,255,.35);
     }
@@ -488,7 +547,7 @@
     /* Header subdivision-cycle setting */
     .sb-cycle {
       display: flex; align-items: center; gap: 6px;
-      font-size: 9px; font-weight: 700; letter-spacing: .1em;
+      font-size: clamp(9px, .55vw, 13px); font-weight: 700; letter-spacing: .1em;
       text-transform: uppercase; color: rgba(255,255,255,.4);
     }
     .sb-cycle select {
@@ -533,24 +592,24 @@
 
     /* Module header */
     .module-header {
-      display: flex; align-items: center; gap: 9px;
-      padding: 11px 14px;
+      display: flex; align-items: center; gap: clamp(9px, .55vw, 16px);
+      padding: clamp(11px, .65vw, 18px) clamp(14px, .8vw, 22px);
       border-bottom: 1px solid rgba(255,255,255,.08);
       user-select: none;
     }
 
-    .mod-icon { font-size: 15px; line-height: 1; flex-shrink: 0; }
+    .mod-icon { font-size: clamp(15px, 1vw, 26px); line-height: 1; flex-shrink: 0; }
 
     .mod-title {
-      flex: 1; font-size: 10px; font-weight: 700;
+      flex: 1; font-size: clamp(10px, .8vw, 20px); font-weight: 800;
       letter-spacing: .12em; text-transform: uppercase;
-      color: rgba(255,255,255,.7);
+      color: rgba(255,255,255,.78);
     }
 
     .mod-badge {
-      font-size: 8px; font-weight: 700;
+      font-size: clamp(8px, .58vw, 14px); font-weight: 700;
       letter-spacing: .1em; text-transform: uppercase;
-      padding: 2px 8px; border-radius: 999px;
+      padding: .25em 1em; border-radius: 999px;
       flex-shrink: 0;
     }
 
@@ -1499,22 +1558,27 @@
   </div>
 
   <!-- Clock group: Match Clock + Wall Clock -->
-  <div style="display:flex;align-items:center;gap:20px;text-align:right;flex-shrink:0;">
+  <div class="sb-clocks">
     <!-- Match Clock -->
-    <div id="match-clock-wrap" style="display:flex;flex-direction:column;align-items:flex-end;">
-      <div style="font-size:8px;font-weight:700;color:rgba(255,255,255,0.38);letter-spacing:.1em;text-transform:uppercase;margin-bottom:2px;">Match Time</div>
-      <div id="match-clock" style="font-size:34px;font-weight:900;color:var(--gold-l);font-variant-numeric:tabular-nums;line-height:1;letter-spacing:-.02em;">5:00</div>
-      <div id="match-round" style="font-size:9px;font-weight:600;color:rgba(255,255,255,0.45);letter-spacing:.08em;text-transform:uppercase;line-height:1;margin-top:3px;"></div>
+    <div id="match-clock-wrap" class="sb-clock-col">
+      <div class="sb-clock-lbl">Match Time</div>
+      <div id="match-clock" class="sb-match-clock">5:00</div>
+      <div id="match-round" class="sb-match-round"></div>
     </div>
-    <!-- Separator -->
-    <div style="width:1px;height:36px;background:rgba(255,255,255,0.12);"></div>
+    <div class="sb-clock-sep"></div>
     <!-- Wall Clock -->
-    <div style="display:flex;flex-direction:column;align-items:flex-end;">
-      <div style="font-size:8px;font-weight:700;color:rgba(255,255,255,0.38);letter-spacing:.1em;text-transform:uppercase;margin-bottom:2px;">Time</div>
-      <div id="sb-time" style="font-size:22px;font-weight:700;color:rgba(255,255,255,0.88);font-variant-numeric:tabular-nums;line-height:1;">--:-- am</div>
+    <div class="sb-clock-col">
+      <div class="sb-clock-lbl">Time</div>
+      <div id="sb-time" class="sb-wall-time">--:-- am</div>
     </div>
   </div>
 </header>
+
+<!-- Final-seconds countdown overlay (startMatchClockTicker) -->
+<div class="sb-countdown" id="sb-countdown" aria-hidden="true">
+  <div class="sb-countdown-num" id="sb-countdown-num"></div>
+  <div class="sb-countdown-cap" id="sb-countdown-cap"></div>
+</div>
 
 <!-- Rotate progress bar -->
 <div class="rotate-bar-track hidden" id="rotate-bar">
@@ -1653,6 +1717,11 @@ const SB = {
   },
   serverOffset: 0,
   timerIntervalId:   null,
+  countdownSecs:     10,    // final-seconds overlay length (0 = off): central board setting, else ?countdown=N, else 10
+  countdownLocal:    10,    // this screen's own value (?countdown= or 10)
+  cdPrev:            null,
+  cdShown:           '',
+  cdTimeUpUntil:     0,
   // Court board (shared derivation with the MC board / My team card)
   courtPub:          null,  // { division, enabled, board, marks, earlies } from /api/courtStatus/public
   courtPollTimer:    null,
@@ -3312,10 +3381,48 @@ function startMatchClockTicker() {
     } else {
       el.style.color = 'var(--gold-l)';
     }
+
+    updateFinalCountdown(state, remaining);
   }
 
   tick();
   SB.timerIntervalId = setInterval(tick, 100);
+}
+
+// Final-seconds overlay: the last SB.countdownSecs of a round's main segment
+// show as a huge translucent number over the board, then "TIME" for a moment
+// when it runs out (the clock hitting 0, or the server flipping straight to the
+// after-round break). Stopping the clock early just hides it.
+function updateFinalCountdown(state, remaining) {
+  const box = document.getElementById('sb-countdown');
+  if (!box) return;
+  const N = SB.countdownSecs;
+  const inMain = state.running && !state.startAfterRoundRunning && !!state.startTime;
+  const now = Date.now();
+
+  if (inMain) {
+    if (remaining === 0 && SB.cdPrev != null && SB.cdPrev > 0) SB.cdTimeUpUntil = now + 2500;
+    SB.cdPrev = remaining;
+  } else {
+    if (SB.cdPrev != null && SB.cdPrev <= 1 && state.running && state.startAfterRoundRunning) SB.cdTimeUpUntil = now + 2500;
+    SB.cdPrev = null;
+  }
+
+  let show = '';
+  if (N > 0 && now < SB.cdTimeUpUntil) show = 'TIME';
+  else if (N > 0 && inMain && remaining > 0 && remaining <= N) show = String(remaining);
+  if (show === SB.cdShown) return;
+  SB.cdShown = show;
+
+  const num = document.getElementById('sb-countdown-num');
+  const cap = document.getElementById('sb-countdown-cap');
+  box.classList.toggle('show', !!show);
+  box.classList.toggle('timeup', show === 'TIME');
+  box.classList.toggle('final', show !== '' && show !== 'TIME' && +show <= 3);
+  if (!show) return;
+  num.textContent = show;
+  cap.textContent = show === 'TIME' ? '' : (document.getElementById('match-round')?.textContent || 'Time left');
+  num.classList.remove('pop'); void num.offsetWidth; num.classList.add('pop');
 }
 
 // ================================================================
@@ -3755,6 +3862,9 @@ function applyEffective() {
   const view = eff?.source === 'remote' ? eff.view : 'auto';
   const viewChanged = view !== SB.viewOverride;
   SB.viewOverride = view;
+  // Countdown overlay: the central per-board setting wins in every mode (Local too).
+  const cd = SB.remote?.board?.countdown;
+  SB.countdownSecs = Number.isFinite(cd) ? cd : SB.countdownLocal;
   updateControlInfo();
 
   if (!eff) {
@@ -3866,6 +3976,7 @@ function updateControlInfo() {
 //   ?phase=pool|preview|playoffs|done  pin the layout instead of following the schedule
 //   ?preview=N   show the bracket from N pool rounds before playoffs (default 2, 0 = off)
 //   ?scene=N     seconds between standings ⇄ bracket in that phase (default 20)
+//   ?countdown=N big final-seconds overlay for the last N s of a round (default 10, 0 = off)
 function parsePhaseParams() {
   const p = new URLSearchParams(window.location.search);
   const ph = (p.get('phase') || '').toLowerCase();
@@ -3876,6 +3987,8 @@ function parsePhaseParams() {
   if (Number.isFinite(ps) && ps >= 4) SB.stPageSecs = ps;
   const sc = parseInt(p.get('scene'));
   if (Number.isFinite(sc) && sc >= 5) SB.sceneSecs = sc;
+  const cd = parseInt(p.get('countdown'));
+  if (Number.isFinite(cd) && cd >= 0) SB.countdownSecs = SB.countdownLocal = Math.min(cd, 60);
 }
 
 function parseURLConfig() {

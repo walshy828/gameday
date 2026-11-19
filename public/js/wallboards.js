@@ -5,7 +5,8 @@
 // - Now running: the divisions on court right now. Boards set to Follow show
 //   these (rotating between them when there are two or more).
 // - Per board: Follow / Pinned (its own divisions) / Local (the screen's own
-//   setup), a View override (Auto follows the tournament phase), rename,
+//   setup), a View override (Auto follows the tournament phase), the final-
+//   seconds countdown overlay (any mode, Local too), rename,
 //   Identify (flashes the name on that screen), Reload, Forget (offline only).
 //
 // Reads GET /api/displays when Setup opens, on the staff-only data-less
@@ -28,6 +29,14 @@ const VIEWS = [
 ];
 const PHASES = { pool: 'Pool play', preview: 'Playoffs soon', playoffs: 'Playoffs', done: 'Final results' };
 const ROTATE = [15, 30, 45, 60, 90];
+const COUNTDOWN = [
+    { v: '', label: 'Screen default (10 s)' },
+    { v: '0', label: 'Off' },
+    { v: '5', label: 'Last 5 s' },
+    { v: '10', label: 'Last 10 s' },
+    { v: '15', label: 'Last 15 s' },
+    { v: '30', label: 'Last 30 s' }
+];
 
 let data = null;
 let divisions = [];
@@ -148,6 +157,7 @@ function onChange(e) {
     const kind = s.dataset.wbSelect;
     if (kind === 'rotate') send('nowRunning', { rotateSecs: Number(s.value) });
     if (kind === 'view') send('board', { boardId: s.dataset.board, view: s.value });
+    if (kind === 'countdown') send('board', { boardId: s.dataset.board, countdown: s.value === '' ? null : Number(s.value) });
     if (kind === 'board-rotate') send('board', { boardId: s.dataset.board, rotateSecs: s.value === '' ? null : Number(s.value) });
 }
 
@@ -164,6 +174,12 @@ function rotateSelect(value, attrs, inherit) {
     const opts = (inherit ? [`<option value="" ${value == null ? 'selected' : ''}>Event default</option>`] : [])
         .concat(ROTATE.map(s => `<option value="${s}" ${Number(value) === s ? 'selected' : ''}>${s} s</option>`));
     return `<select ${attrs} class="rounded-lg border border-white/15 bg-gray-800 px-2 py-1 text-xs text-white">${opts.join('')}</select>`;
+}
+
+function countdownOptions(value) {
+    const cur = value == null ? '' : String(value);
+    const opts = COUNTDOWN.some(o => o.v === cur) ? COUNTDOWN : [...COUNTDOWN, { v: cur, label: `Last ${cur} s` }];
+    return opts.map(o => `<option value="${o.v}" ${o.v === cur ? 'selected' : ''}>${esc(o.label)}</option>`).join('');
 }
 
 function showingLine(b) {
@@ -206,6 +222,11 @@ function boardRow(b) {
                     <span class="mt-1 block normal-case tracking-normal">${rotateSelect(b.rotateSecs, `data-wb-select="board-rotate" data-board="${esc(b.boardId)}"`, true)}</span>
                 </label>
             </div>`}
+            <label class="block text-[11px] font-bold uppercase tracking-wider text-white/40">Big countdown at end of round
+                <select data-wb-select="countdown" data-board="${esc(b.boardId)}" class="mt-1 block w-full rounded-lg border border-white/15 bg-gray-800 px-2 py-1 text-xs normal-case tracking-normal text-white">
+                    ${countdownOptions(b.countdown)}
+                </select>
+            </label>
             <div class="flex flex-wrap gap-2">
                 <button type="button" data-wb="identify" data-board="${esc(b.boardId)}" class="rounded-lg border border-white/15 px-3 py-1.5 text-xs font-bold text-white/80" ${b.online ? '' : 'disabled'}>Identify</button>
                 <button type="button" data-wb="reload" data-board="${esc(b.boardId)}" class="rounded-lg border border-white/15 px-3 py-1.5 text-xs font-bold text-white/80" ${b.online ? '' : 'disabled'}>Reload</button>
