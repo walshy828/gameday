@@ -572,14 +572,16 @@ function reportBtn(game, label, primary) {
 
 // --- superadmin board -------------------------------------------------------------------
 
+// Short pill labels: the tile's colour already says the state, so the pill
+// stays one short word (never wraps) and "waiting" is just an hourglass.
 const STATUS_STYLE = {
-    ready: { label: 'READY', dot: 'var(--ok)', bg: 'rgba(46,158,99,.18)', border: 'rgba(46,158,99,.65)', text: '#B9F0D0' },
-    waiting: { label: 'WAITING FOR TEAMS', dot: 'var(--gold)', bg: 'rgba(224,184,99,.12)', border: 'rgba(224,184,99,.5)', text: 'var(--gold-l)' },
-    playing: { label: 'IN PLAY', dot: 'var(--warn)', bg: 'rgba(255,255,255,.05)', border: 'rgba(255,255,255,.12)', text: 'rgba(255,255,255,.8)' },
-    final: { label: '✓ FINAL', dot: 'var(--ok)', bg: 'rgba(255,255,255,.04)', border: 'rgba(46,158,99,.35)', text: '#B9F0D0' },
-    bye: { label: 'NOT USED THIS ROUND', dot: 'rgba(255,255,255,.25)', bg: 'rgba(255,255,255,.02)', border: 'rgba(255,255,255,.14)', text: 'rgba(255,255,255,.45)', idle: true },
-    unused: { label: 'NOT USED', dot: 'rgba(255,255,255,.2)', bg: 'rgba(255,255,255,.015)', border: 'rgba(255,255,255,.12)', text: 'rgba(255,255,255,.4)', idle: true },
-    none: { label: '—', dot: 'rgba(255,255,255,.25)', bg: 'rgba(255,255,255,.03)', border: 'rgba(255,255,255,.08)', text: 'rgba(255,255,255,.4)' }
+    ready: { label: '✓ Ready', dot: 'var(--ok)', bg: 'rgba(46,158,99,.18)', border: 'rgba(46,158,99,.65)', text: '#B9F0D0', pill: 'rgba(46,158,99,.3)' },
+    waiting: { label: '⏳', aria: 'Waiting for teams', dot: 'var(--gold)', bg: 'rgba(224,184,99,.1)', border: 'rgba(224,184,99,.5)', text: 'var(--gold-l)', pill: 'rgba(224,184,99,.18)' },
+    playing: { label: '● Live', aria: 'In play', dot: 'var(--warn)', bg: 'rgba(255,255,255,.05)', border: 'rgba(255,255,255,.14)', text: 'rgba(255,255,255,.85)', pill: 'rgba(255,255,255,.1)' },
+    final: { label: '✓ Final', dot: 'var(--ok)', bg: 'rgba(255,255,255,.04)', border: 'rgba(46,158,99,.35)', text: '#B9F0D0', pill: 'rgba(46,158,99,.18)' },
+    bye: { label: 'Off', aria: 'Not used this round', dot: 'rgba(255,255,255,.25)', bg: 'rgba(255,255,255,.02)', border: 'rgba(255,255,255,.14)', text: 'rgba(255,255,255,.45)', pill: 'rgba(255,255,255,.06)', idle: true },
+    unused: { label: 'Not used', dot: 'rgba(255,255,255,.2)', bg: 'rgba(255,255,255,.015)', border: 'rgba(255,255,255,.12)', text: 'rgba(255,255,255,.4)', pill: 'rgba(255,255,255,.05)', idle: true },
+    none: { label: '—', dot: 'rgba(255,255,255,.25)', bg: 'rgba(255,255,255,.03)', border: 'rgba(255,255,255,.08)', text: 'rgba(255,255,255,.4)', pill: 'rgba(255,255,255,.05)' }
 };
 
 /** "Pool A · Quarterfinals · P5" — shown when a board round mixes brackets/sub-divisions. */
@@ -589,65 +591,116 @@ function gameCaption(g) {
     return [g.subDivision, name, match].filter(Boolean).join(' · ');
 }
 
+/** The reported winner's side (1 / 2), 'tie', or 0 when there's no result yet. */
+function winnerSide(g) {
+    const w = (hasValue(g.winner) ? g.winner : g.adminWinner || '').trim().toLowerCase();
+    if (!w) return 0;
+    if (w === 'tie') return 'tie';
+    if (w === String(g.team1 || '').trim().toLowerCase()) return 1;
+    if (w === String(g.team2 || '').trim().toLowerCase()) return 2;
+    return 0;
+}
+
+// One fixed-size line: never wraps, so a changing value can't push anything down.
+const ONE_LINE = 'white-space:nowrap;overflow:hidden;text-overflow:ellipsis';
+// Team names: same size in every phase, at most two lines each.
+const NAME = 'display:-webkit-box;-webkit-box-orient:vertical;-webkit-line-clamp:2;overflow:hidden;overflow-wrap:anywhere';
+
+/**
+ * A court tile on the MC board. Laid out in fixed slots so nothing the MC is
+ * reading moves when a court goes ready / live / final:
+ *   header (Court N + short status pill) · optional caption (same for every
+ *   tile on the board) · team names (same size and place in every phase) ·
+ *   one-line note · a fixed-height action row · rare alerts last.
+ * Tiles in a row stretch to the tallest, and the action row is pinned to the
+ * bottom, so the buttons line up across the row too.
+ */
 function tileHtml(r, phase, showCaption) {
-    const st = r.early ? { ...STATUS_STYLE.playing, label: 'IN PLAY · SQUEEZED IN' } : STATUS_STYLE[r.status];
+    const st = r.early ? { ...STATUS_STYLE.playing, label: '⚡ Live', aria: 'In play · squeezed in' } : STATUS_STYLE[r.status];
     const g = r.game;
-    let body = '';
-    if (g && r.status === 'final') {
-        body = `<div class="mt-1.5 text-[11px] leading-[1.35] text-white/55">${esc(g.team1)} <span class="text-white/35">vs</span> ${esc(g.team2)}</div>
-                <div class="mt-1 text-[12px] font-bold text-white">${esc(resultText(g))}</div>
-                ${g.adminName ? `<div class="mt-0.5 text-[10px] text-white/40">${esc(g.adminName)}</div>` : ''}`;
-    } else if (g && phase === 'staging') {
-        // Big, readable names so the MC can announce the round from here.
-        body = `<div class="mt-1.5 text-[14px] font-extrabold leading-[1.25] text-white">${esc(g.team1)}</div>
-                <div class="text-[10px] font-semibold text-white/40">vs</div>
-                <div class="text-[14px] font-extrabold leading-[1.25] text-white">${esc(g.team2)}</div>
-                ${r.mark ? `<div class="mt-1 text-[10px] text-white/45">${esc(r.mark.by)} · ${ago(r.mark.at)}</div>` : ''}`;
-    } else if (g) {
-        body = `<div class="mt-1.5 text-[11px] leading-[1.35] text-white/75">${esc(g.team1)} <span class="text-white/40">vs</span> ${esc(g.team2)}</div>`;
+    const side = g && r.status === 'final' ? winnerSide(g) : 0;
+    const nameStyle = (n) => {
+        const lost = side && side !== 'tie' && side !== n;
+        return `${NAME};color:${lost ? 'rgba(255,255,255,.45)' : '#fff'}`;
+    };
+
+    let teams;
+    if (g) {
+        teams = `<div class="text-[15px] font-extrabold leading-[1.2]" style="${nameStyle(1)}">${esc(g.team1)}</div>
+                 <div class="text-[10px] font-semibold leading-[1.3] text-white/35">vs</div>
+                 <div class="text-[15px] font-extrabold leading-[1.2]" style="${nameStyle(2)}">${esc(g.team2)}</div>`;
     } else if (r.status === 'unused') {
-        body = '<div class="mt-1.5 text-[10px] leading-[1.35] text-white/40">No games for this division · doesn\'t need to be ready</div>';
+        teams = '<div class="text-[12px] leading-[1.35] text-white/45">No games for this division</div>';
     } else if (r.status === 'bye') {
-        body = `<div class="mt-1.5 text-[10px] leading-[1.35] text-white/40">Doesn't need to be ready${r.later ? ` · next game ${esc(timeOnly(roundOf(r.later)))}` : ''}</div>`;
+        teams = '<div class="text-[12px] leading-[1.35] text-white/45">No game this round</div>';
+    } else {
+        teams = '';
     }
-    const action = r.status === 'playing'
-        ? `<div class="mt-2 flex">${reportBtn(g, 'Report', true).replace('flex-none', 'w-full')}</div>`
-        : r.status === 'final'
-        ? `<div class="mt-2 flex justify-end">${reportBtn(g, 'Edit', false)}</div>`
-        : r.status === 'waiting'
-        ? `<button type="button" data-cr-ready="${esc(r.court)}" ${pendingFor(r.court, true) ? 'disabled aria-busy="true"' : ''} class="mt-2 w-full rounded-full px-3 py-2 text-[11px] font-bold disabled:opacity-60" style="background:rgba(46,158,99,.25);color:#B9F0D0">${pendingFor(r.court, true) ? 'Marking…' : 'Mark ready'}</button>`
-        : r.status === 'ready'
-            ? `<button type="button" data-cr-unready="${esc(r.court)}" ${pendingFor(r.court, false) ? 'disabled aria-busy="true"' : ''} class="mt-2 w-full rounded-full px-3 py-2 text-[11px] font-semibold disabled:opacity-60" style="background:rgba(255,255,255,.06);color:rgba(255,255,255,.6)">${pendingFor(r.court, false) ? 'Updating…' : 'Not ready'}</button>`
-            : '';
+
+    // The one-line note under the names (always present, so it reserves its line).
+    let note = '';
+    if (g && r.status === 'final') {
+        // Winner's name is already bright above (loser dimmed); this line just says by how much.
+        note = resultText(g);
+    } else if (r.status === 'ready' && r.mark) {
+        note = `${r.mark.by || 'Marked'} · ${ago(r.mark.at)}`;
+    } else if (r.status === 'waiting') {
+        note = 'Waiting for teams';
+    } else if (r.status === 'bye') {
+        note = r.later ? `Next game ${timeOnly(roundOf(r.later))}` : 'No ready needed';
+    } else if (r.status === 'unused') {
+        note = 'No ready needed';
+    } else if (r.early) {
+        note = 'Squeezed in';
+    }
+
+    const btn = 'w-full rounded-full px-3 text-[12px] font-bold leading-none disabled:opacity-60';
+    const btnH = 'height:36px';
+    let action;
+    if (r.status === 'playing') {
+        action = reportBtn(g, 'Report', true).replace('flex-none', 'w-full').replace('py-2', '').replace('style="', `style="${btnH};`);
+    } else if (r.status === 'final') {
+        action = reportBtn(g, 'Edit', false).replace('flex-none', 'w-full').replace('py-2', '').replace('style="', `style="${btnH};`);
+    } else if (r.status === 'waiting') {
+        const busy = pendingFor(r.court, true);
+        action = `<button type="button" data-cr-ready="${esc(r.court)}" ${busy ? 'disabled aria-busy="true"' : ''} class="${btn}" style="${btnH};background:rgba(46,158,99,.28);color:#B9F0D0">${busy ? 'Marking…' : 'Mark ready'}</button>`;
+    } else if (r.status === 'ready') {
+        const busy = pendingFor(r.court, false);
+        action = `<button type="button" data-cr-unready="${esc(r.court)}" ${busy ? 'disabled aria-busy="true"' : ''} class="${btn} font-semibold" style="${btnH};background:rgba(255,255,255,.06);color:rgba(255,255,255,.6)">${busy ? 'Updating…' : 'Not ready'}</button>`;
+    } else {
+        action = '';
+    }
+
+    const alert = (bg, color, html) => `<div class="mt-1.5 rounded-[10px] px-2 py-1 text-[10px] font-bold leading-[1.3]" style="background:${bg};color:${color};${ONE_LINE}">${html}</div>`;
     const disputed = g && disputedPlayoffGames().some(d => String(d.firebaseIndex) === String(g.firebaseIndex));
-    const dispute = disputed
-        ? `<div class="mt-2 rounded-[12px] px-2 py-1.5 text-[10px] font-bold leading-[1.3]" style="background:rgba(217,80,60,.18);color:#FFB4A6">⚠ Winner changed — see top</div>`
-        : '';
     const issue = courtIssueFor(r.court);
-    const flag = issue
-        ? `<div class="mt-2 rounded-[12px] px-2 py-1.5 text-[10px] font-bold leading-[1.3]" style="background:rgba(217,80,60,.28);color:#FFD2C8">✋ Flag up · ${esc((ISSUE_REASONS.find(x => x.key === issue.reason) || {}).label || 'Other')}${issue.ackAt ? ` · ${esc(issue.ackBy || 'MC')} on the way` : ''}</div>`
-        : '';
+    const alerts = [
+        issue ? alert('rgba(217,80,60,.28)', '#FFD2C8', `✋ Flag up · ${esc((ISSUE_REASONS.find(x => x.key === issue.reason) || {}).label || 'Other')}${issue.ackAt ? ` · ${esc(issue.ackBy || 'MC')} on the way` : ''}`) : '',
+        disputed ? alert('rgba(217,80,60,.18)', '#FFB4A6', '⚠ Winner changed — see top') : '',
+        r.owed?.length
+            ? alert('rgba(217,80,60,.18)', '#FFB4A6', `⚠ ${esc(timeOnly(roundOf(r.owed[0])))} score missing${r.owed.length > 1 ? ` (+${r.owed.length - 1})` : ''}`)
+              + `<div class="mt-1.5 flex">${reportBtn(r.owed[0], `Report ${esc(timeOnly(roundOf(r.owed[0])))}`, true).replace('flex-none', 'w-full')}</div>`
+            : '',
+        r.early ? `<button type="button" data-cr-unearly="${esc(gameKeyOf(g))}" class="mt-1.5 self-center text-[10px] font-semibold underline text-white/40">Undo squeeze-in</button>` : ''
+    ].join('');
+
     // A court with nothing to do (no game this round / not in this division)
     // sits back: dashed and faded, unless something on it needs attention.
     const faded = st.idle && !issue && !r.owed?.length;
-    const owed = r.owed?.length
-        ? `<div class="mt-2 rounded-[12px] px-2 py-1.5 text-[10px] font-bold leading-[1.3]" style="background:rgba(217,80,60,.18);color:#FFB4A6">⚠ ${esc(roundOf(r.owed[0]))} score missing${r.owed.length > 1 ? ` (+${r.owed.length - 1})` : ''}</div>
-           <div class="mt-1.5 flex">${reportBtn(r.owed[0], `Report ${esc(timeOnly(roundOf(r.owed[0])))}`, true).replace('flex-none', 'w-full')}</div>`
+    const caption = showCaption
+        ? `<div class="mt-0.5 text-[10px] font-semibold leading-[1.3] text-white/45" style="${ONE_LINE}">${g ? esc(gameCaption(g)) || '&nbsp;' : '&nbsp;'}</div>`
         : '';
     return `
-        <div class="rounded-[20px] border p-3" style="background:${st.bg};border-color:${issue ? 'rgba(255,120,100,.95)' : r.owed?.length ? 'rgba(217,80,60,.65)' : st.border}${issue ? ';box-shadow:0 0 0 2px rgba(217,80,60,.35)' : ''}${faded ? ';border-style:dashed;opacity:.55' : ''}">
-            <div class="flex items-center justify-between gap-2">
-                <div class="text-[15px] font-extrabold text-white">Court ${esc(r.court)}</div>
-                <span class="inline-block h-2.5 w-2.5 rounded-full" style="background:${st.dot}"></span>
+        <div class="flex min-w-0 flex-col rounded-[18px] border p-2.5" style="background:${st.bg};border-color:${issue ? 'rgba(255,120,100,.95)' : r.owed?.length ? 'rgba(217,80,60,.65)' : st.border}${issue ? ';box-shadow:0 0 0 2px rgba(217,80,60,.35)' : ''}${faded ? ';border-style:dashed;opacity:.55' : ''}">
+            <div class="flex items-center justify-between gap-1.5" style="height:24px">
+                <div class="text-[16px] font-extrabold tracking-[.02em] text-white/75" style="${ONE_LINE}" aria-label="Court ${esc(r.court)}">C${esc(r.court)}</div>
+                <span class="flex-none rounded-full px-2 text-[11px] font-extrabold leading-[22px]" style="background:${st.pill};color:${st.text};white-space:nowrap"${st.aria ? ` title="${esc(st.aria)}" aria-label="${esc(st.aria)}"` : ''}>${st.label}</span>
             </div>
-            <div class="mt-1 text-[11px] font-extrabold tracking-[.08em]" style="color:${st.text}">${st.label}</div>
-            ${g && (showCaption || r.early) && gameCaption(g) ? `<div class="mt-0.5 text-[10px] font-semibold text-white/45">${esc(gameCaption(g))}</div>` : ''}
-            ${r.early ? `<button type="button" data-cr-unearly="${esc(gameKeyOf(g))}" class="mt-1 text-[10px] font-semibold underline text-white/40">Undo squeeze-in</button>` : ''}
-            ${body}
-            ${flag}
-            ${dispute}
-            ${owed}
-            ${action}
+            ${caption}
+            <div class="mt-1.5">${teams}</div>
+            <div class="mt-1 text-[11px] leading-[16px] text-white/50" style="${ONE_LINE};height:16px">${note ? esc(note) : '&nbsp;'}</div>
+            <div class="mt-auto pt-2" style="min-height:44px">${action}</div>
+            ${alerts}
         </div>`;
 }
 
@@ -721,29 +774,30 @@ function renderBoard(panel, board) {
         const style = timesUp
             ? 'background:linear-gradient(135deg,var(--gold) 0%,var(--gold-d) 100%);color:#2A1B08;box-shadow:0 0 0 3px rgba(224,184,99,.35)'
             : 'background:rgba(255,255,255,.08);color:#fff;border:1px solid rgba(255,255,255,.2)';
-        control = `${undo}<button type="button" data-cr-end class="rounded-full px-3.5 py-2 text-[11px] font-bold ${timesUp ? 'animate-pulse' : ''}" style="${style}">${timesUp ? '⏱ Time\'s up · End round →' : 'End round →'}</button>`;
+        control = `${undo}<button type="button" data-cr-end class="flex-none whitespace-nowrap rounded-full px-3.5 py-2 text-[11px] font-bold ${timesUp ? 'animate-pulse' : ''}" style="${style}">${timesUp ? '⏱ Time\'s up · End →' : 'End round →'}</button>`;
     } else if (B) {
-        control = `${undo}<button type="button" data-cr-start class="rounded-full px-3.5 py-2 text-[11px] font-bold" style="background:linear-gradient(135deg,var(--gold) 0%,var(--gold-d) 100%);color:#2A1B08">▶ Start round</button>`;
+        control = `${undo}<button type="button" data-cr-start class="flex-none whitespace-nowrap rounded-full px-3.5 py-2 text-[11px] font-bold" style="background:linear-gradient(135deg,var(--gold) 0%,var(--gold-d) 100%);color:#2A1B08">▶ Start round</button>`;
     }
 
     const kicker = B ? `${esc(B)} round · ${phase === 'playing' ? `in play${sinceTs ? ' since ' + esc(clockTime(sinceTs)) : ''}` : 'up next'}` : 'Court board';
     const glow = phase === 'staging' && summary.allReady;
     panel.innerHTML = `
         <section class="rounded-[26px] border p-3.5" style="background:rgba(255,255,255,.055);border-color:${glow ? 'rgba(46,158,99,.7)' : 'rgba(255,255,255,.1)'};box-shadow:${glow ? '0 0 0 1px rgba(46,158,99,.35),' : ''}0 14px 36px rgba(0,0,0,.26)">
-            <div class="flex flex-wrap items-center justify-between gap-2">
+            <div class="flex items-center justify-between gap-2">
                 <div class="min-w-0">
-                    <div class="text-[10px] tracking-[.16em] font-semibold text-white/50 uppercase">${kicker}</div>
-                    <div class="mt-0.5 text-[15px] font-extrabold">${headline}</div>
+                    <div class="text-[10px] tracking-[.16em] font-semibold text-white/50 uppercase" style="${ONE_LINE}">${kicker}</div>
+                    <div class="mt-0.5 text-[15px] font-extrabold" style="${ONE_LINE}">${headline}</div>
                     ${inUseNote}
                 </div>
                 <div class="flex flex-none items-center gap-2">${control}</div>
             </div>
             ${syncStrip(board)}
-            ${board.outOfSync ? '' : lastRoundStrip(board)}
-            ${squeezeStrip(board)}
             ${B && rows.length
                 ? `<div class="mt-3 grid grid-cols-2 gap-2 sm:grid-cols-4">${rows.map(r => tileHtml(r, phase, showCaption)).join('')}</div>`
                 : (B ? '<p class="mt-2 text-[12px] text-white/45">No courts in this division\'s schedule.</p>' : '')}
+            ${/* Strips that come and go mid-round sit BELOW the tiles so they never push the team names down. */ ''}
+            ${board.outOfSync ? '' : lastRoundStrip(board)}
+            ${squeezeStrip(board)}
             <div class="mt-2.5 flex flex-wrap justify-end gap-x-4 gap-y-1">
                 ${B && phase === 'staging' ? '<button type="button" data-cr-clear class="text-[11px] font-semibold text-white/40 underline">Reset ready marks</button>' : ''}
                 ${rec ? '<button type="button" data-cr-resync class="text-[11px] font-semibold text-white/40 underline">↻ Re-sync to schedule</button>' : ''}
