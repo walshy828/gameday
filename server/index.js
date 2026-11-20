@@ -9,7 +9,7 @@ import * as SheetsSync from './sheetsSync.js';
 import { applySyncSettings, computeAutoSyncExpiry, initSyncScheduler, scheduleResultSync } from './syncScheduler.js';
 import { initSocket, broadcastDiscrepancyPing, broadcastTrafficMode, flushPendingDivisionUpdates } from './socket.js';
 import * as Shield from './loadShield.js';
-import { setRoleResolver, requestCounter, getUsageSummary } from './presence.js';
+import { setRoleResolver, requestCounter, getUsageSummary, recordSave } from './presence.js';
 import { listOpenDiscrepancies, dismissDiscrepancy, notifyIfHighImpact } from './discrepancies.js';
 import { isPlayoffGame } from '../public/js/discrepancy.js';
 import * as Roster from './rosterSheets.js';
@@ -385,8 +385,10 @@ app.post('/api/saveMatchResult', async (req, res) => {
   const now = Date.now();
   for (const [k, v] of recentMatchSaves) if (now - v.at > MATCH_SAVE_DEDUPE_MS) recentMatchSaves.delete(k);
 
+  const t0 = Date.now();
   if (clientId && recentMatchSaves.has(clientId)) {
     const prior = await recentMatchSaves.get(clientId).promise;
+    noteSaveTiming(req, authToken, t0, prior, true);
     return res.status(prior.status).json({ ...prior.body, duplicate: true });
   }
 
@@ -394,8 +396,32 @@ app.post('/api/saveMatchResult', async (req, res) => {
   if (clientId) recentMatchSaves.set(clientId, { at: now, promise });
   const result = await promise;
   if (clientId && !(result.status === 200 && result.body?.success)) recentMatchSaves.delete(clientId);
+  noteSaveTiming(req, authToken, t0, result, false);
   res.status(result.status).json(result.body);
 });
+
+// Setup → Live now → Connections: one in-memory line per save (server/presence.js).
+// `duplicate` = the phone re-sent a save the server already had, i.e. the first
+// reply never made it back to the phone.
+function noteSaveTiming(req, authToken, t0, result, duplicate) {
+  try {
+    const net = req.body?.net && typeof req.body.net === 'object' ? req.body.net : {};
+    const md = req.body?.matchData || {};
+    const n = (v, max) => (Number.isFinite(Number(v)) ? Math.max(0, Math.min(max, Math.round(Number(v)))) : 0);
+    const s = (v, len) => (typeof v === 'string' ? v.trim().slice(0, len) : '');
+    recordSave({
+      role: safeEqual(authToken, computeToken(SUPERADMIN_PASSWORD)) ? 'superadmin' : 'admin',
+      division: s(md.sheetName, 80),
+      match: `${s(md.team1, 60)} v ${s(md.team2, 60)}`,
+      court: s(net.court, 16),
+      tries: n(net.tries, 100) || 1,
+      waitedMs: n(net.waitedMs, 24 * 3600 * 1000),
+      serverMs: Date.now() - t0,
+      ok: result?.status === 200 && !!result?.body?.success,
+      duplicate
+    });
+  } catch (e) { /* never affect the save */ }
+}
 
 async function runSaveMatchResult(req, authToken) {
   try {

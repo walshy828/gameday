@@ -12,6 +12,7 @@
 //   per-browser id so the card can count phones as well as tabs.
 import { getSocket } from './socketClient.js';
 import { getFollowed } from './follow.js';
+import { startNetMonitor, netCounts } from './netMonitor.js';
 
 const DEVICE_KEY = 'presenceDevice';
 const CHECK_MS = 5000;
@@ -52,11 +53,18 @@ function snapshot() {
         court: App.state.isAdmin && !App.state.isSuperAdmin ? (App.state.selectedCourt || '') : '',
         view: inApp ? (App.state.currentView || '') : 'gate',
         visible: document.visibilityState !== 'hidden',
-        device: deviceId()
+        device: deviceId(),
+        // Connection-health counts (netMonitor.js), staff only; they change only when something goes wrong.
+        ...(isStaff() ? { net: netCounts() } : {})
     };
 }
 
+function isStaff() {
+    return !!(App.state.isAdmin || App.state.isSuperAdmin);
+}
+
 function report(force = false) {
+    if (isStaff()) startNetMonitor(getSocket); // no-op once running
     if (!socket || !socket.connected) return;
     const snap = snapshot();
     const sig = JSON.stringify(snap);

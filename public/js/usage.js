@@ -177,6 +177,85 @@ function serverHtml(u, h) {
     </div>`;
 }
 
+// --- Connections (staff devices; server/presence.js networkSummary + savesSummary) ---
+const GONE_MS = 15 * 60 * 1000; // offline this long = probably closed the app, not the Wi-Fi
+const dur = (ms) => { const s = Math.round((ms || 0) / 1000); return s < 90 ? `${s}s` : s < 5400 ? `${Math.round(s / 60)} min` : `${(s / 3600).toFixed(1)} h`; };
+const secs1 = (ms) => `${((ms || 0) / 1000).toFixed(ms < 10000 ? 1 : 0)}s`;
+
+function myDeviceId() {
+    try { return (localStorage.getItem('presenceDevice') || '').slice(0, 8); } catch (e) { return ''; }
+}
+
+function deviceLabel(d) {
+    const me = d.id && d.id === myDeviceId() ? ' (this device)' : '';
+    if (d.role === 'superadmin') return `Tournament admin ${d.n || ''}${me}`;
+    return `${d.court ? `Court ${d.court}` : 'Referee'}${me}`;
+}
+
+/** 'down' | 'away' | 'gone' | 'shaky' | 'ok' for one device. */
+function deviceState(d, t) {
+    if (!d.online) {
+        if (d.downBg) return 'away';
+        return t - d.downSince > GONE_MS ? 'gone' : 'down';
+    }
+    const c = d.client || {};
+    if (d.dropsHour || (c.lastBadAt && t - c.lastBadAt < 60 * 60 * 1000)) return 'shaky';
+    return 'ok';
+}
+
+function networkLine(u) {
+    const t = u.at, list = u.network || [];
+    if (!list.length) return { level: 0, text: 'No referee or admin devices seen yet.' };
+    const down = list.filter(d => deviceState(d, t) === 'down');
+    if (down.length) return { level: 2, text: `${down.map(deviceLabel).join(', ')} lost connection ${dur(t - down[0].downSince)} ago` };
+    const shaky = list.filter(d => deviceState(d, t) === 'shaky');
+    if (shaky.length) return { level: 1, text: `${shaky.length} of ${list.length} staff devices had problems in the last hour` };
+    return { level: 0, text: `${list.filter(d => d.online).length} staff devices connected · steady` };
+}
+
+function networkHtml(u) {
+    const t = u.at, list = u.network || [], sv = u.saves || { count: 0, recent: [] };
+    const pill = (txt, cls) => `<span class="rounded-full px-2 py-0.5 text-[11px] font-bold ${cls}">${txt}</span>`;
+    const rows = list.map(d => {
+        const st = deviceState(d, t);
+        const badge = st === 'down' ? pill(`Offline ${dur(t - d.downSince)}`, 'bg-red-600/25 text-red-200')
+            : st === 'away' ? pill(`Screen off · ${dur(t - d.downSince)}`, 'bg-white/10 text-white/50')
+                : st === 'gone' ? pill(`Left ${clock(d.downSince)}`, 'bg-white/10 text-white/50')
+                    : st === 'shaky' ? pill('Shaky', 'bg-yellow-600/20 text-yellow-200') : pill('Steady', 'bg-green-600/20 text-green-300');
+        const c = d.client;
+        const phone = c ? [
+            c.fails ? plural(c.fails, 'failed request') : '',
+            c.slow + c.stalls ? `${c.slow + c.stalls} slow` : '',
+            c.worstSaveMs ? `worst save ${secs1(c.worstSaveMs)}` : '',
+            c.lastBadAt ? `last problem ${clock(c.lastBadAt)}` : ''
+        ].filter(Boolean).join(' · ') : '';
+        const recent = d.recent.length ? `<div class="mt-1 text-[11px] text-white/40">${d.recent.map(o =>
+            `${clock(o.at)} ${dur(o.ms)}${o.reason === 'ping timeout' ? ' no response' : ''}${o.bg ? ' (screen off)' : ''}`).join(' · ')}</div>` : '';
+        return `<div class="rounded-lg bg-white/[.03] px-3 py-2">
+            <div class="flex items-center justify-between gap-2"><span class="text-sm font-semibold text-white truncate">${esc(deviceLabel(d))}</span>${badge}</div>
+            <div class="mt-0.5 text-[12px] text-white/60">${d.drops ? `${plural(d.drops, 'drop')} (${d.dropsHour} last hour) · ${dur(d.downMs)} offline · longest ${dur(d.longestMs)}` : 'No drops'}${d.bgDrops ? ` · ${d.bgDrops} while screen off` : ''}</div>
+            ${phone ? `<div class="text-[12px] text-white/60">Phone reports: ${esc(phone)}</div>` : ''}${recent}</div>`;
+    }).join('') || '<p class="text-sm text-white/45">No referee or admin devices seen since the server started.</p>';
+    const saveRows = sv.recent.map(s => {
+        const flag = s.duplicate ? '⚠ reply lost, phone re-sent' : s.tries > 1 ? `⚠ ${s.tries} tries over ${dur(s.waitedMs)}` : s.serverMs > 3000 ? '⚠ slow server' : '';
+        return `<div class="flex gap-2 text-[12px] ${flag ? 'text-yellow-200/90' : 'text-white/65'}">
+            <span class="tabular-nums text-white/40 flex-none">${clock(s.at)}</span>
+            <span class="truncate">${s.court ? `C${esc(s.court)} · ` : ''}${esc(s.match)}</span>
+            <span class="ml-auto flex-none tabular-nums">${secs1(s.serverMs)}${flag ? ` · ${esc(flag)}` : ''}${s.ok ? '' : ' · failed'}</span></div>`;
+    }).join('');
+    return `<div class="space-y-3">
+        <div class="grid gap-1.5">${rows}</div>
+        <div>
+            <div class="text-[11px] font-semibold uppercase tracking-wider text-white/55 mb-1">Score saves</div>
+            <p class="text-[12px] text-white/60">${sv.count ? `${plural(sv.count, 'save')} · server time ${secs1(sv.medianServerMs)} typical · ${sv.delayed} needed a retry · ${sv.slowServer} slow on the server` : 'No saves since the server started.'}</p>
+            ${saveRows ? `<div class="mt-1 space-y-0.5">${saveRows}</div>` : ''}
+        </div>
+        <p class="text-[11px] text-white/40">How to read it: a late score with a quick save and no retries means it was entered late. Retries, "reply lost" or drops on that court mean Wi-Fi trouble.
+            Slow server time with Server health busy means the server. Drops while a phone's screen is off are normal and not counted.
+            Nothing extra is sent to measure this. It's kept in server memory for 12h and on each phone (tap the dot next to your name in the header).</p>
+    </div>`;
+}
+
 function trafficHtml(u, h) {
     const cur = (u.traffic && u.traffic.mode) || 'normal';
     const info = TRAFFIC.find(t => t.mode === cur) || TRAFFIC[0];
@@ -237,6 +316,10 @@ function render() {
             ${stat(u.peak.total, 'Peak today', u.peak.at ? `at ${clock(u.peak.at)}` : '')}
         </div>
         ${rolesHtml(u)}
+        ${(() => { const n = networkLine(u); const c = ['text-green-300', 'text-yellow-200', 'text-red-200'][n.level];
+            return `<button type="button" class="w-full text-left rounded-lg bg-white/[.03] px-3 py-2 text-[13px] ${c}" data-usage-panel="network">
+                ${['📶', '⚠', '🔴'][n.level]} <span class="font-semibold">Staff connections:</span> ${esc(n.text)} <span class="text-white/40">${open.has('network') ? '▾' : '▸'}</span></button>`; })()}
+        ${open.has('network') ? `<div class="pt-1">${networkHtml(u)}</div>` : ''}
         ${trafficHtml(u, h)}
         <div><div class="text-[11px] font-semibold uppercase tracking-wider text-white/55 mb-1">Connected, last ${Math.max(1, u.history.length)} min</div>${sparkline(u.history, 'total', v => plural(v, 'connection'))}</div>
         <div class="flex flex-wrap gap-x-5 gap-y-1 text-sm">

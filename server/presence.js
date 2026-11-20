@@ -90,8 +90,143 @@ export function trackSocket(socket) {
     c.view = clip(msg.view, 24);
     c.visible = msg.visible !== false;
     c.device = clip(msg.device, 40);
+    noteStaffPresence(socket.id, c, msg.net, t);
   });
-  socket.on('disconnect', () => { conns.delete(socket.id); });
+  socket.on('disconnect', (reason) => {
+    const c = conns.get(socket.id);
+    conns.delete(socket.id);
+    if (c) noteStaffDisconnect(socket.id, c, reason);
+  });
+}
+
+// --- Staff connection health (Setup → Live now → Connections) -------------
+// Per staff DEVICE (the anonymous presence id), not per tab: when its last
+// socket drops we note when and why, and when it comes back we record how long
+// it was gone. Socket.IO tells us the reason for free: "ping timeout" = the
+// phone stopped answering (lost Wi-Fi), "transport close/error" = the link was
+// cut (network switch, tab closed, screen locked). A drop while the tab was in
+// the background is flagged `bg` and not counted. The device's own counts
+// (public/js/netMonitor.js) arrive in its presence message, which it only
+// resends when they change. Memory only, bounded, gone on restart.
+const STAFF_ROLES = new Set(['admin', 'superadmin']);
+const NET_KEEP_MS = 12 * 60 * 60 * 1000;
+const MAX_NET_DEVICES = 200;
+const MAX_OUTAGES = 50;
+const DELIBERATE = new Set(['client namespace disconnect', 'server namespace disconnect', 'server shutting down']);
+const netDevices = new Map(); // device -> { role, court, firstSeen, lastSeen, sockets:Set, downSince, downReason, downBg, outages:[], client, clientAt }
+let netSeq = 0;
+
+function staffDevice(device, t) {
+  let d = netDevices.get(device);
+  if (!d) {
+    if (netDevices.size >= MAX_NET_DEVICES) pruneNetDevices(true);
+    if (netDevices.size >= MAX_NET_DEVICES) return null;
+    d = { seq: ++netSeq, role: '', court: '', firstSeen: t, lastSeen: t, sockets: new Set(), downSince: 0, downReason: '', downBg: false, outages: [], client: null, clientAt: 0 };
+    netDevices.set(device, d);
+  }
+  return d;
+}
+
+const num = (v, max) => (Number.isFinite(Number(v)) ? Math.max(0, Math.min(max, Math.round(Number(v)))) : 0);
+
+function noteStaffPresence(socketId, c, net, t) {
+  if (!c.device) return;
+  const d = STAFF_ROLES.has(c.role) ? staffDevice(c.device, t) : netDevices.get(c.device);
+  if (!d) return;
+  if (!STAFF_ROLES.has(c.role)) { d.sockets.delete(socketId); return; } // signed out on this tab
+  d.role = c.role;
+  if (c.court) d.court = c.court;
+  d.lastSeen = t;
+  d.sockets.add(socketId);
+  if (d.downSince) {
+    d.outages.push({ at: d.downSince, ms: t - d.downSince, reason: d.downReason, bg: d.downBg });
+    if (d.outages.length > MAX_OUTAGES) d.outages.shift();
+    d.downSince = 0;
+  }
+  if (net && typeof net === 'object') {
+    d.client = {
+      drops: num(net.drops, 1e5), downSec: num(net.downSec, 1e6), stalls: num(net.stalls, 1e5),
+      fails: num(net.fails, 1e5), slow: num(net.slow, 1e5), worstSaveMs: num(net.worstSaveMs, 1e7),
+      lastBadAt: num(net.lastBadAt, 1e14)
+    };
+    d.clientAt = t;
+  }
+}
+
+function noteStaffDisconnect(socketId, c, reason) {
+  const d = c.device && netDevices.get(c.device);
+  if (!d || !d.sockets.delete(socketId) || d.sockets.size) return;
+  if (DELIBERATE.has(reason)) return;
+  d.downSince = Date.now();
+  d.downReason = String(reason || '').slice(0, 40);
+  d.downBg = c.visible === false;
+}
+
+function pruneNetDevices(force) {
+  const cut = Date.now() - NET_KEEP_MS;
+  for (const [k, d] of netDevices) {
+    if (!d.sockets.size && (d.lastSeen < cut || force && d.lastSeen < Date.now() - 60 * 60 * 1000)) netDevices.delete(k);
+  }
+}
+
+function networkSummary() {
+  pruneNetDevices(false);
+  const t = Date.now();
+  const cut = t - NET_KEEP_MS;
+  const supers = [...netDevices.values()].filter(d => d.role === 'superadmin').sort((a, b) => a.seq - b.seq);
+  return [...netDevices.entries()].map(([id, d]) => {
+    const outs = d.outages.filter(o => o.at >= cut);
+    const real = outs.filter(o => !o.bg);
+    const hourReal = real.filter(o => o.at >= t - 60 * 60 * 1000);
+    return {
+      id: id.slice(0, 8),
+      role: d.role,
+      court: d.court,
+      n: d.role === 'superadmin' ? supers.indexOf(d) + 1 : 0,
+      online: d.sockets.size > 0,
+      downSince: d.downSince || 0,
+      downReason: d.downReason,
+      downBg: d.downBg,
+      drops: real.length,
+      dropsHour: hourReal.length,
+      bgDrops: outs.length - real.length,
+      downMs: real.reduce((n, o) => n + o.ms, 0),
+      longestMs: real.reduce((n, o) => Math.max(n, o.ms), 0),
+      recent: outs.slice(-5).reverse(),
+      client: d.client,
+      lastSeen: d.lastSeen
+    };
+  }).sort((a, b) => (a.role === b.role ? 0 : a.role === 'superadmin' ? -1 : 1)
+    || String(a.court).localeCompare(String(b.court), undefined, { numeric: true }) || a.n - b.n);
+}
+
+// --- Score save timing ------------------------------------------------------
+// Each /api/saveMatchResult is noted with what the phone says about it (how
+// many taps it took, how long since the first try) and how long the server
+// took, so a late score can be told apart: entered late (quick save), network
+// trouble (several tries / long wait), or a slow server. Memory only.
+const MAX_SAVES = 300;
+const saves = [];
+
+export function recordSave(entry) {
+  try {
+    saves.push({ at: Date.now(), ...entry });
+    if (saves.length > MAX_SAVES) saves.shift();
+  } catch (e) { /* never affect the save */ }
+}
+
+function savesSummary() {
+  const cut = Date.now() - NET_KEEP_MS;
+  const list = saves.filter(s => s.at >= cut);
+  const sorted = list.map(s => s.serverMs).sort((a, b) => a - b);
+  const delayed = list.filter(s => s.tries > 1 || s.waitedMs > 5000 || s.duplicate);
+  return {
+    count: list.length,
+    medianServerMs: sorted.length ? sorted[Math.floor(sorted.length / 2)] : 0,
+    slowServer: list.filter(s => s.serverMs > 3000).length,
+    delayed: delayed.length,
+    recent: list.slice(-12).reverse()
+  };
 }
 
 function notePeak(now) {
@@ -185,6 +320,8 @@ export function getUsageSummary() {
       lagP99Now: Math.round(loop.percentile(99) / 1e6),
       requestsThisMinute: reqCount
     },
+    network: networkSummary(),
+    saves: savesSummary(),
     history: history.map(h => ({ t: h.t, total: h.total, lagP99: h.lagP99, cpuPct: h.cpuPct, requests: h.requests }))
   };
 }

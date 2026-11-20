@@ -1490,7 +1490,7 @@ function logoutAdmin() {
 // notes are rare, so both stay tucked behind links unless needed. Each opening
 // of the modal gets a clientId so a double tap / retry never saves twice.
 
-const modalState = { clientId: null, saving: false };
+const modalState = { clientId: null, saving: false, firstTryAt: 0, tries: 0 };
 
 function newClientId() {
     try { if (crypto.randomUUID) return crypto.randomUUID(); } catch (e) { /* insecure context */ }
@@ -1530,6 +1530,8 @@ function showMatchEntryModal(gameIndex) {
     App.admin.currentGameIndex = gameIndex;
     modalState.clientId = newClientId();
     modalState.saving = false;
+    modalState.firstTryAt = 0;
+    modalState.tries = 0;
 
     saveMessage.classList.add('hidden');
     saveMessage.textContent = '';
@@ -1818,7 +1820,12 @@ async function saveMatchResultFromModal() {
 
     let saved = false;
     try {
-        const result = await apiSaveMatchResult(authToken, matchData, modalState.clientId);
+        // Connection health (Setup → Live now): how many taps this save has taken
+        // and how long since the first one, so network trouble shows up as such.
+        if (!modalState.firstTryAt) modalState.firstTryAt = Date.now();
+        modalState.tries++;
+        const net = { tries: modalState.tries, waitedMs: Date.now() - modalState.firstTryAt, court: String(game.court || '').slice(0, 16) };
+        const result = await apiSaveMatchResult(authToken, matchData, modalState.clientId, net);
 
         if (!result.success) {
             if (result.logout) {

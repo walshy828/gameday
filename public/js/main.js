@@ -83,6 +83,7 @@ import { renderPlayoffsView } from './playoffs.js';
 import { renderMyTeam } from './myTeam.js';
 import { isFollowed } from './follow.js';
 import { initPresence } from './presence.js';
+import { initNetUi } from './netMonitorUi.js';
 import { initUsage } from './usage.js';
 import { initWallboards } from './wallboards.js';
 import { setGameManagerAllowance } from './gameManagerUI.js';
@@ -564,6 +565,7 @@ document.addEventListener('DOMContentLoaded', () => {
   fetchDivisionNames();
   updateAdminUI();
   initPresence(); // Setup → Live now counts (sends only on change)
+  initNetUi(); // staff connection light + This device sheet (local only)
   initUsage();
   initWallboards(); // Setup → Wall boards (polls only while Setup is on screen)
   initFeedbackSetting(); // hide/show the Info tab's feedback card live
