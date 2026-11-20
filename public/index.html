@@ -4,10 +4,17 @@
 <head>
     <base target="_top">
 
-    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=5.0">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=5.0, viewport-fit=cover">
     <title>Dodgeball Tournament Tracker</title>
     <link rel="icon" type="image/png" href="/assets/algonquin-hockey.png">
-    <link rel="apple-touch-icon" href="/assets/algonquin-hockey.png">
+    <!-- Installable app (PWA): Android/Chrome reads the manifest; iPhone uses the apple-* tags. -->
+    <link rel="manifest" href="/manifest.webmanifest">
+    <meta name="theme-color" content="#18181A">
+    <meta name="mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-title" content="Dodgeball">
+    <meta name="apple-mobile-web-app-status-bar-style" content="black">
+    <link rel="apple-touch-icon" sizes="180x180" href="/icons/apple-touch-icon.png">
     <script>
         //main app namespace for configurations and data
         const App = {
@@ -435,6 +442,18 @@
             overflow: hidden;
             height: 100dvh;
             overscroll-behavior: none;
+        }
+
+        /* Keep the last card clear of the floating tab bar, which sits above the
+           iPhone home indicator (viewport-fit=cover makes the inset non-zero). */
+        main.app-main {
+            padding-bottom: calc(7rem + env(safe-area-inset-bottom, 0px));
+        }
+
+        /* Landscape iPhone: keep content out from under the notch. */
+        body {
+            padding-left: env(safe-area-inset-left, 0px);
+            padding-right: env(safe-area-inset-right, 0px);
         }
 
         html.chat-locked #main-wrapper {
@@ -1466,7 +1485,7 @@
                     <p id="error-details" class="text-sm mt-1"></p>
                 </div>
 
-                <main class="pb-28">
+                <main class="app-main pb-28">
 
                     <!-- PLAYOFFS VIEW -->
                     <div id="playoffs-view" class="screen hidden">

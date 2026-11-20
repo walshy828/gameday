@@ -1,0 +1,17 @@
+{
+  "id": "/",
+  "name": "Dodgeball Tournament Tracker",
+  "short_name": "Dodgeball",
+  "description": "Live standings, schedule, playoffs and court updates for the dodgeball tournament.",
+  "start_url": "/",
+  "scope": "/",
+  "display": "standalone",
+  "background_color": "#18181A",
+  "theme_color": "#18181A",
+  "icons": [
+    { "src": "/icons/icon-192.png", "sizes": "192x192", "type": "image/png", "purpose": "any" },
+    { "src": "/icons/icon-512.png", "sizes": "512x512", "type": "image/png", "purpose": "any" },
+    { "src": "/icons/icon-maskable-192.png", "sizes": "192x192", "type": "image/png", "purpose": "maskable" },
+    { "src": "/icons/icon-maskable-512.png", "sizes": "512x512", "type": "image/png", "purpose": "maskable" }
+  ]
+}

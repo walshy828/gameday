@@ -73,6 +73,8 @@ Data key structure in Firebase RTDB: `dodgeball-tournament/divisions/{sheetName}
 - `api.js` — thin fetch wrappers for the Express `/api/*` routes (relative to `window.location.origin`, no separate API base config needed for same-origin deploys).
 - Global app state lives in a plain `App` object defined inline in `index.html` (`App.state`, `App.data`, `App.config`, `App.settings`, `App.refresh`), not in any JS module — read it there before assuming a field exists.
 
+**Installable app (PWA):** `public/manifest.webmanifest` (standalone, start `/`, theme/background `#18181A`) + icons in `public/icons/` (192/512 `any`, 192/512 `maskable` with the logo at ~76% so Android's crop keeps the text, 180 `apple-touch-icon`; all solid dark squares made from `assets/algonquin-hockey.png`) + the `apple-mobile-web-app-*`/`theme-color` tags in `index.html`'s head; offline comes from `sw.js`. No in-app install prompt by design: users install via Chrome's menu or Safari's Share → Add to Home Screen. The viewport has `viewport-fit=cover`, so `env(safe-area-inset-*)` is real: anything fixed to the bottom must add `env(safe-area-inset-bottom)` (the tab bar, sheets and sell bars do; `main.app-main` pads for it). On iPhone an installed app has its own storage, separate from Safari (followed team, logins, the concessions offline login are not carried over).
+
 **Styling**: Tailwind, custom theme colors (`primary`/`secondary`/`accent`/`admin-bg`) in `tailwind.config.js`; source in `src/input.css`, compiled output committed at `public/dist/output.css` and served with an explicit MIME-type-safe route (`server/index.js`) in case a hosting proxy mis-serves it as `text/html`.
 
 ## Environment
