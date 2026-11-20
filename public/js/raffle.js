@@ -618,7 +618,7 @@ function render() {
         `<button data-act="tab" data-v="${k}" class="rounded-[13px] py-2.5 text-[13px] font-semibold ${S.tab === k ? '' : 'text-white/65'}" style="${S.tab === k ? goldStyle : ''}">${l}</button>`).join('')}</div>
         <div id="raffle-status" class="flex flex-none items-stretch">${statusHtml()}</div></div>
       ${S.tab === 'sales' || S.tab === 'report' ? asOfRow() : ''}
-      <div class="${S.tab === 'sell' ? '' : 'mt-2.5'}">${inner}</div>`;
+      <form class="${S.tab === 'sell' ? '' : 'mt-2.5'}" autocomplete="off" novalidate>${inner}</form>`;
 
     if (keep) { const q = document.getElementById('raffle-q'); if (q) { q.focus(); q.setSelectionRange(q.value.length, q.value.length); } }
 }
@@ -706,6 +706,9 @@ function wire() {
         // A complete phone number moves straight on to the email.
         if (k === 'phone' && !hadAll && digits(val).length === 10) focusField('email');
     });
+    // Buyer fields sit in their own <form> so browsers never group them with the sign-in password;
+    // it must never actually submit (Enter or a plain <button> would otherwise reload the page).
+    el.addEventListener('submit', (e) => e.preventDefault());
     // The keyboard's Next / Enter key moves name -> phone -> email, then puts the keyboard away.
     el.addEventListener('keydown', (e) => {
         if (e.key !== 'Enter') return;

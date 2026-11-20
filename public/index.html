@@ -2487,10 +2487,12 @@
                 <div class="mt-2 text-[17px] font-bold leading-[1.3] tracking-[-.02em] text-[#F7F7F8]">Sign in to run
                     games</div>
             </div>
-            <div class="modal-body">
+            <!-- A real <form> scopes the password to this name field, so browsers only offer to save it here
+                 (never pairing it with a buyer's phone/email elsewhere in the app). It never actually submits. -->
+            <form id="admin-login-form" class="modal-body" autocomplete="on" onsubmit="event.preventDefault(); loginAdmin()">
                 <div>
                     <div class="kicker text-mute mb-2.5">Your name</div>
-                    <input type="text" id="admin-name-field" placeholder="e.g. Maya R." class="field-light">
+                    <input type="text" id="admin-name-field" name="username" autocomplete="username" placeholder="e.g. Maya R." class="field-light">
                 </div>
 
                 <div>
@@ -2505,19 +2507,19 @@
 
                 <div>
                     <div class="kicker text-mute mb-2.5">Password</div>
-                    <input type="password" id="admin-password-input" placeholder="Enter password" class="field-light">
+                    <input type="password" id="admin-password-input" name="password" autocomplete="current-password" placeholder="Enter password" class="field-light">
                 </div>
 
                 <p id="admin-login-message" class="hidden text-[12px] font-semibold" style="color:var(--warn)"></p>
 
                 <div class="grid grid-cols-[1fr_1.7fr] gap-2">
-                    <button onclick="hideAdminLoginModal()"
+                    <button type="button" onclick="hideAdminLoginModal()"
                         class="rounded-[18px] border bg-[#F3F3F4] p-4 text-[13px] font-semibold leading-none text-ink"
                         style="border-color:var(--line)">Cancel</button>
-                    <button onclick="loginAdmin()" id="login-button"
+                    <button type="submit" id="login-button"
                         class="btn-primary !rounded-[18px] p-4 text-[13px] leading-none">Sign in →</button>
                 </div>
-            </div>
+            </form>
         </div>
     </div>
 

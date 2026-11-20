@@ -1283,6 +1283,10 @@ async function loginAdmin() {
         // Use the API helper which returns the validation result
         const result = await validateAdmin(password, reporterName, App.state.selectedCourt, sessionId);
 
+        // Don't leave the password sitting in the hidden login field: browsers would later treat any
+        // in-app entry (e.g. a raffle sale's phone/email) as a "login" and offer to save it with them.
+        if (result && result.token) passwordInputEl.value = '';
+
         // One-day tournament: remember the password on this device (expires after 24h).
         if (result && (result.isParent || result.isRaffle || result.isConcessions || (result.isAdmin && !result.isSuperAdmin))) {
             // Superadmin password is never stored on the device.
