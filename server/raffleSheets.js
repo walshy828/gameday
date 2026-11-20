@@ -21,7 +21,7 @@
 // Requires RAFFLE_SPREADSHEET_ID and the existing Google service account (GOOGLE_CLIENT_EMAIL / GOOGLE_PRIVATE_KEY),
 // with the sheet shared to that account as Editor.
 import dotenv from 'dotenv';
-import { call, sheetsClient as sheets, serialNow } from './sheetsQuota.js';
+import { call, sheetsClient as sheets, serialNow, statusOf, sleep } from './sheetsQuota.js';
 import { priceSale, allocate, strip, groupSales } from '../public/js/raffleLogic.js';
 import * as RaffleDb from './raffleDb.js';
 dotenv.config();
@@ -221,6 +221,21 @@ function overlaps(lines, issued) {
 }
 
 const pad4 = (n) => String(n).padStart(4, '0');
+
+/**
+ * After a write whose outcome is unknown: are this sale's rows on the sheet? true / false, or null when the sheet
+ * could not be read. Call only inside the lock (otherwise another sale could reuse the receipt in between).
+ */
+async function writeLanded(receipt, seller, soldWall, rowCount) {
+  try {
+    await sleep(1500);                 // give a write Google was still finishing time to show up
+    const { sales } = await readSheet();
+    return sales.filter((s) => s.receipt === receipt && s.seller === seller && s.t === soldWall).length >= rowCount;
+  } catch (e) {
+    console.error(`raffle sale ${receipt}: could not check whether the write landed:`, e.message || e);
+    return null;
+  }
+}
 const fail = (msg) => ({ ok: false, errors: [msg] });
 
 /**
@@ -249,9 +264,12 @@ async function sellLocked(seller, input, clientId) {
   // knows the clientId. 'synced' means it is on the sheet; 'pending' means the write's outcome was unknown, so look
   // for its receipt on the sheet we just read. Either way answer with what was recorded instead of selling again.
   const prior = clientId ? await RaffleDb.findByClientId(clientId) : null;
-  if (prior && (prior.status === 'synced' || (prior.status === 'pending' && sales.some((s) => s.receipt === prior.receipt)))) {
+  // Receipt numbers are reused when a write never landed, so a 'pending' sale only counts as on the sheet when the
+  // row with its receipt is also the same seller and buyer (otherwise it is another sale that took the number).
+  const isPrior = (s) => prior && s.receipt === prior.receipt && s.seller === prior.seller && s.name === prior.name && s.phone === prior.phone;
+  if (prior && (prior.status === 'synced' || (prior.status === 'pending' && sales.some(isPrior)))) {
     if (prior.status === 'pending') await RaffleDb.setStatus(prior.id, 'synced');
-    const rows = sales.filter((s) => s.receipt === prior.receipt);
+    const rows = sales.filter(isPrior);
     return {
       ok: true, receipt: prior.receipt, qty: prior.qty, price: prior.price, pay: prior.pay, manual: false, conflicts: [], duplicate: true,
       backup: 'saved', lines: prior.lines, split: prior.lines.length > 1, noRollLeft: false, suggestedRoll: defaultRoll(rolls),
@@ -336,8 +354,18 @@ async function sellLocked(seller, input, clientId) {
       spreadsheetId: sid(), requestBody: { valueInputOption: 'RAW', data }
     }));
   } catch (e) {
-    await RaffleDb.setStatus(dbId, 'failed', e.message || e);     // the sheet refused it, so this sale did not happen
-    throw e;
+    // A 4xx is Google refusing the write, so the sale did not happen. Anything else (timeout, dropped connection,
+    // 5xx) may have landed anyway; calling it failed would make the phone's retry sell it a second time under the
+    // next receipt. Still inside the lock, so nobody else can have taken these rows: look before deciding.
+    const code = Number(statusOf(e));
+    if (code >= 400 && code < 500 && code !== 408 && code !== 429) {
+      await RaffleDb.setStatus(dbId, 'failed', e.message || e);
+      throw e;
+    }
+    const landed = await writeLanded(receipt, seller, nowWall, values.length);
+    if (landed === false) { await RaffleDb.setStatus(dbId, 'failed', e.message || e); throw e; }
+    if (landed === null) throw e;     // couldn't check: stays 'pending', and a retry looks for its rows on the sheet
+    console.warn(`raffle sale ${receipt}: the write reported an error but its rows are on the sheet, so it counts.`, e.message || e);
   }
   await RaffleDb.setStatus(dbId, 'synced');
 

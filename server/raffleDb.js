@@ -79,6 +79,7 @@ export async function findByClientId(clientId) {
       if (!r) return null;
       return {
         id: r.id, receipt: r.receipt, status: r.sync_status, qty: r.tickets, price: Number(r.price), pay: r.payment || '',
+        seller: r.seller || '', name: r.buyer_name || '', phone: r.phone || '',
         lines: (() => { try { return JSON.parse(r.lines || '[]'); } catch (e) { return []; } })()
       };
     })());

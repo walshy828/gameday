@@ -52,7 +52,8 @@ if (process.env.GOOGLE_CLIENT_EMAIL && process.env.GOOGLE_PRIVATE_KEY) {
       key: process.env.GOOGLE_PRIVATE_KEY.replace(/\\n/g, '\n'),
       scopes: ['https://www.googleapis.com/auth/spreadsheets']
     });
-    sheetsClient = google.sheets({ version: 'v4', auth: jwt });
+    // A hung request would otherwise hold the raffle's one-sale-at-a-time lock (and every seller's uploads) forever.
+    sheetsClient = google.sheets({ version: 'v4', auth: jwt, timeout: Number(process.env.SHEETS_TIMEOUT_MS) || 30000 });
   } catch (e) {
     console.warn('Sheets client not initialized:', e.message || e);
   }
