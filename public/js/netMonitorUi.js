@@ -61,7 +61,7 @@ function renderSheet() {
         <div class="mt-3">
             ${row('Typical response (15 min)', s.sampleCount ? `${secs1(s.typicalMs)} · slowest 10% ${secs1(s.p90Ms)}` : '—')}
             ${row('Score saves (last 20)', s.saves.count ? `${secs1(s.saves.typicalMs)} typical · worst ${secs1(s.saves.worstMs)}` : 'none yet')}
-            ${row('Last 12h', `${s.today.drops} drops · ${dur(s.today.downMs)} offline · ${s.today.fails} failed`)}
+            ${row('Last 12h', `${s.today.drops} ${s.today.drops === 1 ? 'drop' : 'drops'} · ${dur(s.today.downMs)} offline · ${s.today.fails} failed`)}
             ${row('Network', net)}
         </div>
         <div class="mt-3 text-[10px] font-semibold uppercase tracking-wider text-white/50">Log</div>
